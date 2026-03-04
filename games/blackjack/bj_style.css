@@ -1,0 +1,304 @@
+/* =========================================
+   1. BASE APP SETTINGS (Locked Screen)
+   ========================================= */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none; /* Prevents text highlighting when tapping fast */
+}
+
+body {
+  /* The Casino Felt Background */
+  background: radial-gradient(circle at center, #0a8a8a 0%, #004d40 100%);
+  color: white;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  height: 100vh; /* Locks app to exact screen height */
+  overflow: hidden; /* No scrolling allowed */
+  display: flex;
+  flex-direction: column;
+  touch-action: manipulation; /* Prevents double-tap zoom */
+}
+
+/* =========================================
+   2. THE HUD (Top Bar)
+   ========================================= */
+#hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(to bottom, #cf9b15, #a67c00); /* Gold bar */
+  padding: 10px 15px;
+  border-bottom: 3px solid #5c4300;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  z-index: 10;
+}
+
+.hud-stat {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: white;
+  text-shadow: 1px 1px 2px black;
+}
+
+.hud-btn {
+  background: #fff;
+  border: 2px solid #5c4300;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+
+/* =========================================
+   3. THE TABLE (Felt Area)
+   ========================================= */
+#table {
+  flex-grow: 1; /* Takes up all middle space */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  align-items: center;
+  position: relative;
+  padding: 10px;
+}
+
+/* Painted Table Text */
+.table-text {
+  text-align: center;
+  opacity: 0.25; /* Makes it look painted into the felt */
+  color: black;
+  text-transform: uppercase;
+  pointer-events: none; /* Can't be clicked */
+}
+
+.table-text h1 { font-size: 1.5rem; letter-spacing: 2px; border-bottom: 2px solid black; padding-bottom: 5px; margin-bottom: 5px; }
+.table-text h2 { font-size: 1rem; margin-bottom: 5px; }
+.table-text h3 { font-size: 1.2rem; }
+
+/* Card Areas & Score Bubbles */
+.card-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-height: 120px;
+}
+
+.card-container {
+  display: flex;
+  justify-content: center;
+  gap: -30px; /* Forces cards to overlap slightly like real life */
+}
+
+/* The floating black score bubbles */
+.score-bubble {
+  position: absolute;
+  top: -15px;
+  right: 20%;
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.1rem;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+  z-index: 5;
+}
+
+.hidden { display: none !important; }
+
+/* The Cards */
+.card {
+  width: 70px;
+  height: 100px;
+  background-color: white;
+  color: black;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  box-shadow: -2px 2px 5px rgba(0,0,0,0.3);
+  border: 1px solid #ccc;
+  margin-left: -40px; /* The overlap magic */
+}
+.card:first-child { margin-left: 0; } /* First card doesn't overlap itself */
+.card.red { color: #d40000; }
+.card.hidden-card {
+  background: repeating-linear-gradient(45deg, #2c3e50, #2c3e50 10px, #34495e 10px, #34495e 20px);
+  color: transparent;
+  border: 2px solid white;
+}
+
+/* =========================================
+   4. ACTION ZONE (Bottom Wood Rack)
+   ========================================= */
+#action-zone {
+  background: linear-gradient(to bottom, #5c3a21, #3e2723); /* Wood texture edge */
+  padding: 15px;
+  border-top: 4px solid #1a1005;
+  box-shadow: 0 -4px 10px rgba(0,0,0,0.5);
+  min-height: 140px; /* Enough room for thumbs */
+}
+
+/* --- STATE A: BETTING --- */
+#betting-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.bet-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  background: rgba(0,0,0,0.5);
+  padding: 5px 15px;
+  border-radius: 20px;
+  color: #f1c40f;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+#clear-bet-btn {
+  background: transparent;
+  color: #e74c3c;
+  border: 1px solid #e74c3c;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* The Vegas Chips */
+.chip-rack {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.chip {
+  width: 55px;
+  height: 55px;
+  border-radius: 50%;
+  font-weight: bold;
+  font-size: 1rem;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* This creates the dashed white edges around the chip! */
+  border: 5px dashed rgba(255,255,255,0.8);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.4), inset 0 0 0 4px rgba(0,0,0,0.3);
+  transition: transform 0.1s;
+}
+
+.chip:active { transform: scale(0.9); }
+
+/* Standard Vegas Colors */
+.chip-5 { background-color: #e74c3c; }   /* Red */
+.chip-25 { background-color: #2ecc71; }  /* Green */
+.chip-100 { background-color: #1abc9c; color: black; border-color: black; } /* Dark Teal/Black */
+.chip-500 { background-color: #8e44ad; } /* Purple */
+.chip-1k { background-color: #f39c12; }  /* Orange/Gold */
+
+/* DEAL Button */
+#deal-btn {
+  width: 100%;
+  max-width: 300px;
+  padding: 15px;
+  font-size: 1.2rem;
+  border-radius: 30px;
+  margin-top: 5px;
+}
+
+/* --- STATE B: PLAYING --- */
+.button-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* 2 buttons per row */
+  gap: 10px;
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.action-btn {
+  border: none;
+  padding: 15px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.3);
+  transition: transform 0.1s, box-shadow 0.1s;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+.action-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 rgba(0,0,0,0.3);
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Button Colors mapped to your screenshots */
+.hit-btn { background: linear-gradient(to bottom, #2ecc71, #27ae60); }
+.stand-btn { background: linear-gradient(to bottom, #e74c3c, #c0392b); }
+.double-btn { background: linear-gradient(to bottom, #f39c12, #d35400); }
+.split-btn { background: linear-gradient(to bottom, #f1c40f, #f39c12); color: black; text-shadow: none;}
+.primary-btn { background: linear-gradient(to bottom, #3498db, #2980b9); }
+.insurance-btn { width: 100%; margin-top: 10px; background: linear-gradient(to bottom, #9b59b6, #8e44ad); }
+
+/* =========================================
+   5. MODALS (Popups for Settings/Rules)
+   ========================================= */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000;
+}
+
+.modal-box {
+  background: #1a252f;
+  padding: 25px;
+  border-radius: 12px;
+  border: 2px solid #f1c40f;
+  color: white;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  text-align: center;
+}
+
+.modal-box h2 { color: #f1c40f; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; }
+
+.settings-group { margin-bottom: 15px; text-align: left; }
+.settings-group label { display: block; margin-bottom: 5px; color: #bdc3c7; }
+.settings-group input, .settings-group select {
+  width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #34495e; background: #2c3e50; color: white;
+}
+
+.settings-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+.settings-actions button { padding: 10px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; color: white;}
+.settings-actions button { background: #34495e; }
+.settings-actions button.danger { background: #e74c3c; }
+.settings-actions button.primary-btn { grid-column: span 2; }
