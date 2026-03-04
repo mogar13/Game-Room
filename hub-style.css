@@ -108,7 +108,9 @@ header p {
 
 @media (min-width: 768px) {
   .game-grid {
-    grid-template-columns: repeat(3, 1fr); /* 3 columns on tablets/PC */
+    /* Draws exactly 2 columns, max 350px wide, and centers them in the screen */
+    grid-template-columns: repeat(2, minmax(250px, 350px)); 
+    justify-content: center; 
     gap: 30px;
   }
   
@@ -121,5 +123,6 @@ header p {
   }
 
   .game-card p {
-    display: block; /* Show descriptions back on larger screens */
+    display: block; 
   }
+}
