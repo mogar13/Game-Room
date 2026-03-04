@@ -5,6 +5,7 @@ body {
   margin: 0;
   text-align: center;
   transition: background-color 0.4s;
+  touch-action: manipulation;
 }
 
 header {
@@ -24,21 +25,26 @@ header p {
 }
 
 .game-grid {
-  display: flex;
-  justify-content: center;
-  gap: 30px;
-  padding: 50px 20px;
-  flex-wrap: wrap;
+  display: grid;
+  /* FORCING 2 COLUMNS ON MOBILE */
+  grid-template-columns: repeat(2, 1fr); 
+  gap: 15px; 
+  padding: 20px;
+  max-width: 1000px;
+  margin: 0 auto;
 }
 
 .game-card {
   background-color: var(--card-bg);
   border: 2px solid var(--accent-color);
   border-radius: 15px;
-  width: 250px;
-  padding: 30px 20px;
+  /* REMOVED fixed width: 250px so it fits the grid columns */
+  padding: 20px 10px; 
   text-decoration: none;
   color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -48,19 +54,18 @@ header p {
 }
 
 .card-icon {
-  font-size: 4rem;
-  margin-bottom: 15px;
+  font-size: 2.5rem; /* Sized down for mobile grid */
+  margin-bottom: 10px;
 }
 
 .game-card h2 {
-  margin: 0 0 10px 0;
+  margin: 0 0 5px 0;
+  font-size: 1.1rem; /* Sized down for mobile grid */
   color: var(--accent-color);
 }
 
 .game-card p {
-  margin: 0;
-  font-size: 0.9rem;
-  color: #a2a2bd;
+  display: none; /* Hiding descriptions on mobile to keep the grid clean */
 }
 
 /*---------Themes---------*/
@@ -100,3 +105,21 @@ header p {
   --accent-color: #39ff14; /* Neon Green */
   --card-bg: #222222;
 }
+
+@media (min-width: 768px) {
+  .game-grid {
+    grid-template-columns: repeat(3, 1fr); /* 3 columns on tablets/PC */
+    gap: 30px;
+  }
+  
+  .card-icon {
+    font-size: 4rem;
+  }
+  
+  .game-card h2 {
+    font-size: 1.5rem;
+  }
+
+  .game-card p {
+    display: block; /* Show descriptions back on larger screens */
+  }
