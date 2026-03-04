@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Game Room Hub</title>
+  <link rel="stylesheet" href="hub-style.css">
+</head>
+<body>
+
+  <header>
+    <h1>🎲 The Game Room</h1>
+    <p>Select a game to play locally or online.</p>
+    <div class="theme-selector">
+  <button onclick="changeTheme('default')">Default</button>
+  <button onclick="changeTheme('casino')">Casino</button>
+  <button onclick="changeTheme('arcade')">Arcade</button>
+</div>
+
+<script>
+  function changeTheme(theme) {
+    document.body.className = ''; // Reset
+    if (theme !== 'default') {
+      document.body.classList.add('theme-' + theme);
+    }
+  }
+</script>
+  </header>
+
+  <main class="game-grid">
+    <a href="games/blackjack/index.html" class="game-card">
+      <div class="card-icon">🃏</div>
+      <h2>Blackjack Pro</h2>
+      <p>Single-player against the Dealer AI.</p>
+    </a>
+
+    <a href="games/tic-tac-toe/index.html" class="game-card">
+      <div class="card-icon">❌⭕</div>
+      <h2>Tic-Tac-Toe</h2>
+      <p>Multiplayer test arena.</p>
+    </a>
+  </main>
+
+</body>
+</html>

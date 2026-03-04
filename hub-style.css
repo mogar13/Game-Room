@@ -1,0 +1,102 @@
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  text-align: center;
+  transition: background-color 0.4s;
+}
+
+header {
+  padding: 40px 20px;
+  background-color: var(--header-bg);
+  border-bottom: 4px solid var(--accent-color);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 2.5rem;
+  letter-spacing: 2px;
+}
+
+header p {
+  color: #a2a2bd;
+}
+
+.game-grid {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  padding: 50px 20px;
+  flex-wrap: wrap;
+}
+
+.game-card {
+  background-color: var(--card-bg);
+  border: 2px solid var(--accent-color);
+  border-radius: 15px;
+  width: 250px;
+  padding: 30px 20px;
+  text-decoration: none;
+  color: white;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.game-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(233, 69, 96, 0.4);
+}
+
+.card-icon {
+  font-size: 4rem;
+  margin-bottom: 15px;
+}
+
+.game-card h2 {
+  margin: 0 0 10px 0;
+  color: var(--accent-color);
+}
+
+.game-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #a2a2bd;
+}
+
+/*---------Themes---------*/
+
+:root {
+  --bg-color: #1a1a2e;
+  --header-bg: #16213e;
+  --accent-color: #e94560;
+  --text-color: #ffffff;
+  --card-bg: #0f3460;
+}
+
+.theme-selector {
+  margin: 20px;
+}
+
+.theme-selector button {
+  padding: 10px;
+  margin: 5px;
+  cursor: pointer;
+  border: 1px solid var(--accent-color);
+  background: var(--card-bg);
+  color: white;
+  border-radius: 5px;
+}
+
+.theme-casino {
+  --bg-color: #0b5d2a;
+  --header-bg: #0f7a3a;
+  --accent-color: #f1c40f;
+  --card-bg: #1a1a1a;
+}
+
+.theme-arcade {
+  --bg-color: #000000;
+  --header-bg: #1a1a1a;
+  --accent-color: #39ff14; /* Neon Green */
+  --card-bg: #222222;
+}
