@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Casino Roulette</title>
+  <link rel="stylesheet" href="roulette_style.css">
+</head>
+<body>
+
+  <div id="hud">
+    <a href="../../index.html" class="hud-btn"><img src="../blackjack/home.png" class="hud-icon"></a>
+    <div class="hud-stat" id="bankroll-display">$5000</div>
+    <div id="last-numbers"></div>
+  </div>
+
+  <div id="game-container">
+    <div id="wheel-container">
+        <div id="wheel-pointer">▼</div>
+        <div id="roulette-wheel"></div>
+    </div>
+
+    <div id="betting-table">
+        <div id="numbers-grid">
+            <div class="cell green" data-num="0">0</div>
+            </div>
+        
+        <div id="outside-bets">
+            <div class="bet-area" data-type="red">RED</div>
+            <div class="bet-area" data-type="black">BLACK</div>
+            <div class="bet-area" data-type="even">EVEN</div>
+            <div class="bet-area" data-type="odd">ODD</div>
+        </div>
+    </div>
+
+    <div id="controls">
+        <div id="current-bet">Bet: $0</div>
+        <div class="chip-rack">
+            <button class="chip" data-val="10">10</button>
+            <button class="chip" data-val="50">50</button>
+            <button class="chip" data-val="100">100</button>
+        </div>
+        <button id="spin-btn">SPIN WHEEL</button>
+    </div>
+  </div>
+
+  <script src="roulette_app.js"></script>
+</body>
+</html>
