@@ -1,51 +1,111 @@
+* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+
 body {
-  background: radial-gradient(circle at center, #0a4f2c 0%, #041f10 100%);
-  color: white; font-family: sans-serif; height: 100dvh; overflow: hidden;
+  background: radial-gradient(circle at center, #1e272e 0%, #050505 100%);
+  color: white; font-family: 'Segoe UI', sans-serif; height: 100dvh; overflow: hidden;
   display: flex; flex-direction: column;
 }
 
-#hud { display: flex; justify-content: space-between; padding: 15px; background: #111; border-bottom: 2px solid #d4ac0d; }
-.hud-icon { width: 22px; height: 22px; }
+#game-container { 
+  flex-grow: 1; display: flex; flex-direction: column; 
+  align-items: center; justify-content: flex-start; gap: 20px; padding: 20px; 
+}
 
-#game-container { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: space-around; padding: 10px; }
+/* --- THE WHEEL & THE BALL --- */
+#wheel-section { 
+  position: relative; margin-top: 10px; 
+  display: flex; justify-content: center; align-items: center; 
+}
+#wheel-pointer {
+  position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+  color: #f1c40f; font-size: 2rem; z-index: 10; text-shadow: 0 2px 5px black;
+}
+#roulette-wheel {
+  width: 280px; height: 280px; border-radius: 50%; 
+  box-shadow: 0 15px 35px rgba(0,0,0,0.9);
+  /* Lengthened Spin to 6 seconds */
+  transition: transform 6s cubic-bezier(0.2, 0, 0.1, 1);
+  object-fit: contain; 
+  transform-origin: center center; /* Helps stabilize slightly off-center images */
+}
 
-/* THE TABLE */
+#ball-track {
+  position: absolute;
+  width: 220px; /* Slightly smaller than the wheel to ride the rim */
+  height: 220px;
+  border-radius: 50%; pointer-events: none; z-index: 5;
+  transition: transform 6s cubic-bezier(0.1, 0, 0.2, 1); /* Different curve so it feels disconnected from the wheel */
+}
+#roulette-ball {
+  position: absolute; top: -7px; left: 50%; transform: translateX(-50%);
+  width: 14px; height: 14px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ffffff, #dcdcdc, #888888);
+  box-shadow: -2px 5px 5px rgba(0,0,0,0.6);
+}
+
+/* --- THE TABLE (Premium Felt Upgrade) --- */
+.table-scroll-wrapper { width: 100%; max-width: 800px; overflow-x: auto; padding-bottom: 10px;}
+
+#betting-table { 
+  display: flex; flex-direction: column; gap: 5px; 
+  background-color: #085a30;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' viewBox='0 0 4 4'%3E%3Cpath fill='%23ffffff' fill-opacity='0.05' d='M1 3h1v1H1V3zm2-2h1v1H3V1z'%3E%3C/path%3E%3C/svg%3E");
+  padding: 15px; border-radius: 10px; border: 6px solid #4a2d18; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+  min-width: 600px; 
+}
+
 #numbers-grid {
   display: grid;
-  grid-template-columns: repeat(13, 1fr); /* 0 plus 12 columns of 3 */
+  grid-template-columns: 50px repeat(12, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  grid-auto-flow: column;
-  gap: 2px; background: #fff; padding: 2px; border: 4px solid #d4ac0d;
+  grid-auto-flow: column; gap: 3px;
 }
 
 .cell {
-  width: 45px; height: 45px; display: flex; align-items: center; justify-content: center;
-  font-weight: bold; cursor: pointer; transition: 0.2s;
+  height: 50px; display: flex; align-items: center; justify-content: center;
+  font-weight: bold; cursor: pointer; border: 1px solid rgba(255,255,255,0.4);
+  position: relative; font-size: 1.2rem; transition: 0.1s;
 }
-.cell.green { background: #27ae60; grid-row: 1 / span 3; height: auto; }
-.cell.red { background: #e74c3c; }
-.cell.black { background: #2c3e50; }
-.cell:hover { filter: brightness(1.3); }
+.cell.green { background: rgba(39, 174, 96, 0.8); grid-row: 1 / span 3; height: 100%; border-color: #2ecc71; }
+.cell.red { background: rgba(192, 57, 43, 0.85); }
+.cell.black { background: rgba(17, 17, 17, 0.85); }
+.cell:hover { filter: brightness(1.3); border-color: #f1c40f; }
 
-#outside-bets { display: flex; gap: 5px; margin-top: 10px; width: 100%; }
-.bet-area { flex: 1; height: 50px; background: rgba(255,255,255,0.1); border: 2px solid #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; cursor: pointer; }
+#outside-bets, #outside-bets-bottom { display: flex; gap: 3px; margin-left: 53px; }
+.bet-area { 
+  flex: 1; height: 40px; border: 1px solid rgba(255,255,255,0.4); 
+  display: flex; align-items: center; justify-content: center; 
+  font-weight: bold; cursor: pointer; position: relative; transition: 0.1s;
+}
+.bet-area.red { background: rgba(192, 57, 43, 0.85); }
+.bet-area.black { background: rgba(17, 17, 17, 0.85); }
+.bet-area:hover { border-color: #f1c40f; background: rgba(255,255,255,0.2); }
 
-/* THE WHEEL */
-#roulette-wheel {
-  width: 200px; height: 200px; border-radius: 50%; border: 10px solid #3d2b1f;
-  background: conic-gradient(#27ae60 0deg 9.7deg, #e74c3c 9.7deg 19.4deg, #2c3e50 19.4deg 29.1deg); /* Simplified */
-  transition: transform 4s cubic-bezier(0.1, 0, 0.1, 1);
+/* --- CONTROLS --- */
+#controls { width: 100%; max-width: 600px; display: flex; flex-direction: column; align-items: center; gap: 15px; }
+#spin-btn {
+  width: 100%; padding: 15px; font-size: 1.2rem; font-weight: bold; border-radius: 10px;
+  background: linear-gradient(to bottom, #2ecc71, #27ae60); color: white; border: none; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+}
+#spin-btn:active:not(:disabled) { transform: scale(0.98); }
+#spin-btn:disabled { filter: grayscale(1); opacity: 0.5; cursor: not-allowed; }
+
+.board-chip-container {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 5;
 }
 
-.cell, .bet-area { position: relative; }
+/* --- TOAST MODAL --- */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.toast-box { background: #1a252f; padding: 25px; border-radius: 12px; border: 2px solid #f1c40f; color: white; width: 90%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); text-align: center; }
+.toast-box h2 { color: #f1c40f; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; }
+.hidden { display: none !important; }
 
-.table-chip {
-    position: absolute;
-    width: 24px; height: 24px;
-    background: #f1c40f; color: black;
-    border-radius: 50%; border: 2px dashed #000;
-    font-size: 0.7rem; display: flex;
-    align-items: center; justify-content: center;
-    pointer-events: none; z-index: 5;
-    font-weight: bold;
+/* --- MOBILE RESPONSIVE --- */
+@media (max-height: 750px) {
+  #roulette-wheel { width: 200px; height: 200px; }
+  #ball-track { width: 160px; height: 160px; }
+  #game-container { padding: 10px; gap: 10px;}
+  .cell { height: 40px; font-size: 1rem; }
+  .bet-area { height: 35px; font-size: 0.8rem;}
 }

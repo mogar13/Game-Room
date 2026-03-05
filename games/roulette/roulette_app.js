@@ -1,48 +1,81 @@
 // ==========================================
-// 1. INITIAL STATE & SHARED BANKROLL
+// 1. INITIALIZE CASINO OS
 // ==========================================
-let money = parseInt(localStorage.getItem("blackjack_money")) || 5000;
-let currentBetAmount = 0;
-let selectedChip = 10;
-let bets = {}; // Stores { cellId: amount }
-let isSpinning = false;
+SystemUI.init({
+    gameName: "ROULETTE",
+    rules: `
+        <ul style="text-align: left; line-height: 1.6; font-size: 0.95rem; margin-bottom: 20px; color: #ddd; padding-left: 20px;">
+            <li><strong>Straight Up (1 Number):</strong> Pays 35 to 1.</li>
+            <li><strong>Dozens (1st/2nd/3rd 12):</strong> Pays 2 to 1.</li>
+            <li><strong>Outside Bets (Red/Black/Even/Odd):</strong> Pays 1 to 1.</li>
+        </ul>
+    `
+});
 
+// ==========================================
+// 2. STATE & WHEEL CONFIG
+// ==========================================
+let currentTotalBet = 0;
+let selectedChipAmount = 10;
+let bets = {}; 
+let isSpinning = false;
+let currentRotation = 0; 
+let ballRotation = 0; // Tracks the ball's independent spin
+
+// IMAGE CALIBRATION (Adjust if the ball lands on the wrong number)
+let calibrationOffset = 0; 
+
+const wheelOrder = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
 const redNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
 
-function updateHUD() {
-    document.getElementById("bankroll-display").innerText = `$${money}`;
-    document.getElementById("current-bet").innerText = `Bet: $${currentBetAmount}`;
+function updateUI() {
+    SystemUI.updateMoneyDisplay();
+    SystemUI.updateBetDisplay(currentTotalBet);
+    document.getElementById("spin-btn").disabled = (currentTotalBet === 0 || isSpinning);
+    SystemUI.enableBetting(!isSpinning);
 }
 
 // ==========================================
-// 2. GRID GENERATION (1-36)
+// 3. BUILD THE TABLE 
 // ==========================================
 function initTable() {
     const grid = document.getElementById("numbers-grid");
-    // Numbers are usually arranged in 3 rows: 
-    // Row 1: 3, 6, 9...
-    // Row 2: 2, 5, 8...
-    // Row 3: 1, 4, 7...
-    // We will inject them in order to match the CSS Grid column flow.
-    for (let i = 1; i <= 36; i++) {
-        const cell = document.createElement("div");
-        const isRed = redNumbers.includes(i);
-        cell.className = `cell ${isRed ? 'red' : 'black'}`;
-        cell.innerText = i;
-        cell.dataset.num = i;
-        cell.addEventListener("click", () => placeBet(i.toString(), cell));
-        grid.appendChild(cell);
+    const order = [3, 2, 1]; 
+    
+    // Explicitly fix the Zero bet bug
+    const zeroCell = document.getElementById("zero-cell");
+    if (zeroCell) zeroCell.addEventListener("click", () => placeBet("0", zeroCell));
+
+    for (let col = 0; col < 12; col++) {
+        for (let r = 0; r < 3; r++) {
+            let num = order[r] + (col * 3);
+            const cell = document.createElement("div");
+            const isRed = redNumbers.includes(num);
+            cell.className = `cell ${isRed ? 'red' : 'black'}`;
+            cell.innerText = num;
+            cell.dataset.num = num;
+            cell.addEventListener("click", () => placeBet(num.toString(), cell));
+            grid.appendChild(cell);
+        }
     }
 }
 
 // ==========================================
-// 3. BETTING LOGIC
+// 4. OS BETTING INTEGRATION
 // ==========================================
-document.querySelectorAll(".chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-        selectedChip = parseInt(chip.dataset.val);
-        // Visual feedback for selected chip could be added here
-    });
+SystemUI.setupBetting("os-betting-rack", {
+    onBet: function(val) {
+        if (isSpinning) return;
+        selectedChipAmount = val; 
+    },
+    onClear: function() {
+        if (isSpinning) return;
+        SystemUI.money += currentTotalBet; 
+        currentTotalBet = 0;
+        bets = {};
+        document.querySelectorAll(".board-chip-container").forEach(c => c.remove());
+        updateUI();
+    }
 });
 
 document.querySelectorAll(".bet-area").forEach(area => {
@@ -51,61 +84,83 @@ document.querySelectorAll(".bet-area").forEach(area => {
 
 function placeBet(id, element) {
     if (isSpinning) return;
-    if (money < selectedChip) return alert("Not enough cash!");
+    if (SystemUI.money < selectedChipAmount) return showToast("Not Enough Cash", "You don't have enough bankroll for that chip.");
 
-    money -= selectedChip;
-    currentBetAmount += selectedChip;
-    bets[id] = (bets[id] || 0) + selectedChip;
+    SystemUI.money -= selectedChipAmount;
+    currentTotalBet += selectedChipAmount;
+    bets[id] = (bets[id] || 0) + selectedChipAmount;
 
-    // Visual: Add a "chip" marker to the cell
-    let chipMarker = element.querySelector(".table-chip");
+    let chipMarker = element.querySelector(".board-chip-container");
     if (!chipMarker) {
         chipMarker = document.createElement("div");
-        chipMarker.className = "table-chip";
+        chipMarker.className = "board-chip-container";
+        chipMarker.id = `stack-${id}`;
         element.appendChild(chipMarker);
     }
-    chipMarker.innerText = bets[id];
-
-    updateHUD();
+    
+    SystemUI.renderTableStacks(bets[id], `stack-${id}`);
+    updateUI();
 }
 
 // ==========================================
-// 4. SPIN & WIN LOGIC
+// 5. TOAST MODAL LOGIC
+// ==========================================
+let modalTimer;
+function showToast(title, message) {
+  document.getElementById("modal-title").innerText = title;
+  document.getElementById("modal-message").innerText = message;
+  const overlay = document.getElementById("toast-modal");
+  overlay.classList.remove("hidden");
+
+  clearTimeout(modalTimer);
+  modalTimer = setTimeout(() => { overlay.classList.add("hidden"); }, 3500);
+}
+
+document.getElementById("toast-modal").addEventListener("click", () => {
+  document.getElementById("toast-modal").classList.add("hidden");
+});
+
+// ==========================================
+// 6. PERFECT SPIN & BALL LOGIC
 // ==========================================
 document.getElementById("spin-btn").addEventListener("click", () => {
-    if (isSpinning || currentBetAmount === 0) return;
+    if (isSpinning || currentTotalBet === 0) return;
     
     isSpinning = true;
+    updateUI();
     const wheel = document.getElementById("roulette-wheel");
+    const ballTrack = document.getElementById("ball-track");
     const winningNumber = Math.floor(Math.random() * 37);
     
-    // Calculate a large random rotation + offset for the winning number
-    // Each pocket is approx 9.7 degrees (360/37)
-    const extraSpins = 5 + Math.random() * 5;
-    const totalRotation = (extraSpins * 360) + (winningNumber * (360 / 37));
+    const pocketIndex = wheelOrder.indexOf(winningNumber);
+    const sliceAngle = 360 / 37;
     
-    wheel.style.transform = `rotate(${totalRotation}deg)`;
+    // Wheel spins clockwise 7 full times + offset to bring the winning pocket to the top
+    const targetAngle = 360 - (pocketIndex * sliceAngle) - calibrationOffset;
+    const spinAmount = (360 * 7) + targetAngle - (currentRotation % 360);
+    currentRotation += spinAmount;
+    wheel.style.transform = `rotate(${currentRotation}deg)`;
 
-    setTimeout(() => {
-        determineWinners(winningNumber);
-    }, 4100);
+    // Ball spins counter-clockwise 10 full times and stops exactly at 0 degrees (the top pointer)
+    ballRotation -= (360 * 10);
+    ballTrack.style.transform = `rotate(${ballRotation}deg)`;
+
+    // Wait exactly 6.1 seconds (CSS transition is 6s)
+    setTimeout(() => { determineWinners(winningNumber); }, 6100);
 });
 
 function determineWinners(winningNum) {
-    isSpinning = false;
     let totalWin = 0;
     const isRed = redNumbers.includes(winningNum);
     const isEven = winningNum !== 0 && winningNum % 2 === 0;
 
-    // Check every bet placed
     for (let id in bets) {
         let amount = bets[id];
         
-        // 1. Straight Up (Single Number)
-        if (id === winningNum.toString()) {
-            totalWin += amount * 36;
-        }
-        // 2. Outside Bets
+        if (id === winningNum.toString()) totalWin += amount * 36;
+        else if (id === "1st12" && winningNum >= 1 && winningNum <= 12) totalWin += amount * 3;
+        else if (id === "2nd12" && winningNum >= 13 && winningNum <= 24) totalWin += amount * 3;
+        else if (id === "3rd12" && winningNum >= 25 && winningNum <= 36) totalWin += amount * 3;
         else if (id === "red" && isRed) totalWin += amount * 2;
         else if (id === "black" && !isRed && winningNum !== 0) totalWin += amount * 2;
         else if (id === "even" && isEven) totalWin += amount * 2;
@@ -113,19 +168,18 @@ function determineWinners(winningNum) {
     }
 
     if (totalWin > 0) {
-        alert(`Number ${winningNum} hits! You won $${totalWin}!`);
-        money += totalWin;
+        showToast(`Number ${winningNum}!`, `You won $${totalWin}!`);
+        SystemUI.money += totalWin;
     } else {
-        alert(`Number ${winningNum} hits. Better luck next time!`);
+        showToast(`Number ${winningNum}`, `Bank takes the board.`);
     }
 
-    // Reset Table
     bets = {};
-    currentBetAmount = 0;
-    document.querySelectorAll(".table-chip").forEach(c => c.remove());
-    localStorage.setItem("blackjack_money", money);
-    updateHUD();
+    currentTotalBet = 0;
+    document.querySelectorAll(".board-chip-container").forEach(c => c.remove());
+    isSpinning = false;
+    updateUI();
 }
 
 initTable();
-updateHUD();
+updateUI();
