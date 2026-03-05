@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>RPS Casino</title>
+  <link rel="stylesheet" href="rps_style.css">
+</head>
+<body>
+
+  <div id="hud">
+    <a href="../../index.html" class="hud-btn" id="home-btn">
+      <img src="../blackjack/home.png" class="hud-icon">
+    </a>
+    <div class="hud-stat" id="bankroll-display">
+      <img src="../blackjack/dollar.png" class="hud-icon"> $5000
+    </div>
+    <div class="hud-stat" id="streak-display">
+      <img src="../blackjack/streak.png" class="hud-icon"> 0
+    </div>
+    <button class="hud-btn" id="settings-btn">
+      <img src="../blackjack/settings.png" class="hud-icon">
+    </button>
+  </div>
+
+  <div id="game-container">
+    <div id="arena">
+      <div class="hand-container">
+        <span class="label">CPU</span>
+        <div class="hand-box" id="cpu-hand">
+          <img src="rock.png" id="cpu-img">
+        </div>
+      </div>
+
+      <div id="result-overlay" class="hidden">
+        <h1 id="status-text">WINNER!</h1>
+      </div>
+
+      <div class="hand-container">
+        <div class="hand-box" id="player-hand">
+          <img src="rock.png" id="player-img">
+        </div>
+        <span class="label">YOU</span>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div id="betting-zone">
+        <div class="bet-bubble">Bet: $<span id="current-bet-val">0</span></div>
+        <div class="chip-rack">
+          <button class="chip chip-10" data-val="10">10</button>
+          <button class="chip chip-50" data-val="50">50</button>
+          <button class="chip chip-100" data-val="100">100</button>
+          <button id="clear-bet">CLEAR</button>
+        </div>
+      </div>
+
+      <div id="action-zone">
+        <button class="choice-btn" id="rock" disabled><img src="rock.png"></button>
+        <button class="choice-btn" id="paper" disabled><img src="paper.png"></button>
+        <button class="choice-btn" id="scissors" disabled><img src="scissors.png"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="rps_app.js"></script>
+</body>
+</html>
