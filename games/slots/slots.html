@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pro Video Slots</title>
+  <link rel="stylesheet" href="slots_style.css">
+</head>
+<body>
+
+  <div id="hud">
+    <a href="../../index.html" class="hud-btn" id="home-btn">
+      <img src="../blackjack/home.png" class="hud-icon">
+    </a>
+    <div class="hud-stat" id="bankroll-display">
+      <img src="../blackjack/dollar.png" class="hud-icon"> $5000
+    </div>
+    <button class="hud-btn" id="settings-btn">
+      <img src="../blackjack/settings.png" class="hud-icon">
+    </button>
+  </div>
+
+  <div id="game-container">
+    
+    <div id="video-slot-machine">
+
+      <div class="machine-header">
+        <div class="machine-title">PRO SLOTS</div>
+        <div class="header-controls">
+          <button id="btn-mode">MODE: 5-REEL</button>
+          <button id="btn-paytable">ⓘ INFO</button>
+        </div>
+      </div>
+      
+      <div class="machine-core">
+        <div class="line-indicators left-lines">
+          <button class="line-btn active" data-line="2">2</button>
+          <button class="line-btn active" data-line="1">1</button>
+          <button class="line-btn active" data-line="3">3</button>
+        </div>
+
+        <div class="reels-board">
+          <div class="reel-col"><div class="reel-strip" id="strip-1"></div></div>
+          <div class="reel-col"><div class="reel-strip" id="strip-2"></div></div>
+          <div class="reel-col"><div class="reel-strip" id="strip-3"></div></div>
+          <div class="reel-col reel-ext"><div class="reel-strip" id="strip-4"></div></div>
+          <div class="reel-col reel-ext"><div class="reel-strip" id="strip-5"></div></div>
+        </div>
+
+        <div class="line-indicators right-lines">
+          <button class="line-btn active" data-line="4">4</button>
+          <button class="line-btn active" data-line="5">5</button>
+        </div>
+      </div>
+
+      <div class="control-deck">
+        <div class="deck-panel">
+          <span class="label">BASE BET</span>
+          <span class="value" id="deck-base-bet">0</span>
+        </div>
+        <div class="deck-panel">
+          <span class="label">LINES</span>
+          <span class="value" id="deck-lines">5</span>
+        </div>
+        <div class="deck-panel center-panel">
+           <button id="btn-spin" disabled>SPIN</button>
+        </div>
+        <div class="deck-panel">
+          <span class="label">TOTAL BET</span>
+          <span class="value" id="deck-total-bet">0</span>
+        </div>
+        <div class="deck-panel">
+          <span class="label">WIN</span>
+          <span class="value win-text" id="deck-win">0</span>
+        </div>
+      </div>
+
+      <div id="paytable-modal" class="hidden">
+        <div class="paytable-box">
+          <h2>PAYOUT RULES</h2>
+          <p style="color:#a29bfe; font-size:0.8rem; margin-bottom:15px;">Wins evaluate left-to-right on active paylines.</p>
+          <div class="pay-grid">
+            <div class="pay-row">
+              <div class="pay-symbols"><img src="lucky-seven.png"></div>
+              <div class="pay-multi">5x = 100x | 4x = 25x | 3x = 5x</div>
+            </div>
+            <div class="pay-row">
+              <div class="pay-symbols"><img src="diamond.png"> <img src="gold.png"></div>
+              <div class="pay-multi">5x = 50x | 4x = 10x | 3x = 2x</div>
+            </div>
+            <div class="pay-row">
+              <div class="pay-symbols"><span>ANY FRUIT / BELL</span></div>
+              <div class="pay-multi">5x = 10x | 4x = 3x | 3x = 1x</div>
+            </div>
+          </div>
+          <button id="close-paytable">CLOSE</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div id="betting-zone">
+      <div class="chip-rack">
+        <button class="chip chip-10" data-val="10">10</button>
+        <button class="chip chip-50" data-val="50">50</button>
+        <button class="chip chip-100" data-val="100">100</button>
+        <button id="clear-bet">CLEAR</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="slots_app.js"></script>
+</body>
+</html>
