@@ -4,27 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>RPS Casino</title>
+  <link rel="stylesheet" href="../../system/system_ui.css"> 
   <link rel="stylesheet" href="rps_style.css">
 </head>
 <body>
 
-  <div id="hud">
-    <a href="../../index.html" class="hud-btn" id="home-btn">
-      <img src="../blackjack/home.png" class="hud-icon">
-    </a>
-    <div class="hud-stat" id="bankroll-display">
-      <img src="../blackjack/dollar.png" class="hud-icon"> $5000
-    </div>
-    <div class="hud-stat" id="streak-display">
-      <img src="../blackjack/streak.png" class="hud-icon"> 0
-    </div>
-    <button class="hud-btn" id="settings-btn">
-      <img src="../blackjack/settings.png" class="hud-icon">
-    </button>
-  </div>
-
   <div id="game-container">
+    
     <div id="arena">
+      <div id="streak-counter" style="position:absolute; top:-10px; left:0px; background:rgba(0,0,0,0.6); padding:5px 10px; border-radius:10px; color:#f1c40f; font-weight:bold; z-index:5; border: 1px solid #f1c40f; font-size: 0.9rem;">
+        🔥 Streak: <span id="streak-val">0</span>
+      </div>
+
       <div class="hand-container">
         <span class="label">CPU</span>
         <div class="hand-box" id="cpu-hand">
@@ -45,15 +36,7 @@
     </div>
 
     <div id="controls">
-      <div id="betting-zone">
-        <div class="bet-bubble">Bet: $<span id="current-bet-val">0</span></div>
-        <div class="chip-rack">
-          <button class="chip chip-10" data-val="10">10</button>
-          <button class="chip chip-50" data-val="50">50</button>
-          <button class="chip chip-100" data-val="100">100</button>
-          <button id="clear-bet">CLEAR</button>
-        </div>
-      </div>
+      <div id="os-betting-rack" style="width: 100%; max-width: 400px; margin-bottom: 20px;"></div>
 
       <div id="action-zone">
         <button class="choice-btn" id="rock" disabled><img src="rock.png"></button>
@@ -63,6 +46,7 @@
     </div>
   </div>
 
+  <script src="../../system/system_ui.js"></script> 
   <script src="rps_app.js"></script>
 </body>
 </html>

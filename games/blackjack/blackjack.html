@@ -9,27 +9,22 @@
   <meta name="theme-color" content="#111111">
   <meta name="color-scheme" content="dark">
   <title>Blackjack Pro</title>
+  <link rel="stylesheet" href="../../system/system_ui.css"> 
   <link rel="stylesheet" href="bj_style.css">
 </head>
 <body>
 
-  <div id="hud">
-    <a href="../../index.html" class="hud-btn" id="home-btn">
-      <img src="home.png" class="hud-icon" style="margin: 0;">
-    </a>
-    <div class="hud-stat" id="bankroll-display">
-      <img src="dollar.png" class="hud-icon"> $5000
-    </div>
-    <div class="hud-stat" id="streak-display">
-      <img src="streak.png" class="hud-icon"> 0
-    </div>
-    <button class="hud-btn" id="settings-btn">
-      <img src="settings.png" class="hud-icon" style="margin: 0;">
-    </button>
-  </div>
-
   <div id="table">
     
+    <div id="table-stats-container" style="position:absolute; top:15px; left:15px; display:flex; flex-direction:column; gap:10px; z-index:5;">
+      <div id="streak-counter" style="background:rgba(0,0,0,0.6); padding:5px 10px; border-radius:10px; color:#f1c40f; font-weight:bold; border: 1px solid #f1c40f; font-size: 0.9rem;">
+        🔥 Streak: <span id="streak-val">0</span>
+      </div>
+      <div id="table-pot-display" class="hidden" style="background:rgba(0,0,0,0.6); padding:5px 10px; border-radius:10px; color:#3498db; font-weight:bold; border: 1px solid #3498db; font-size: 0.9rem; text-align: center;">
+        POT: $0
+      </div>
+    </div>
+
     <div class="dealer-tray">
       <div class="chip-rows"></div>
     </div>
@@ -39,8 +34,8 @@
     </div>
 
     <div class="card-area" id="dealer-area">
-      <div id="dealer-cards" class="card-container"></div>
       <div id="dealer-score" class="score-bubble hidden">0</div>
+      <div id="dealer-cards" class="card-container"></div>
       <div id="dealer-bet-chips"></div>
     </div>
 
@@ -51,9 +46,8 @@
     </div>
 
     <div class="boxes-arc">
-      <div class="box-slot slot-4 main-slot">
-        <div id="table-pot-display" class="pot-display hidden">$0</div>
-        <div id="table-bet-chips"></div>
+      <div class="box-slot slot-4">
+        <div id="table-bet-chips"></div> 
       </div>
     </div>
 
@@ -64,22 +58,8 @@
   </div>
 
   <div id="action-zone">
-    
     <div id="betting-controls">
-      <div class="bet-info">
-        <span id="current-bet-text">Bet: $0</span>
-        <button id="clear-bet-btn">Clear</button>
-      </div>
-      
-      <div class="chip-rack">
-        <button class="chip chip-1" data-val="1">1</button>
-        <button class="chip chip-5" data-val="5">5</button>
-        <button class="chip chip-25" data-val="25">25</button>
-        <button class="chip chip-100" data-val="100">100</button>
-        <button class="chip chip-500" data-val="500">500</button>
-        <button class="chip chip-1k" data-val="1000">1K</button>
-      </div>
-      
+      <div id="os-betting-rack"></div>
       <button id="deal-btn" class="action-btn primary-btn" disabled>DEAL</button>
     </div>
 
@@ -94,45 +74,6 @@
     </div>
   </div>
 
-  <div id="settings-modal" class="hidden modal-overlay">
-    <div class="modal-box">
-      <h2>Settings</h2>
-      
-      <div class="settings-group">
-        <label>Player Name:</label>
-        <input type="text" id="player-name-input" placeholder="Enter name..." autocomplete="off">
-      </div>
-      
-      <div class="settings-group">
-        <label>Table Difficulty:</label>
-        <select id="difficulty">
-          <option value="15">Easy ($2 Min)</option>
-          <option value="17" selected>Normal ($5 Min)</option>
-          <option value="19">Hard ($10 Min)</option>
-        </select>
-      </div>
-      
-      <div class="settings-actions">
-        <button id="mute-btn"><img src="sound.png" class="btn-icon"> Mute</button>
-        <button id="rules-btn"><img src="scroll.png" class="btn-icon"> Rules</button>
-        <button id="reset-btn" class="danger">Reset Data</button>
-        <button id="close-settings-btn" class="primary-btn">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="rules-modal" class="hidden modal-overlay">
-    <div class="modal-box">
-      <h2>Game Rules</h2>
-      <ul style="text-align: left; line-height: 1.6; font-size: 0.95rem; margin-bottom: 20px; color: white;">
-        <li><strong>Payouts:</strong> Standard wins pay 1:1. Natural Blackjack pays 3:2.</li>
-        <li><strong>Double Down:</strong> Double your initial bet, receive ONE card, and automatically stand.</li>
-        <li><strong>Insurance:</strong> If Dealer shows an Ace, insure for half your bet. Pays 2:1 if Dealer has Blackjack.</li>
-      </ul>
-      <button id="close-rules-btn" class="primary-btn">Got it</button>
-    </div>
-  </div>
-
   <div id="toast-modal" class="hidden modal-overlay">
     <div id="modal-box" class="toast-box">
       <h2 id="modal-title">Result</h2>
@@ -140,6 +81,7 @@
     </div>
   </div>
 
+  <script src="../../system/system_ui.js"></script> 
   <script src="bj_app.js"></script>
 </body>
 </html>

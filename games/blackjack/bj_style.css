@@ -1,478 +1,104 @@
-/* =========================================
-   1. BASE APP SETTINGS (Locked Screen)
-   ========================================= */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  user-select: none; 
-}
+* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
 
 body {
-  background-color: #080a0b;
-  color: white;
+  background-color: #080a0b; color: white;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  height: 100dvh; 
-  overflow: hidden; 
-  display: flex;
-  flex-direction: column;
+  height: 100dvh; overflow: hidden; display: flex; flex-direction: column;
   touch-action: manipulation; 
 }
 
-/* =========================================
-   2. THE HUD (Top Bar)
-   ========================================= */
-#hud {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #111111; 
-  padding: 10px 15px;
-  border-bottom: 2px solid #2c3e50;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.8);
-  z-index: 10;
-}
-
-.hud-stat {
-  font-size: 1.1rem;
-  font-weight: bold;
-  color: white;
-  text-shadow: 1px 1px 2px black;
-  display: flex;
-  align-items: center;
-}
-
-.hud-btn {
-  background: #fff;
-  border: 2px solid #2c3e50;
-  border-radius: 8px;
-  padding: 5px 10px;
-  font-size: 1.2rem;
-  cursor: pointer;
-  text-decoration: none;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* =========================================
-   3. THE TABLE (Literal Half-Circle)
-   ========================================= */
 #table {
-  flex-grow: 1; 
-  position: relative;
+  flex-grow: 1; position: relative;
   background: radial-gradient(circle at center, #0a4f2c 0%, #041f10 100%);
   border-radius: 0 0 100% 100%; 
-  
-  border-bottom: 20px solid #4a2d18; 
-  border-left: 20px solid #4a2d18;
-  border-right: 20px solid #4a2d18;
-  
+  border-bottom: 20px solid #4a2d18; border-left: 20px solid #4a2d18; border-right: 20px solid #4a2d18;
   box-shadow: inset 0 -20px 30px rgba(0,0,0,0.8), 0 10px 15px rgba(0,0,0,0.9);
-  margin-bottom: 5px; 
-  overflow: hidden; 
+  margin-bottom: 5px; overflow: hidden; 
 }
 
-/* =========================================
-   DEALER PROPS (Shoe and Tray)
-   ========================================= */
 .dealer-tray {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 200px;
-  height: 30px;
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 200px; height: 30px;
   background: linear-gradient(to bottom, #555, #111);
-  border-bottom-left-radius: 10px;
-  border-bottom-right-radius: 10px;
+  border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;
   box-shadow: inset 0 5px 15px rgba(0,0,0,0.9), 0 5px 10px rgba(0,0,0,0.6);
-  border: 3px solid #333;
-  border-top: none;
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  padding-bottom: 3px;
+  border: 3px solid #333; border-top: none; display: flex; justify-content: center; align-items: flex-end; padding-bottom: 3px;
 }
-
 .chip-rows {
-  width: 180px;
-  height: 12px;
-  background: repeating-linear-gradient(
-    90deg,
-    #e74c3c, #e74c3c 3px, #111 3px, #111 5px, 
-    #2ecc71 5px, #2ecc71 8px, #111 8px, #111 10px, 
-    #1abc9c 10px, #1abc9c 13px, #111 13px, #111 15px, 
-    #f39c12 15px, #f39c12 18px, #111 18px, #111 20px 
-  );
-  border-radius: 2px;
-  box-shadow: inset 0 -2px 5px rgba(0,0,0,0.8);
+  width: 180px; height: 12px;
+  background: repeating-linear-gradient(90deg, #e74c3c, #e74c3c 3px, #111 3px, #111 5px, #2ecc71 5px, #2ecc71 8px, #111 8px, #111 10px, #1abc9c 10px, #1abc9c 13px, #111 13px, #111 15px, #f39c12 15px, #f39c12 18px, #111 18px, #111 20px );
+  border-radius: 2px; box-shadow: inset 0 -2px 5px rgba(0,0,0,0.8);
 }
-
 .dealer-shoe {
-  position: absolute;
-  top: 15px;
-  right: 5%;
-  width: 55px;
-  height: 85px;
-  background: linear-gradient(135deg, #111, #000);
-  border-radius: 5px;
-  box-shadow: -6px 6px 12px rgba(0,0,0,0.8);
-  border: 2px solid #222;
-  overflow: hidden;
+  position: absolute; top: 15px; right: 5%; width: 55px; height: 85px; background: linear-gradient(135deg, #111, #000); border-radius: 5px;
+  box-shadow: -6px 6px 12px rgba(0,0,0,0.8); border: 2px solid #222; overflow: hidden;
 }
-
-.shoe-glass {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 30px;
-  background: rgba(255,255,255,0.1);
-  border-bottom: 2px solid #333;
-}
-
+.shoe-glass { position: absolute; top: 0; left: 0; right: 0; bottom: 30px; background: rgba(255,255,255,0.1); border-bottom: 2px solid #333; }
 .shoe-opening {
-  position: absolute;
-  bottom: 8px;
-  left: 6px;
-  width: 40px;
-  height: 25px;
-  background-color: #0f1e59;
-  background-image: 
-    linear-gradient(45deg, white 25%, transparent 25%, transparent 75%, white 75%, white),
-    linear-gradient(45deg, white 25%, transparent 25%, transparent 75%, white 75%, white);
-  background-size: 6px 6px;
-  background-position: 0 0, 3px 3px;
-  border-radius: 2px;
-  box-shadow: inset 0 5px 10px rgba(0,0,0,0.9);
-  transform: skewX(-5deg);
+  position: absolute; bottom: 8px; left: 6px; width: 40px; height: 25px; background-color: #0f1e59;
+  background-image: linear-gradient(45deg, white 25%, transparent 25%, transparent 75%, white 75%, white), linear-gradient(45deg, white 25%, transparent 25%, transparent 75%, white 75%, white);
+  background-size: 6px 6px; background-position: 0 0, 3px 3px; border-radius: 2px; box-shadow: inset 0 5px 10px rgba(0,0,0,0.9); transform: skewX(-5deg);
 }
 
-/* =========================================
-   TABLE ZONES
-   ========================================= */
-#dealer-area { 
-  position: absolute;
-  top: 40px; 
-  width: 100%;
-}
+#dealer-area { position: absolute; top: 60px; width: 100%; }
+#dealer-bet-chips { margin-top: 30px; display: flex; flex-direction: row; justify-content: center; gap: 12px; height: 30px; }
 
-#dealer-bet-chips {
-  margin-top: 15px; 
-  display: flex; 
-  flex-direction: row; 
-  justify-content: center;
-  gap: 12px; 
-  height: 30px;
-}
-
+/* FIXED: Moved to the exact center of the felt */
 .table-text {
-  position: absolute;
-  top: 38%; 
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 100%;
-  text-align: center;
-  opacity: 0.35; 
-  color: #fff; 
-  text-transform: uppercase;
-  pointer-events: none; 
-  z-index: 0;
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 100%; text-align: center; opacity: 0.35; color: #fff; text-transform: uppercase; pointer-events: none; z-index: 0;
 }
-
 .table-text h1 { font-size: 1.4rem; letter-spacing: 2px; border-bottom: 2px solid #fff; padding-bottom: 5px; margin-bottom: 5px; display: inline-block;}
 .table-text h2 { font-size: 0.9rem; margin-bottom: 5px; }
 .table-text h3 { font-size: 1.1rem; }
 
-/* =========================================
-   THE SINGLE PLAYER SLOT
-   ========================================= */
-.boxes-arc {
-  position: absolute;
-  top: 0; 
-  left: 0;
-  width: 100%;
-  height: 100%; 
-  pointer-events: none; 
-  z-index: 1;
-}
+.boxes-arc { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.box-slot { width: 66px; height: 96px; position: absolute; pointer-events: auto; }
 
-.box-slot {
-  width: 66px; 
-  height: 96px; 
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-radius: 6px;
-  position: absolute; 
-  pointer-events: auto;
-}
+/* FIXED: Pushed the chips higher up the table away from the cards */
+.slot-4 { left: 50%; bottom: 20%; transform: translateX(-50%); opacity: 1; }
 
-.box-slot::before {
-  content: '';
-  position: absolute;
-  top: -55px; 
-  left: 50%;
-  transform: translateX(-50%);
-  width: 46px;
-  height: 46px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  pointer-events: none;
-}
+#table-bet-chips { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 46px; height: 46px; display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 10px; }
 
-.slot-4 { left: 50%; bottom: 3%; transform: translateX(-50%) rotate(0deg);  border-color: #f1c40f; border-width: 3px; opacity: 1; }
-.slot-4::before { border-color: rgba(241, 196, 15, 0.8); border-width: 3px; }
+/* FIXED: Pulled the player cards up slightly from the wood rail */
+#player-area { position: absolute; bottom: 8%; width: 100%; z-index: 2; }
+.card-area { display: flex; flex-direction: column; align-items: center; position: relative;}
+.card-container { display: flex; justify-content: center; }
 
-/* =========================================
-   TABLE CHIPS
-   ========================================= */
-#table-bet-chips {
-  position: absolute;
-  top: -55px; 
-  left: 50%;
-  transform: translateX(-50%);
-  width: 46px;
-  height: 46px;
-  display: flex;
-  flex-direction: row; 
-  justify-content: center;
-  align-items: center; 
-  gap: 12px; 
-}
-
-.chip-stack-col {
-  position: relative;
-  width: 25px;
-  height: 25px; 
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.table-chip {
-  width: 25px;
-  height: 25px;
-  border-radius: 50%;
-  border: 2px dashed rgba(255,255,255,0.8);
-  font-size: 0.5rem;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: absolute; 
-  box-shadow: 0 3px 5px rgba(0,0,0,0.8), inset 0 0 0 2px rgba(0,0,0,0.4);
-  animation: dropIn 0.2s ease-out;
-}
-
-@keyframes dropIn {
-  from { transform: translateY(-20px) scale(1.2); opacity: 0; }
-  to { transform: translateY(0) scale(1); opacity: 1; }
-}
-
-.pot-display {
-  position: absolute;
-  top: -85px; 
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0,0,0,0.9);
-  color: white;
-  padding: 4px 12px;
-  border-radius: 15px;
-  font-weight: bold;
-  font-size: 0.95rem;
-  border: 2px solid #3498db;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.8);
-  white-space: nowrap;
-  z-index: 10;
-}
-
-/* =========================================
-   CARDS
-   ========================================= */
-#player-area { 
-  position: absolute;
-  bottom: 3%; 
-  width: 100%;
-  z-index: 2; 
-}
-
-.card-area {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.card-container {
-  display: flex;
-  justify-content: center;
-}
-
+/* FIXED: Anchored mathematically to the top-right of the center card */
 .score-bubble {
-  position: absolute;
-  top: -15px;
-  right: 20%; 
-  background: rgba(0, 0, 0, 0.9);
-  color: white;
-  width: 35px;
-  height: 35px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  font-size: 1.1rem;
-  border: 2px solid #f1c40f; 
-  box-shadow: 0 4px 8px rgba(0,0,0,0.6);
-  z-index: 5;
+  position: absolute; bottom: -45px; right: calc(50% - 65px);
+  background: rgba(0, 0, 0, 0.9); color: white;
+  width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-weight: bold; font-size: 1.1rem; border: 2px solid #f1c40f; box-shadow: 0 4px 8px rgba(0,0,0,0.6); z-index: 5;
 }
 
 .hidden { display: none !important; }
 
 .card {
-  position: relative; 
-  width: 70px;
-  height: 100px;
-  background-color: white;
-  color: black;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  font-weight: bold;
-  box-shadow: -3px 3px 8px rgba(0,0,0,0.6);
-  border: 1px solid #ccc;
-  margin-left: -35px; 
+  position: relative; width: 70px; height: 100px; background-color: white; color: black; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold;
+  box-shadow: -3px 3px 8px rgba(0,0,0,0.6); border: 1px solid #ccc; margin-left: -35px; 
 }
-
 .card:first-child { margin-left: 0; } 
-
 .card.red { color: #d40000; }
-.card.hidden-card {
-  background-color: transparent;
-  background-image: url('cardBack_red2.png'); /* Use your chosen number here */
-  background-size: 100% 100%;
-  background-position: center;
-  color: transparent;
-  border: none; /* The PNG already has a nice border */
-}
-
+.card.hidden-card { background-color: transparent; background-image: url('cardBack_red2.png'); background-size: 100% 100%; background-position: center; color: transparent; border: none; }
 #dealer-cards .card:first-child { z-index: 2; }
 #dealer-cards .card:nth-child(2) { z-index: 1; }
 
-/* =========================================
-   4. ACTION ZONE (Bottom Wood Rack)
-   ========================================= */
 #action-zone {
-  background: linear-gradient(to bottom, #2b1d12, #1a110a); 
-  padding: 15px;
-  padding-bottom: calc(15px + env(safe-area-inset-bottom));
-  border-top: 4px solid #000;
-  box-shadow: 0 -4px 10px rgba(0,0,0,0.8);
-  min-height: 140px; 
+  background: linear-gradient(to bottom, #2b1d12, #1a110a); padding: 15px;
+  padding-bottom: calc(15px + env(safe-area-inset-bottom)); border-top: 4px solid #000; box-shadow: 0 -4px 10px rgba(0,0,0,0.8); min-height: 140px; 
 }
 
-#betting-controls {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
+#betting-controls { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+#deal-btn { width: 100%; max-width: 300px; padding: 15px; font-size: 1.2rem; border-radius: 30px; margin-top: 5px; }
 
-.bet-info {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  background: rgba(0,0,0,0.5);
-  padding: 5px 15px;
-  border-radius: 20px;
-  color: #f1c40f;
-  font-weight: bold;
-  font-size: 1.2rem;
-}
-
-#clear-bet-btn {
-  background: transparent;
-  color: #e74c3c;
-  border: 1px solid #e74c3c;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.chip-rack {
-  display: flex;
-  justify-content: center;
-  gap: 6px; 
-  width: 100%;
-}
-
-.chip {
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  font-weight: bold;
-  font-size: 0.9rem;
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 4px dashed rgba(255,255,255,0.8);
-  box-shadow: 0 4px 6px rgba(0,0,0,0.6), inset 0 0 0 4px rgba(0,0,0,0.4);
-  transition: transform 0.1s;
-}
-
-.chip:active { transform: scale(0.9); }
-
-.chip-1 { background-color: #ecf0f1; color: black; border-color: #bdc3c7; } 
-.chip-5 { background-color: #e74c3c; }   
-.chip-25 { background-color: #2ecc71; }  
-.chip-100 { background-color: #1abc9c; color: black; border-color: #000; } 
-.chip-500 { background-color: #8e44ad; } 
-.chip-1k { background-color: #f39c12; }  
-
-#deal-btn {
-  width: 100%;
-  max-width: 300px;
-  padding: 15px;
-  font-size: 1.2rem;
-  border-radius: 30px;
-  margin-top: 5px;
-}
-
-/* --- STATE B: PLAYING --- */
-.button-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr; 
-  gap: 10px;
-  width: 100%;
-  max-width: 500px;
-  margin: 0 auto;
-}
-
+.button-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 500px; margin: 0 auto; }
 .action-btn {
-  border: none;
-  padding: 15px;
-  font-size: 1.1rem;
-  font-weight: bold;
-  border-radius: 8px;
-  color: white;
-  cursor: pointer;
-  box-shadow: 0 4px 0 rgba(0,0,0,0.5);
-  transition: transform 0.1s, box-shadow 0.1s;
-  text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+  border: none; padding: 15px; font-size: 1.1rem; font-weight: bold; border-radius: 8px; color: white; cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.5); transition: transform 0.1s, box-shadow 0.1s; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
 }
-
-.action-btn:active:not(:disabled) {
-  transform: translateY(4px);
-  box-shadow: 0 0 0 rgba(0,0,0,0.5);
-}
-
-.action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
+.action-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 0 0 rgba(0,0,0,0.5); }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
 .hit-btn { background: linear-gradient(to bottom, #2ecc71, #27ae60); }
 .stand-btn { background: linear-gradient(to bottom, #e74c3c, #c0392b); }
@@ -481,41 +107,6 @@ body {
 .primary-btn { background: linear-gradient(to bottom, #3498db, #2980b9); }
 .insurance-btn { width: 100%; margin-top: 10px; background: linear-gradient(to bottom, #9b59b6, #8e44ad); }
 
-/* =========================================
-   5. MODALS & PNG ICONS
-   ========================================= */
-.modal-overlay {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 2000;
-}
-
-.modal-box {
-  background: #1a252f;
-  padding: 25px;
-  border-radius: 12px;
-  border: 2px solid #f1c40f;
-  color: white;
-  width: 90%;
-  max-width: 400px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-  text-align: center;
-}
-
-.modal-box h2 { color: #f1c40f; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; }
-
-.settings-group { margin-bottom: 15px; text-align: left; }
-.settings-group label { display: block; margin-bottom: 5px; color: #bdc3c7; }
-.settings-group input, .settings-group select {
-  width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #34495e; background: #2c3e50; color: white;
-}
-
-.settings-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
-.settings-actions button { padding: 10px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; color: white;}
-.settings-actions button { background: #34495e; }
-.settings-actions button.danger { background: #e74c3c; }
-.settings-actions button.primary-btn { grid-column: span 2; }
-
-.hud-icon { width: 22px; height: 22px; vertical-align: middle; margin-right: 5px; }
-.btn-icon { width: 18px; height: 18px; vertical-align: middle; margin-right: 5px; }
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.toast-box { background: #1a252f; padding: 25px; border-radius: 12px; border: 2px solid #f1c40f; color: white; width: 90%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); text-align: center; }
+.toast-box h2 { color: #f1c40f; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; }

@@ -1,11 +1,49 @@
-// 1. Initial State
+// ==========================================
+// 1. INITIALIZE CASINO OS
+// ==========================================
+let isSinglePlayer = localStorage.getItem("ttt_mode") !== "local"; // Defaults to AI
+
+SystemUI.init({
+    gameName: "TIC-TAC-TOE",
+    rules: "Take turns placing X's and O's. Match 3 symbols in a horizontal, vertical, or diagonal row to win.<br><br>• You can challenge a friend locally, or test your skills against the AI.",
+    customToggles: `
+        <div class="settings-group" style="text-align:left;">
+            <label style="display:block; margin-bottom:5px; color:#bdc3c7;">Game Mode:</label>
+            <select id="sys-ttt-mode" style="width:100%; padding:10px; border-radius:5px; border:1px solid #34495e; background:#2c3e50; color:white;">
+                <option value="ai">🤖 Play vs AI</option>
+                <option value="local">👥 Local Multiplayer</option>
+            </select>
+        </div>
+    `
+});
+
+// Sync OS Mode Toggle
+document.getElementById("sys-ttt-mode").value = isSinglePlayer ? "ai" : "local";
+document.getElementById("sys-ttt-mode").addEventListener("change", (e) => {
+    isSinglePlayer = (e.target.value === "ai");
+    localStorage.setItem("ttt_mode", e.target.value);
+    restartGame();
+    // Auto-close modal when they switch modes so they can play instantly
+    document.getElementById("sys-modal").classList.add("sys-hidden"); 
+});
+
+// Hook the OS Reset Button to clear the board
+document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
+    if(confirm("Wipe the board and restart the game?")) {
+        restartGame();
+        document.getElementById("sys-modal").classList.add("sys-hidden");
+    }
+});
+
+
+// ==========================================
+// 2. CORE ENGINE STATE
+// ==========================================
 let board = ["", "", "", "", "", "", "", "", ""];
 let currentPlayer = "X";
 let gameActive = true;
-let isSinglePlayer = false; // This is now set by the Menu
 
 const statusDisplay = document.getElementById("status-display");
-const mainMenu = document.getElementById("main-menu");
 
 const winningConditions = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -13,28 +51,13 @@ const winningConditions = [
     [0, 4, 8], [2, 4, 6]
 ];
 
-// --- NEW: Menu Logic ---
-document.getElementById("btn-vs-ai").addEventListener("click", () => {
-    isSinglePlayer = true;
-    startGame();
-});
+// Kick off the initial state text
+statusDisplay.innerText = `It's ${currentPlayer}'s turn`;
 
-document.getElementById("btn-multi").addEventListener("click", () => {
-    isSinglePlayer = false;
-    startGame();
-});
 
-document.getElementById("change-mode-btn").addEventListener("click", () => {
-    mainMenu.classList.remove("hidden");
-});
-
-function startGame() {
-    mainMenu.classList.add("hidden");
-    restartGame(); // Clears the board and sets the correct starting text
-}
-// -----------------------
-
-// 2. Core Engine Functions
+// ==========================================
+// 3. GAMEPLAY LOGIC
+// ==========================================
 function handleCellClick(clickedCellEvent) {
     const clickedCell = clickedCellEvent.target;
     const clickedCellIndex = parseInt(clickedCell.getAttribute('data-index'));
@@ -57,7 +80,7 @@ function updateCell(cell, index) {
     cell.classList.add(currentPlayer.toLowerCase()); 
 }
 
-// 3. The Smart Bot Logic
+// 4. The Smart Bot Logic
 function computerMove() {
     if (!gameActive) return;
 
@@ -91,7 +114,7 @@ function findBestMove(playerSymbol) {
     return -1; 
 }
 
-// 4. Checking Results & Restarts
+// 5. Checking Results & Restarts
 function checkResult() {
     let roundWon = false;
     for (let i = 0; i < winningConditions.length; i++) {
@@ -139,6 +162,6 @@ function restartGame() {
     });
 }
 
-// Listeners for the board and restart
+// Listeners
 document.querySelectorAll('.cell').forEach(cell => cell.addEventListener('click', handleCellClick));
 document.getElementById("restart-btn").addEventListener("click", restartGame);

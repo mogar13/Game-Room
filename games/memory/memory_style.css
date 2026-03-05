@@ -6,12 +6,14 @@ body {
   height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
 }
 
-#hud { display: flex; justify-content: space-between; padding: 15px; background: #111; border-bottom: 2px solid #2c3e50; z-index: 10; }
-.hud-icon { width: 22px; height: 22px; }
-.hud-stat { display: flex; align-items: center; gap: 8px; font-weight: bold; }
-.hud-btn { background: white; border-radius: 8px; padding: 5px; border: none; cursor: pointer; }
-
 #game-container { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px; }
+
+/* New Stats Badge */
+#stats-badge {
+  background: rgba(0, 0, 0, 0.6); padding: 5px 15px; border-radius: 10px;
+  color: #f1c40f; font-weight: bold; border: 1px solid #f1c40f;
+  margin-bottom: 15px; font-size: 1.1rem; letter-spacing: 1px;
+}
 
 #memory-grid {
   display: grid; gap: 8px; width: 100%; max-width: 500px; perspective: 1000px;
@@ -34,11 +36,8 @@ body {
 /* REPLICATED: Blackjack hidden-card back pattern */
 .card-front{
   background-color: transparent;
-  background-image: url('cardBack_blue2.png'); /* Use your chosen number here */
-  background-size: 100% 100%;
-  background-position: center;
-  color: transparent;
-  border: none; /* The PNG already has a nice border */
+  background-image: url('cardBack_blue2.png'); 
+  background-size: 100% 100%; background-position: center; color: transparent; border: none; 
 }
 
 .card-back { background: white; color: black; transform: rotateY(180deg); border: 2px solid #ccc; }
@@ -50,13 +49,6 @@ body {
   margin-top: 20px; padding: 12px 30px; border-radius: 25px;
   background: linear-gradient(to bottom, #2ecc71, #27ae60);
   color: white; border: none; font-weight: bold; cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5); font-size: 1.1rem;
 }
-
-/* Modal Overlay */
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal-box { background: #1a252f; padding: 25px; border-radius: 12px; border: 2px solid #f1c40f; text-align: center; width: 85%; max-width: 350px; }
-.settings-group { margin: 20px 0; text-align: left; }
-.settings-group select { width: 100%; padding: 10px; border-radius: 5px; background: #2c3e50; color: white; border: 1px solid #34495e; }
-.primary-btn { width: 100%; padding: 10px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-.hidden { display: none; }
+#start-game-btn:active { transform: scale(0.95); }

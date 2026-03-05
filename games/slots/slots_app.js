@@ -1,7 +1,26 @@
-let money = parseInt(localStorage.getItem("blackjack_money")) || 5000;
+// --- 1. BOOT UP THE CASINO OS ---
+SystemUI.init({
+    gameName: "VIDEO SLOTS",
+    rules: `
+        <strong style="color:#f1c40f;">Wins evaluate left-to-right on active paylines.</strong><br><br>
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+            <img src="lucky-seven.png" style="width:25px;"> 
+            <span><strong>JACKPOT:</strong> 5x = 100x | 4x = 25x | 3x = 5x</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+            <img src="diamond.png" style="width:25px;"> <img src="gold.png" style="width:25px;"> 
+            <span><strong>HIGH TIER:</strong> 5x = 50x | 4x = 10x | 3x = 2x</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-weight:bold; color:#e74c3c;">ANY FRUIT / BELL</span>
+            <span><strong>LOW TIER:</strong> 5x = 10x | 4x = 3x | 3x = 1x</span>
+        </div>
+    `
+});
+
+// --- 2. GAME VARIABLES ---
 let baseBet = 0;
 let activeLines = 5;
-let reelMode = 5; 
 let isSpinning = false;
 
 const symbols = ["bell.png", "cherries.png", "orange.png", "plum.png", "watermelon.png", "lucky-seven.png", "diamond.png", "gold.png"];
@@ -14,13 +33,38 @@ const paylines = [
     [2, 1, 0, 1, 2]  // "^"
 ];
 
+// OS BETTING INTEGRATION
+SystemUI.setupBetting("os-betting-rack", {
+    onBet: function(val) {
+        if (isSpinning) return;
+        // In slots, selecting a chip increases the BASE bet per line
+        if (SystemUI.money >= (baseBet + val) * activeLines) { 
+            baseBet += val; 
+            updateHUD(); 
+        }
+    },
+    onClear: function() {
+        if (isSpinning) return;
+        baseBet = 0;
+        updateHUD();
+    }
+});
+
+
 function updateHUD() {
     let totalBet = baseBet * activeLines;
-    document.getElementById("bankroll-display").innerHTML = `<img src="../blackjack/dollar.png" class="hud-icon"> $${money}`;
+    
+    SystemUI.updateMoneyDisplay();
+    // Update the OS rack's total display
+    SystemUI.updateBetDisplay(totalBet);
+    // Disable chips while spinning
+    SystemUI.enableBetting(!isSpinning);
+
     document.getElementById("deck-base-bet").innerText = baseBet;
     document.getElementById("deck-lines").innerText = activeLines;
     document.getElementById("deck-total-bet").innerText = totalBet;
-    document.getElementById("btn-spin").disabled = (totalBet === 0 || totalBet > money || isSpinning);
+    
+    document.getElementById("btn-spin").disabled = (totalBet === 0 || totalBet > SystemUI.money || isSpinning);
 }
 
 function updateLineButtons() {
@@ -28,13 +72,6 @@ function updateLineButtons() {
         btn.classList.toggle("active", parseInt(btn.dataset.line) <= activeLines);
     });
 }
-
-document.getElementById("btn-mode").addEventListener("click", () => {
-    if (isSpinning) return;
-    reelMode = (reelMode === 5) ? 3 : 5;
-    document.getElementById("btn-mode").innerText = `MODE: ${reelMode}-REEL`;
-    document.querySelectorAll(".reel-ext").forEach(el => el.style.display = (reelMode === 3 ? "none" : "block"));
-});
 
 function initReels() {
     for (let i = 1; i <= 5; i++) {
@@ -49,26 +86,48 @@ function initReels() {
     }
 }
 
-document.querySelectorAll(".chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-        if (isSpinning) return;
-        let val = parseInt(chip.dataset.val);
-        if (money >= (baseBet + val) * activeLines) { baseBet += val; updateHUD(); }
-    });
-});
-
-document.getElementById("clear-bet").addEventListener("click", () => {
+function showLinePreview(lineNum) {
     if (isSpinning) return;
-    baseBet = 0;
-    updateHUD();
+    const line = paylines[lineNum - 1];
+    const targetPosition = 37;
+
+    for (let c = 0; c < 5; c++) {
+        const strip = document.getElementById(`strip-${c + 1}`);
+        const slotItemWrapper = strip.children[targetPosition + line[c]];
+        if (slotItemWrapper) {
+            slotItemWrapper.classList.add("line-preview");
+            slotItemWrapper.dataset.lineId = lineNum;
+        }
+    }
+}
+
+function clearLinePreview() {
+    document.querySelectorAll(".line-preview").forEach(el => el.classList.remove("line-preview"));
+}
+
+document.querySelectorAll(".line-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+        if (isSpinning) return;
+        activeLines = parseInt(e.target.dataset.line);
+        updateLineButtons();
+        updateHUD();
+    });
+    btn.addEventListener("mouseenter", (e) => showLinePreview(parseInt(e.target.dataset.line)));
+    btn.addEventListener("mouseleave", clearLinePreview);
 });
 
-document.getElementById("btn-paytable").addEventListener("click", () => document.getElementById("paytable-modal").classList.remove("hidden"));
-document.getElementById("close-paytable").addEventListener("click", () => document.getElementById("paytable-modal").classList.add("hidden"));
+// Wire the "INFO" button to trigger the OS Modal
+document.getElementById("btn-paytable").addEventListener("click", () => {
+    document.getElementById("sys-modal").classList.remove("sys-hidden");
+});
 
 document.getElementById("btn-spin").addEventListener("click", () => {
-    if (isSpinning || (baseBet * activeLines) > money) return;
-    money -= (baseBet * activeLines);
+    if (isSpinning || (baseBet * activeLines) > SystemUI.money) return;
+    clearLinePreview();
+    
+    // Deduct money directly from the OS
+    SystemUI.money -= (baseBet * activeLines);
+    
     isSpinning = true;
     updateHUD();
     document.getElementById("deck-win").innerText = "0";
@@ -112,26 +171,17 @@ function spinReel(stripId, symTop, symMid, symBot, duration) {
 function evaluateMatrix(matrix) {
     let totalWin = 0;
     let winningCoords = [];
-    const offset = (reelMode === 3) ? 1 : 0;
-
-    console.log(`=== FINAL GRID (${reelMode}-REEL) ===`);
-    for(let r=0; r<3; r++) {
-        let rowStr = "";
-        for(let c=0; c<reelMode; c++) rowStr += `[ ${matrix[r][c + offset].split('.')[0].padEnd(10)} ] `;
-        console.log(rowStr);
-    }
 
     for (let i = 0; i < activeLines; i++) {
         let line = paylines[i];
-        let startSymbol = matrix[line[offset]][offset]; 
+        let startSymbol = matrix[line[0]][0]; 
         let matchCount = 1;
-        let coords = [{row: line[offset], col: offset}];
+        let coords = [{row: line[0], col: 0}];
 
-        for (let c = 1; c < reelMode; c++) {
-            let currentCol = c + offset;
-            if (matrix[line[currentCol]][currentCol] === startSymbol) {
+        for (let c = 1; c < 5; c++) {
+            if (matrix[line[c]][c] === startSymbol) {
                 matchCount++;
-                coords.push({row: line[currentCol], col: currentCol});
+                coords.push({row: line[c], col: c});
             } else break;
         }
         
@@ -145,13 +195,16 @@ function evaluateMatrix(matrix) {
         }
     }
 
-    document.getElementById("deck-win").innerText = totalWin;
-    document.getElementById("deck-win").style.color = totalWin > 0 ? "#2ecc71" : "white";
+    const winDisp = document.getElementById("deck-win");
+    winDisp.innerText = totalWin;
+    winDisp.style.color = totalWin > 0 ? "#2ecc71" : "white";
     if (totalWin > 0) highlightWinners(winningCoords);
-    money += totalWin;
-    localStorage.setItem("blackjack_money", money);
+
+    // Pay the OS
+    SystemUI.money += totalWin;
+    
     isSpinning = false;
-    updateHUD();
+    updateHUD(); 
 }
 
 function highlightWinners(coords) {
@@ -160,5 +213,6 @@ function highlightWinners(coords) {
         if (strip?.children[37 + coord.row]) strip.children[37 + coord.row].classList.add("winning-pulse");
     });
 }
+
 initReels();
 updateHUD();

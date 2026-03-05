@@ -9,39 +9,28 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#111111">
   <meta name="color-scheme" content="dark">
+  
   <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-  // Your web app's Firebase configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
-    authDomain: "game-room-26e34.firebaseapp.com",
-    projectId: "game-room-26e34",
-    storageBucket: "game-room-26e34.firebasestorage.app",
-    messagingSenderId: "769541427914",
-    appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
-  };
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
+      authDomain: "game-room-26e34.firebaseapp.com",
+      projectId: "game-room-26e34",
+      storageBucket: "game-room-26e34.firebasestorage.app",
+      messagingSenderId: "769541427914",
+      appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
+    };
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+  </script>
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-</script>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="../../system/system_ui.css"> <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <div id="main-menu">
-    <div class="menu-box">
-      <h1>Tic-Tac-Toe</h1>
-      <p>Select your game mode:</p>
-      <button id="btn-vs-ai" class="mode-btn">🤖 Play vs AI</button>
-      <button id="btn-multi" class="mode-btn">👥 Local Multiplayer</button>
-    </div>
-  </div>
-
-  <div class="top-bar">
-    <a href="../../index.html" class="back-btn">⬅ Back to Hub</a>
-    <h2 id="status-display">Waiting for players...</h2>
-  </div>
+  <h2 id="status-display">Let's Play!</h2>
 
   <div id="board">
     <div class="cell" data-index="0"></div>
@@ -57,9 +46,8 @@
 
   <div class="controls">
     <button id="restart-btn">Restart Game</button>
-    <button id="change-mode-btn">Change Mode</button>
   </div>
 
-  <script src="main.js"></script>
+  <script src="../../system/system_ui.js"></script> <script src="main.js"></script>
 </body>
 </html>

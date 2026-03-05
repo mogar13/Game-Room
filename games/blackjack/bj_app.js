@@ -1,71 +1,125 @@
-// ==========================================
-// 1. INITIAL STATE & MEMORY
-// ==========================================
+let savedDifficulty = localStorage.getItem("blackjack_diff") || "17";
+
+SystemUI.init({
+    gameName: "BLACKJACK PRO",
+    rules: `
+        <ul style="text-align: left; line-height: 1.6; font-size: 0.95rem; margin-bottom: 20px; color: #ddd; padding-left: 20px;">
+            <li><strong>Payouts:</strong> Standard wins pay 1:1. Natural Blackjack pays 3:2.</li>
+            <li><strong>Double Down:</strong> Double your initial bet, receive ONE card, and automatically stand.</li>
+            <li><strong>Insurance:</strong> If Dealer shows an Ace, insure for half your bet. Pays 2:1 if Dealer has Blackjack.</li>
+        </ul>
+    `,
+    customToggles: `
+        <div class="settings-group" style="text-align:left;">
+            <label style="display:block; margin-bottom:5px; color:#bdc3c7;">Table Difficulty:</label>
+            <select id="sys-difficulty" style="width:100%; padding:10px; border-radius:5px; border:1px solid #34495e; background:#2c3e50; color:white;">
+                <option value="15">Easy ($2 Min)</option>
+                <option value="17">Normal ($5 Min)</option>
+                <option value="19">Hard ($10 Min)</option>
+            </select>
+        </div>
+    `
+});
+
+document.getElementById("sys-difficulty").value = savedDifficulty;
+document.getElementById("sys-difficulty").addEventListener("change", (e) => {
+    savedDifficulty = e.target.value;
+    localStorage.setItem("blackjack_diff", savedDifficulty);
+    deck = []; 
+    showToast("Difficulty Changed", "Rules updated for the next hand.");
+    updateBetUI();
+});
+
+document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
+    if(confirm("Reset your Blackjack streak and difficulty?")) {
+        localStorage.removeItem("blackjack_streak");
+        localStorage.removeItem("blackjack_diff");
+        window.location.reload();
+    }
+});
+
+
 let playerHand = [];
 let dealerHand = [];
 let currentBet = 0;
 let isGameOver = true;
 let deck = [];
-
-let money = parseInt(localStorage.getItem("blackjack_money")) || 5000;
-let playerName = localStorage.getItem("blackjack_name") || "Player";
-let savedDifficulty = localStorage.getItem("blackjack_diff") || "17";
 let winStreak = parseInt(localStorage.getItem("blackjack_streak")) || 0;
 
-// ==========================================
-// 2. AUDIO SETUP
-// ==========================================
+function updateStreakUI() { document.getElementById("streak-val").innerText = winStreak; }
+updateStreakUI();
+
+// Audio
 const cardSound = new Audio("card-flip.mp3");
 const winSound = new Audio("win.mp3");
 const loseSound = new Audio("lose.mp3");
 const shuffleSound = new Audio("shuffle.mp3");
 const tieSound = new Audio("tie.mp3");
-let isMuted = false;
 
-// ==========================================
-// 3. UI INITIALIZATION & HUD
-// ==========================================
-function updateHUD() {
-  document.getElementById("bankroll-display").innerHTML = `<img src="dollar.png" class="hud-icon"> $${money}`;
-  document.getElementById("streak-display").innerHTML = `<img src="streak.png" class="hud-icon"> ${winStreak}`;
-  document.getElementById("player-name-input").value = playerName;
-  document.getElementById("difficulty").value = savedDifficulty;
+function playSfx(audioObj) {
+    if (!SystemUI.isMuted) { audioObj.currentTime = 0; audioObj.play(); }
 }
-updateHUD();
 
-// ==========================================
-// 4. MODALS & SETTINGS
-// ==========================================
-document.getElementById("settings-btn").addEventListener("click", () => {
-  document.getElementById("settings-modal").classList.remove("hidden");
+// OS BETTING INTEGRATION
+SystemUI.setupBetting("os-betting-rack", {
+    onBet: function(val) {
+        if (!isGameOver) return;
+        if (currentBet + val > SystemUI.money) {
+            showToast("Not Enough Cash", "You don't have enough bankroll for that bet.");
+            return;
+        }
+        currentBet += val;
+        updateBetUI();
+    },
+    onClear: function() {
+        if (!isGameOver) return;
+        currentBet = 0;
+        updateBetUI();
+    }
 });
 
-document.getElementById("close-settings-btn").addEventListener("click", () => {
-  playerName = document.getElementById("player-name-input").value || "Player";
-  let newDiff = document.getElementById("difficulty").value;
-  
-  if (newDiff !== savedDifficulty) {
-    savedDifficulty = newDiff;
-    deck = []; 
-    showToast("Difficulty Changed", "Rules updated for the next hand.");
-  }
-  
-  localStorage.setItem("blackjack_name", playerName);
-  localStorage.setItem("blackjack_diff", savedDifficulty);
-  document.getElementById("settings-modal").classList.add("hidden");
-  updateBetUI();
-});
+function updateBetUI() {
+    SystemUI.updateBetDisplay(currentBet);
+    SystemUI.enableBetting(isGameOver); 
+    
+    let minBet = (savedDifficulty === "19") ? 10 : (savedDifficulty === "17" ? 5 : 2);
+    const dealBtn = document.getElementById("deal-btn");
+    
+    if (currentBet < minBet) {
+        dealBtn.disabled = true;
+        dealBtn.innerText = `DEAL (Min $${minBet})`; 
+    } else {
+        dealBtn.disabled = false;
+        dealBtn.innerText = `DEAL`;
+    }
+    
+    renderTableChips();
+}
 
-document.getElementById("rules-btn").addEventListener("click", () => {
-  document.getElementById("rules-modal").classList.remove("hidden");
-});
-document.getElementById("close-rules-btn").addEventListener("click", () => {
-  document.getElementById("rules-modal").classList.add("hidden");
-});
+function renderTableChips() {
+    const potDisplay = document.getElementById("table-pot-display");
+    
+    if (currentBet === 0) {
+        potDisplay.classList.add("hidden");
+        SystemUI.renderTableStacks(0, "table-bet-chips"); // clears player
+        if (document.getElementById("dealer-bet-chips")) SystemUI.renderTableStacks(0, "dealer-bet-chips"); // clears dealer
+        return;
+    }
 
+    // Multiply by 2 to represent the actual total pot (Player bet + Dealer Match)
+    potDisplay.innerText = `POT: $${currentBet * 2}`;
+    potDisplay.classList.remove("hidden");
+
+    SystemUI.renderTableStacks(currentBet, "table-bet-chips");
+    if (document.getElementById("dealer-bet-chips")) {
+        SystemUI.renderTableStacks(currentBet, "dealer-bet-chips");
+    }
+}
+
+
+// Toast Modal
 let modalTimer;
 let resetPending = false;
-
 function showToast(title, message, resetTableAfter = false) {
   document.getElementById("modal-title").innerText = title;
   document.getElementById("modal-message").innerText = message;
@@ -79,145 +133,32 @@ function showToast(title, message, resetTableAfter = false) {
     if (resetTableAfter) resetTableForBetting();
   }, 3500);
 }
-
 document.getElementById("toast-modal").addEventListener("click", () => {
   const overlay = document.getElementById("toast-modal");
   if (!overlay.classList.contains("hidden")) {
     clearTimeout(modalTimer);
     overlay.classList.add("hidden");
-    if (resetPending) {
-      resetTableForBetting();
-      resetPending = false;
-    }
+    if (resetPending) { resetTableForBetting(); resetPending = false; }
   }
-});
-
-document.getElementById("mute-btn").addEventListener("click", () => {
-  isMuted = !isMuted;
-  document.getElementById("mute-btn").innerHTML = isMuted ? '<img src="mute.png" class="btn-icon"> Unmute' : '<img src="sound.png" class="btn-icon"> Mute';
-  cardSound.muted = winSound.muted = loseSound.muted = shuffleSound.muted = tieSound.muted = isMuted;
-});
-
-document.getElementById("reset-btn").addEventListener("click", () => {
-  if(confirm("Wipe all data and start fresh?")) {
-    localStorage.clear();
-    window.location.reload();
-  }
-});
-
-// ==========================================
-// 5. BETTING PHASE & TABLE CHIP RENDERING
-// ==========================================
-function updateBetUI() {
-  document.getElementById("current-bet-text").innerText = `Bet: $${currentBet}`;
-  let minBet = (savedDifficulty === "19") ? 10 : (savedDifficulty === "17" ? 5 : 2);
-  
-  const dealBtn = document.getElementById("deal-btn");
-  if (currentBet < minBet) {
-    dealBtn.disabled = true;
-    dealBtn.innerText = `DEAL (Min $${minBet})`; 
-  } else {
-    dealBtn.disabled = false;
-    dealBtn.innerText = `DEAL`;
-  }
-  
-  renderTableChips();
-}
-
-function renderTableChips() {
-  const container = document.getElementById("table-bet-chips");
-  const dealerContainer = document.getElementById("dealer-bet-chips");
-  const potDisplay = document.getElementById("table-pot-display");
-  
-  container.innerHTML = ""; 
-  if (dealerContainer) dealerContainer.innerHTML = ""; 
-
-  if (currentBet === 0) {
-     potDisplay.classList.add("hidden");
-     return;
-  }
-
-  potDisplay.innerText = `$${currentBet} BET`;
-  potDisplay.classList.remove("hidden");
-
-  let tempBet = currentBet;
-  const denoms = [
-    { val: 1000, cls: 'chip-1k', text: '1K' },
-    { val: 500, cls: 'chip-500', text: '500' },
-    { val: 100, cls: 'chip-100', text: '100' },
-    { val: 25, cls: 'chip-25', text: '25' },
-    { val: 5, cls: 'chip-5', text: '5' },
-    { val: 1, cls: 'chip-1', text: '1' }
-  ];
-
-  denoms.forEach(d => {
-    let count = 0;
-    while(tempBet >= d.val) {
-      tempBet -= d.val;
-      count++;
-    }
-    
-    if (count > 0) {
-      let col = document.createElement("div");
-      col.className = "chip-stack-col";
-      
-      for(let i=0; i<count; i++) {
-        let cEl = document.createElement("div");
-        cEl.className = `table-chip ${d.cls}`;
-        cEl.innerText = d.text;
-        cEl.style.bottom = `${i * 6}px`; 
-        col.appendChild(cEl);
-      }
-      container.appendChild(col);
-
-      if (dealerContainer) {
-        let dealerCol = col.cloneNode(true);
-        dealerContainer.appendChild(dealerCol);
-      }
-    }
-  });
-}
-
-document.querySelectorAll(".chip").forEach(chip => {
-  chip.addEventListener("click", () => {
-    if (!isGameOver) return; 
-    let val = parseInt(chip.getAttribute("data-val"));
-    if (currentBet + val > money) {
-      showToast("Not Enough Cash", "You don't have enough bankroll for that bet.");
-      return;
-    }
-    currentBet += val;
-    updateBetUI();
-  });
-});
-
-document.getElementById("clear-bet-btn").addEventListener("click", () => {
-  if (!isGameOver) return;
-  currentBet = 0;
-  updateBetUI();
 });
 
 function resetTableForBetting() {
-  if (money <= 0) {
-    money = 1000; 
+  if (SystemUI.money <= 0) {
+    SystemUI.money = 1000; 
+    SystemUI.updateMoneyDisplay();
     showToast("Bankrupt!", "The casino pities you. Here is $1000 on the house.");
   }
-  
   isGameOver = true;
   playerHand = [];
   dealerHand = [];
   currentBet = 0;
   updateBetUI();
-  updateHUD();
+  updateStreakUI();
   renderGame(); 
-  
   document.getElementById("playing-controls").classList.add("hidden");
   document.getElementById("betting-controls").classList.remove("hidden");
 }
 
-// ==========================================
-// 6. CORE GAME & DECK LOGIC 
-// ==========================================
 const suits = ["♠", "♥", "♦", "♣"];
 const ranks = [
   { name: "A", value: 11 }, { name: "2", value: 2 }, { name: "3", value: 3 },
@@ -245,7 +186,7 @@ function shuffleDeck() {
 
 function dealCard(hand) {
   hand.push(deck.pop());
-  cardSound.play();
+  playSfx(cardSound);
 }
 
 function calculateScore(hand) {
@@ -258,14 +199,13 @@ function calculateScore(hand) {
   return score;
 }
 
-// ==========================================
-// 7. PLAYING PHASE (Actions)
-// ==========================================
 document.getElementById("deal-btn").addEventListener("click", () => {
-  money -= currentBet; 
-  updateHUD();
+  SystemUI.money -= currentBet; 
+  SystemUI.updateMoneyDisplay();
+  
   isGameOver = false;
-  shuffleSound.play();
+  updateBetUI(); // Turns chips gray
+  playSfx(shuffleSound);
 
   document.getElementById("betting-controls").classList.add("hidden");
   document.getElementById("playing-controls").classList.remove("hidden");
@@ -275,29 +215,20 @@ document.getElementById("deal-btn").addEventListener("click", () => {
   document.getElementById("insurance-btn").classList.add("hidden");
 
   let numDecks = (savedDifficulty === "19") ? 6 : (savedDifficulty === "17" ? 4 : 1);
-  if (deck.length < 20) {
-    createDeck(numDecks);
-    shuffleDeck();
-  }
+  if (deck.length < 20) { createDeck(numDecks); shuffleDeck(); }
 
   dealCard(playerHand); dealCard(dealerHand);
   dealCard(playerHand); dealCard(dealerHand);
   renderGame();
 
-  if (dealerHand[0].name === "A") {
-    document.getElementById("insurance-btn").classList.remove("hidden");
-  }
-
-  if (calculateScore(playerHand) === 21) {
-    handleStand();
-  }
+  if (dealerHand[0].name === "A") document.getElementById("insurance-btn").classList.remove("hidden");
+  if (calculateScore(playerHand) === 21) handleStand();
 });
 
 document.getElementById("hit-btn").addEventListener("click", () => {
   if (isGameOver) return;
   document.getElementById("insurance-btn").classList.add("hidden");
   document.getElementById("double-btn").disabled = true; 
-  
   dealCard(playerHand);
   renderGame();
   
@@ -322,18 +253,17 @@ function handleStand() {
 
 document.getElementById("double-btn").addEventListener("click", () => {
   if (isGameOver || playerHand.length > 2) return;
-  if (money < currentBet) {
+  if (SystemUI.money < currentBet) {
     showToast("Not enough cash", "You don't have enough to double down!");
     return;
   }
   
   document.getElementById("insurance-btn").classList.add("hidden");
-  money -= currentBet;
+  SystemUI.money -= currentBet;
   currentBet *= 2;
-  updateHUD();
+  SystemUI.updateMoneyDisplay();
   
   renderTableChips();
-  
   dealCard(playerHand);
   renderGame();
   
@@ -344,18 +274,18 @@ document.getElementById("double-btn").addEventListener("click", () => {
 document.getElementById("insurance-btn").addEventListener("click", () => {
   if (isGameOver) return;
   const insBet = currentBet / 2;
-  if (money < insBet) {
+  if (SystemUI.money < insBet) {
     showToast("Not enough cash", "You don't have enough for insurance!");
     return;
   }
   
-  money -= insBet;
-  updateHUD();
+  SystemUI.money -= insBet;
+  SystemUI.updateMoneyDisplay();
   document.getElementById("insurance-btn").classList.add("hidden");
   
   if (calculateScore(dealerHand) === 21) {
-    money += (insBet * 3); 
-    updateHUD();
+    SystemUI.money += (insBet * 3); 
+    SystemUI.updateMoneyDisplay();
     showToast("Insurance Paid!", `Dealer has Blackjack. You won $${insBet * 2}.`);
     setTimeout(handleStand, 2500);
   } else {
@@ -368,7 +298,6 @@ function determineWinner() {
   document.getElementById("hit-btn").disabled = true;
   document.getElementById("stand-btn").disabled = true;
   document.getElementById("double-btn").disabled = true;
-
   renderGame(); 
 
   const pScore = calculateScore(playerHand);
@@ -379,70 +308,42 @@ function determineWinner() {
   let title = "", message = "";
 
   if (pScore > 21) {
-    title = "Busted!"; 
-    message = `You went over 21. Lost $${currentBet}.`;
-    winStreak = 0;
-    loseSound.play();
+    title = "Busted!"; message = `You went over 21. Lost $${currentBet}.`;
+    winStreak = 0; playSfx(loseSound);
   } else if (playerHasBlackjack && !dealerHasBlackjack) {
-    title = "Blackjack!"; 
-    message = `Natural 21! Won $${currentBet * 1.5}!`;
-    money += (currentBet * 2.5);
-    winStreak++;
-    winSound.play();
+    title = "Blackjack!"; message = `Natural 21! Won $${currentBet * 1.5}!`;
+    SystemUI.money += (currentBet * 2.5); winStreak++; playSfx(winSound);
   } else if (dScore > 21 || pScore > dScore) {
-    title = "You Win!"; 
-    message = `Beat the dealer! Won $${currentBet * 2}!`;
-    money += (currentBet * 2);
-    winStreak++;
-    winSound.play();
+    title = "You Win!"; message = `Beat the dealer! Won $${currentBet * 2}!`;
+    SystemUI.money += (currentBet * 2); winStreak++; playSfx(winSound);
   } else if (dScore > pScore) {
-    title = "Dealer Wins!"; 
-    message = `Dealer had a higher score. Lost $${currentBet}.`;
-    winStreak = 0;
-    loseSound.play();
+    title = "Dealer Wins!"; message = `Dealer had a higher score. Lost $${currentBet}.`;
+    winStreak = 0; playSfx(loseSound);
   } else {
-    title = "Push (Tie)!"; 
-    message = "It's a tie. Bet returned.";
-    money += currentBet;
-    winStreak = 0;
-    tieSound.play();
+    title = "Push (Tie)!"; message = "It's a tie. Bet returned.";
+    SystemUI.money += currentBet; winStreak = 0; playSfx(tieSound);
   }
 
-  localStorage.setItem("blackjack_money", money);
+  SystemUI.updateMoneyDisplay();
   localStorage.setItem("blackjack_streak", winStreak);
-  
-  setTimeout(() => {
-    showToast(title, message, true); 
-  }, 1000);
+  setTimeout(() => { showToast(title, message, true); }, 1000);
 }
 
-// ==========================================
-// 8. RENDERING CARDS (Full PNG Mapping)
-// ==========================================
-
-// Helper function: Maps EVERY card to its corresponding PNG file
 function getCardImage(card) {
   const suitMap = { "♠": "Spades", "♥": "Hearts", "♦": "Diamonds", "♣": "Clubs" };
   return `card${suitMap[card.suit]}${card.name}.png`;
 }
 
-// Helper function: Creates the HTML Element for the card
 function createCardElement(card, isHidden) {
   const cardEl = document.createElement("div");
   cardEl.classList.add("card");
-  
   if (isHidden) {
     cardEl.classList.add("hidden-card");
     return cardEl;
   }
-
   let imgFile = getCardImage(card);
-  
-  // Inject the PNG for EVERY card
   cardEl.innerHTML = `<img src="${imgFile}" style="width: 100%; height: 100%; border-radius: 6px; display: block;">`;
-  cardEl.style.border = "none";
-  cardEl.style.backgroundColor = "transparent";
-  
+  cardEl.style.border = "none"; cardEl.style.backgroundColor = "transparent";
   return cardEl;
 }
 
@@ -452,39 +353,23 @@ function renderGame() {
   const pBubble = document.getElementById("player-score");
   const dBubble = document.getElementById("dealer-score");
 
-  playerEl.innerHTML = "";
-  dealerEl.innerHTML = "";
+  playerEl.innerHTML = ""; dealerEl.innerHTML = "";
 
-  // Render Player Hand
-  playerHand.forEach((card) => {
-    playerEl.appendChild(createCardElement(card, false));
-  });
-
-  // Render Dealer Hand
+  playerHand.forEach((card) => playerEl.appendChild(createCardElement(card, false)));
   dealerHand.forEach((card, index) => {
     let isHidden = (index === 1 && !isGameOver);
     dealerEl.appendChild(createCardElement(card, isHidden));
   });
 
-  // Update Score Bubbles
   if (playerHand.length > 0) {
-    pBubble.innerText = calculateScore(playerHand);
-    pBubble.classList.remove("hidden");
-  } else {
-    pBubble.classList.add("hidden");
-  }
+    pBubble.innerText = calculateScore(playerHand); pBubble.classList.remove("hidden");
+  } else { pBubble.classList.add("hidden"); }
 
   if (dealerHand.length > 0) {
     if (isGameOver) {
-      dBubble.innerText = calculateScore(dealerHand);
-      dBubble.classList.remove("hidden");
-    } else {
-      dBubble.classList.add("hidden");
-    }
-  } else {
-    dBubble.classList.add("hidden");
-  }
+      dBubble.innerText = calculateScore(dealerHand); dBubble.classList.remove("hidden");
+    } else { dBubble.classList.add("hidden"); }
+  } else { dBubble.classList.add("hidden"); }
 }
 
-// Initialize the first view
 updateBetUI();

@@ -1,6 +1,30 @@
-let money = parseInt(localStorage.getItem("blackjack_money")) || 5000;
-let winStreak = 0;
+// ==========================================
+// 1. INITIALIZE CASINO OS
+// ==========================================
+SystemUI.init({
+    gameName: "RPS ARENA",
+    rules: `
+        <ul style="text-align: left; line-height: 1.6; font-size: 0.95rem; margin-bottom: 20px; color: #ddd; padding-left: 20px;">
+            <li><strong>The Basics:</strong> Rock crushes Scissors. Scissors cut Paper. Paper covers Rock.</li>
+            <li><strong>Payouts:</strong> Beating the CPU pays 1:1 (Double your bet).</li>
+            <li><strong>Ties:</strong> A tie results in a push (Bet returned).</li>
+        </ul>
+    `
+});
+
+document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
+    if(confirm("Reset your RPS win streak?")) {
+        localStorage.removeItem("rps_streak");
+        window.location.reload();
+    }
+});
+
+// ==========================================
+// 2. CORE LOGIC & OS BETTING
+// ==========================================
+let winStreak = parseInt(localStorage.getItem("rps_streak")) || 0;
 let currentBet = 0;
+let isAnimating = false;
 
 const playerImg = document.getElementById("player-img");
 const cpuImg = document.getElementById("cpu-img");
@@ -9,52 +33,57 @@ const cpuBox = document.getElementById("cpu-hand");
 const statusText = document.getElementById("status-text");
 const resultOverlay = document.getElementById("result-overlay");
 
-function updateUI() {
-    document.getElementById("bankroll-display").innerHTML = `<img src="../blackjack/dollar.png" class="hud-icon"> $${money}`;
-    document.getElementById("streak-display").innerHTML = `<img src="../blackjack/streak.png" class="hud-icon"> ${winStreak}`;
-    document.getElementById("current-bet-val").innerText = currentBet;
-    
-    document.querySelectorAll(".choice-btn").forEach(btn => btn.disabled = (currentBet === 0));
-}
-
-// Betting Logic
-document.querySelectorAll(".chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-        let val = parseInt(chip.dataset.val);
-        if (money >= val) {
-            money -= val;
+// Setup Universal Betting Rack
+SystemUI.setupBetting("os-betting-rack", {
+    onBet: function(val) {
+        if (isAnimating) return;
+        if (SystemUI.money >= val) { 
+            SystemUI.money -= val;
             currentBet += val;
             updateUI();
+        } else {
+            alert("Not enough cash!");
         }
-    });
+    },
+    onClear: function() {
+        if (isAnimating) return;
+        SystemUI.money += currentBet; // Refund
+        currentBet = 0;
+        updateUI();
+    }
 });
 
-document.getElementById("clear-bet").addEventListener("click", () => {
-    money += currentBet;
-    currentBet = 0;
-    updateUI();
-});
+function updateUI() {
+    SystemUI.updateMoneyDisplay(); 
+    SystemUI.updateBetDisplay(currentBet); // Updates OS bubble
+    document.getElementById("streak-val").innerText = winStreak;
+    
+    // Disable play buttons if no bet placed
+    document.querySelectorAll(".choice-btn").forEach(btn => btn.disabled = (currentBet === 0 || isAnimating));
+}
 
-// Animation and Round Logic
+// ==========================================
+// 3. ANIMATION AND ROUND RESOLUTION
+// ==========================================
 document.querySelectorAll(".choice-btn").forEach(btn => {
     btn.addEventListener("click", () => startThrow(btn.id));
 });
 
 function startThrow(playerChoice) {
+    if (currentBet === 0) return;
+    
+    isAnimating = true;
     resultOverlay.classList.add("hidden");
     
-    // Set both to Rock for the shake
     playerImg.src = "rock.png";
     cpuImg.src = "rock.png";
 
-    // Add CSS Animation
     playerBox.classList.add("shaking");
     cpuBox.classList.add("shaking");
 
-    // Disable buttons during animation
-    document.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
+    updateUI(); 
+    SystemUI.enableBetting(false); // OS visually grays out chips
 
-    // Wait for the shake (1.5 seconds) then reveal
     setTimeout(() => {
         playerBox.classList.remove("shaking");
         cpuBox.classList.remove("shaking");
@@ -71,14 +100,14 @@ function resolveGame(playerChoice) {
 
     if (playerChoice === cpuChoice) {
         statusText.innerText = "TIE!";
-        money += currentBet;
+        SystemUI.money += currentBet; // Push
     } else if (
         (playerChoice === "rock" && cpuChoice === "scissors") ||
         (playerChoice === "paper" && cpuChoice === "rock") ||
         (playerChoice === "scissors" && cpuChoice === "paper")
     ) {
         statusText.innerText = "YOU WIN!";
-        money += (currentBet * 2);
+        SystemUI.money += (currentBet * 2); // Payout
         winStreak++;
     } else {
         statusText.innerText = "CPU WINS!";
@@ -87,8 +116,11 @@ function resolveGame(playerChoice) {
 
     resultOverlay.classList.remove("hidden");
     currentBet = 0;
-    localStorage.setItem("blackjack_money", money);
+    isAnimating = false;
+    
+    localStorage.setItem("rps_streak", winStreak);
     updateUI();
+    SystemUI.enableBetting(true); // OS re-enables chips
 }
 
 updateUI();

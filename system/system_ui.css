@@ -1,0 +1,123 @@
+/* --- UNIVERSAL HUD --- */
+#universal-hud { 
+  display: flex; justify-content: space-between; align-items: center; 
+  padding: 15px; background: rgba(0,0,0,0.8); border-bottom: 2px solid #f1c40f; 
+  width: 100%; position: absolute; top: 0; left: 0; z-index: 100;
+  box-sizing: border-box; 
+}
+.hud-icon { width: 22px; height: 22px; vertical-align: middle; }
+.hud-stat { font-weight: bold; display: flex; align-items: center; gap: 8px; font-size: 1.1rem; color: #f1c40f;}
+.hud-btn { background: white; border-radius: 8px; padding: 5px; border: none; cursor: pointer; transition: 0.2s; }
+.hud-btn:hover { background: #ddd; }
+
+/* Push game containers down so they aren't hidden under the absolute HUD */
+.game-wrapper-padding { padding-top: 70px; }
+
+/* --- UNIVERSAL MODAL --- */
+#sys-modal {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(10, 4, 16, 0.95); z-index: 999;
+  display: flex; align-items: center; justify-content: center;
+}
+.sys-hidden { display: none !important; }
+
+.sys-modal-box {
+  background: #1a0b2e; border: 2px solid #f1c40f; padding: 20px;
+  border-radius: 10px; width: 90%; max-width: 450px; text-align: left;
+  box-shadow: 0 0 30px rgba(241, 196, 15, 0.3); color: white;
+  max-height: 85vh; overflow-y: auto;
+}
+
+.sys-modal-box h2 { color: #f1c40f; margin-bottom: 20px; letter-spacing: 2px; text-align: center; border-bottom: 1px solid #5a3c8a; padding-bottom: 10px;}
+.sys-section { margin-bottom: 20px; background: #0a0410; padding: 15px; border-radius: 8px; border: 1px solid #3a1c61; }
+.sys-section h3 { color: #a29bfe; font-size: 0.9rem; margin-bottom: 10px; letter-spacing: 1px; }
+.sys-rules-text { font-size: 0.9rem; line-height: 1.5; color: #ddd; }
+
+/* Universal Buttons */
+.sys-btn { 
+  background: #3a1c61; color: white; border: 1px solid #5a3c8a; 
+  padding: 8px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 5px; transition: 0.2s;
+}
+.sys-btn:hover { background: #5a3c8a; }
+
+/* Danger Zone */
+.sys-danger-zone { border-color: #e74c3c; }
+.sys-danger-zone h3 { color: #e74c3c; }
+.btn-nuke { background: transparent; border: 2px solid #e74c3c; color: #e74c3c; }
+.btn-nuke:hover { background: #e74c3c; color: white; }
+
+#sys-close-btn {
+  background: #f1c40f; color: black; border: none; padding: 12px;
+  border-radius: 5px; font-weight: bold; width: 100%; cursor: pointer; margin-top: 10px;
+}
+
+/* --- UNIVERSAL BETTING SYSTEM --- */
+.sys-betting-zone { 
+  display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; 
+}
+
+.sys-bet-info { 
+  display: flex; align-items: center; gap: 15px; background: rgba(0,0,0,0.6); 
+  padding: 5px 20px; border-radius: 20px; color: #f1c40f; font-weight: bold; 
+  font-size: 1.2rem; border: 1px solid #f1c40f; 
+}
+
+.sys-clear-bet { 
+  background: transparent; color: #e74c3c; border: 1px solid #e74c3c; 
+  padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: 0.1s;
+}
+.sys-clear-bet:active { transform: scale(0.9); background: rgba(231, 76, 60, 0.2); }
+
+.sys-chip-rack { display: flex; justify-content: center; gap: 8px; width: 100%; flex-wrap: wrap; }
+
+.sys-chip { 
+  width: 50px; height: 50px; border-radius: 50%; font-weight: bold; font-size: 1rem; 
+  cursor: pointer; display: flex; align-items: center; justify-content: center; 
+  border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.6); transition: transform 0.1s; 
+  background-size: cover; background-position: center; background-color: transparent;
+}
+.sys-chip:active { transform: scale(0.9); }
+.sys-chip:disabled { filter: grayscale(1); opacity: 0.5; cursor: not-allowed; }
+
+/* Image Mappings (Ensure PNGs are in the same folder as this CSS file) */
+.sys-chip-1   { background-image: url('chipWhite.png'); color: black; }
+.sys-chip-5   { background-image: url('chipRedWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
+.sys-chip-25  { background-image: url('chipGreenWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
+.sys-chip-100 { background-image: url('chipBlackWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
+.sys-chip-500 { background-image: url('chipBlueWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
+.sys-chip-1k  { background-image: url('chipWhiteBlue.png'); color: black; }
+
+/* --- 3D ISOMETRIC TABLE CHIPS --- */
+.sys-table-chip-stack {
+  position: relative;
+  width: 45px; 
+  height: 30px; 
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sys-table-chip {
+  width: 45px;
+  height: 30px; 
+  position: absolute;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  /* Adds a slight shadow so stacks look realistic */
+  filter: drop-shadow(0px 3px 2px rgba(0,0,0,0.4)); 
+  animation: dropChip 0.2s ease-out;
+}
+
+@keyframes dropChip { 
+  from { transform: translateY(-20px) scale(1.1); opacity: 0; } 
+  to { transform: translateY(0) scale(1); opacity: 1; } 
+}
+
+/* Map the Isometric PNGs */
+.sys-table-chip-1   { background-image: url('chipWhite_side.png'); }
+.sys-table-chip-5   { background-image: url('chipRedWhite_side.png'); }
+.sys-table-chip-25  { background-image: url('chipGreenWhite_side.png'); }
+.sys-table-chip-100 { background-image: url('chipBlackWhite_side.png'); }
+.sys-table-chip-500 { background-image: url('chipBlueWhite_side.png'); }
+.sys-table-chip-1k  { background-image: url('chipWhiteBlue_side.png'); }

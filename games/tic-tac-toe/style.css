@@ -14,29 +14,14 @@ body {
   overflow: hidden;
 }
 
-.top-bar {
-  position: absolute; 
-  top: 0;
-  width: 100%;
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  background: rgba(0,0,0,0.3);
-  padding: 15px 0;
-  border-bottom: 2px solid #f1c40f; 
-}
-
 #status-display {
-  margin: 0;
+  margin-top: 20px;
+  margin-bottom: 20px;
   color: #f1c40f;
   text-transform: uppercase;
   letter-spacing: 2px;
-}
-
-.back-btn {
-  color: #f1c40f;
-  text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 1.5rem;
+  text-align: center;
 }
 
 /* --- 2. The Game Board --- */
@@ -81,63 +66,7 @@ body {
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* --- 3. The Modal Menu --- */
-#main-menu {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(26, 26, 26, 0.95); 
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000; 
-  transition: opacity 0.3s ease;
-}
-
-#main-menu.hidden {
-  opacity: 0;
-  pointer-events: none; 
-}
-
-.menu-box {
-  background: #222;
-  border: 2px solid #f1c40f;
-  border-radius: 10px;
-  padding: 40px;
-  text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-}
-
-.menu-box h1 {
-  color: #f1c40f;
-  margin-top: 0;
-  letter-spacing: 2px;
-}
-
-.mode-btn {
-  display: block;
-  width: 100%;
-  margin: 15px 0;
-  padding: 15px;
-  background: #1a1a1a;
-  color: #fff;
-  border: 1px solid #444;
-  border-radius: 5px;
-  font-family: 'Orbitron', sans-serif;
-  font-size: 1.1rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.mode-btn:hover {
-  background: #f1c40f;
-  color: #1a1a1a;
-  transform: translateY(-2px);
-}
-
-/* --- 4. Controls & Buttons --- */
+/* --- 3. Controls & Buttons --- */
 .controls {
   display: flex;
   gap: 15px;
@@ -159,22 +88,4 @@ body {
 #restart-btn:hover {
   transform: scale(1.05);
   background-color: #e67e22; 
-}
-
-#change-mode-btn {
-  padding: 12px 20px;
-  background-color: transparent;
-  color: #f1c40f;
-  border: 1px solid #f1c40f;
-  font-family: 'Orbitron', sans-serif;
-  font-size: 1rem;
-  font-weight: bold;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-#change-mode-btn:hover {
-  background-color: #f1c40f;
-  color: #1a1a1a;
 }

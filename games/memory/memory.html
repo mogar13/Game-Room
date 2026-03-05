@@ -4,47 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Memory Casino</title>
-  <link rel="stylesheet" href="memory_style.css">
+  <link rel="stylesheet" href="../../system/system_ui.css"> <link rel="stylesheet" href="memory_style.css">
 </head>
 <body>
 
-  <div id="hud">
-    <a href="../../index.html" class="hud-btn" id="home-btn">
-      <img src="../blackjack/home.png" class="hud-icon">
-    </a>
-    <div class="hud-stat" id="bankroll-display">
-      <img src="../blackjack/dollar.png" class="hud-icon"> $5000
-    </div>
-    <div class="hud-stat">Moves: <span id="move-count">0</span></div>
-    <button class="hud-btn" id="settings-btn">
-      <img src="../blackjack/settings.png" class="hud-icon">
-    </button>
-  </div>
-
   <div id="game-container">
+    
+    <div id="stats-badge">
+      Moves: <span id="move-count">0</span>
+    </div>
+
     <div id="memory-grid">
       </div>
     
     <div id="controls">
-      <button id="start-game-btn">BUY IN ($50)</button>
+      <button id="start-game-btn">BUY IN ($100)</button>
     </div>
   </div>
 
-  <div id="settings-modal" class="hidden modal-overlay">
-    <div class="modal-box">
-      <h2>Game Settings</h2>
-      <div class="settings-group">
-        <label>Difficulty:</label>
-        <select id="difficulty-select">
-          <option value="easy">Easy (2x4 - $50)</option>
-          <option value="normal" selected>Normal (4x4 - $100)</option>
-          <option value="hard">Hard (6x6 - $250)</option>
-        </select>
-      </div>
-      <button id="close-settings-btn" class="primary-btn">Save & Close</button>
-    </div>
-  </div>
-
-  <script src="memory_app.js"></script>
+  <script src="../../system/system_ui.js"></script> <script src="memory_app.js"></script>
 </body>
 </html>
