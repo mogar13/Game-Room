@@ -3,33 +3,64 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Blackjack Pro</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#111111">
   <meta name="color-scheme" content="dark">
+  <title>Blackjack Pro</title>
   <link rel="stylesheet" href="bj_style.css">
 </head>
 <body>
 
   <div id="hud">
-    <a href="../../index.html" class="hud-btn" id="home-btn">🏠</a>
-    <div class="hud-stat" id="bankroll-display">💰 $100</div>
-    <div class="hud-stat" id="streak-display">🔥 0</div>
-    <button class="hud-btn" id="settings-btn">⚙️</button>
+    <a href="../../index.html" class="hud-btn" id="home-btn">
+      <img src="home.png" class="hud-icon" style="margin: 0;">
+    </a>
+    <div class="hud-stat" id="bankroll-display">
+      <img src="dollar.png" class="hud-icon"> $5000
+    </div>
+    <div class="hud-stat" id="streak-display">
+      <img src="streak.png" class="hud-icon"> 0
+    </div>
+    <button class="hud-btn" id="settings-btn">
+      <img src="settings.png" class="hud-icon" style="margin: 0;">
+    </button>
   </div>
 
   <div id="table">
+    
+    <div class="dealer-tray">
+      <div class="chip-rows"></div>
+    </div>
+    <div class="dealer-shoe">
+      <div class="shoe-glass"></div>
+      <div class="shoe-opening"></div>
+    </div>
+
     <div class="card-area" id="dealer-area">
       <div id="dealer-cards" class="card-container"></div>
       <div id="dealer-score" class="score-bubble hidden">0</div>
+      <div id="dealer-bet-chips"></div>
     </div>
 
     <div class="table-text">
       <h1>BLACKJACK PAYS 3 TO 2</h1>
       <h2>Dealer must draw to 16 and stand on 17</h2>
       <h3>INSURANCE PAYS 2 TO 1</h3>
+    </div>
+
+    <div class="boxes-arc">
+      <div class="box-slot slot-1"></div>
+      <div class="box-slot slot-2"></div>
+      <div class="box-slot slot-3"></div>
+      <div class="box-slot slot-4 main-slot">
+        <div id="table-pot-display" class="pot-display hidden">$0</div>
+        <div id="table-bet-chips"></div>
+      </div>
+      <div class="box-slot slot-5"></div>
+      <div class="box-slot slot-6"></div>
+      <div class="box-slot slot-7"></div>
     </div>
 
     <div class="card-area" id="player-area">
@@ -47,6 +78,7 @@
       </div>
       
       <div class="chip-rack">
+        <button class="chip chip-1" data-val="1">1</button>
         <button class="chip chip-5" data-val="5">5</button>
         <button class="chip chip-25" data-val="25">25</button>
         <button class="chip chip-100" data-val="100">100</button>
@@ -74,7 +106,7 @@
       
       <div class="settings-group">
         <label>Player Name:</label>
-        <input type="text" id="player-name-input" placeholder="Enter name...">
+        <input type="text" id="player-name-input" placeholder="Enter name..." autocomplete="off">
       </div>
       
       <div class="settings-group">
@@ -87,8 +119,8 @@
       </div>
       
       <div class="settings-actions">
-        <button id="mute-btn">🔊 Mute</button>
-        <button id="rules-btn">📖 Rules</button>
+        <button id="mute-btn"><img src="sound.png" class="btn-icon"> Mute</button>
+        <button id="rules-btn"><img src="scroll.png" class="btn-icon"> Rules</button>
         <button id="reset-btn" class="danger">Reset Data</button>
         <button id="close-settings-btn" class="primary-btn">Close</button>
       </div>
