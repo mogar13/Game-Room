@@ -63,13 +63,11 @@ body {
   flex-grow: 1; 
   position: relative;
   background: radial-gradient(circle at center, #0a4f2c 0%, #041f10 100%);
-  
-  /* Forces a true geometric half-circle */
-  border-radius: 0 0 50vw 50vw; 
+  border-radius: 0 0 100% 100%; 
   
   border-bottom: 20px solid #4a2d18; 
-  border-left: 10px solid #4a2d18;
-  border-right: 10px solid #4a2d18;
+  border-left: 20px solid #4a2d18;
+  border-right: 20px solid #4a2d18;
   
   box-shadow: inset 0 -20px 30px rgba(0,0,0,0.8), 0 10px 15px rgba(0,0,0,0.9);
   margin-bottom: 5px; 
@@ -186,7 +184,7 @@ body {
 .table-text h3 { font-size: 1.1rem; }
 
 /* =========================================
-   THE 7-SLOT ARC (Flawless Hardcoded Curve)
+   THE SINGLE PLAYER SLOT
    ========================================= */
 .boxes-arc {
   position: absolute;
@@ -199,56 +197,40 @@ body {
 }
 
 .box-slot {
-  width: 60px; 
-  height: 85px; 
+  width: 66px; 
+  height: 96px; 
   border: 2px solid rgba(255, 255, 255, 0.4);
   border-radius: 6px;
   position: absolute; 
   pointer-events: auto;
 }
 
-/* Draws the painted betting circle above ALL 7 slots */
 .box-slot::before {
   content: '';
   position: absolute;
-  top: -55px; /* Pushes it directly above the card slot */
+  top: -55px; 
   left: 50%;
   transform: translateX(-50%);
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   pointer-events: none;
 }
 
-/* Highlights the main player's zone in Gold */
-.slot-4 { border-color: #f1c40f; border-width: 3px; }
+.slot-4 { left: 50%; bottom: 3%; transform: translateX(-50%) rotate(0deg);  border-color: #f1c40f; border-width: 3px; opacity: 1; }
 .slot-4::before { border-color: rgba(241, 196, 15, 0.8); border-width: 3px; }
-
-/* PERFECT MATH: No guessing. 
-  Left % spaces them exactly evenly.
-  Bottom % curves them perfectly safely above the border.
-  Rotate degrees points them dead-center.
-*/
-.slot-1 { left: 8%;  bottom: 45%; transform: translateX(-50%) rotate(50deg); opacity: 0.4; }
-.slot-2 { left: 20%; bottom: 28%; transform: translateX(-50%) rotate(35deg); opacity: 0.4; }
-.slot-3 { left: 34%; bottom: 16%; transform: translateX(-50%) rotate(15deg); opacity: 0.4; }
-.slot-4 { left: 50%; bottom: 10%; transform: translateX(-50%) rotate(0deg);  opacity: 1;   }
-.slot-5 { left: 66%; bottom: 16%; transform: translateX(-50%) rotate(-15deg); opacity: 0.4; }
-.slot-6 { left: 80%; bottom: 28%; transform: translateX(-50%) rotate(-35deg); opacity: 0.4; }
-.slot-7 { left: 92%; bottom: 45%; transform: translateX(-50%) rotate(-50deg); opacity: 0.4; }
-
 
 /* =========================================
    TABLE CHIPS
    ========================================= */
 #table-bet-chips {
   position: absolute;
-  top: -55px; /* Locks the chips PERFECTLY inside the ::before betting circle! */
+  top: -55px; 
   left: 50%;
   transform: translateX(-50%);
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   display: flex;
   flex-direction: row; 
   justify-content: center;
@@ -307,7 +289,7 @@ body {
    ========================================= */
 #player-area { 
   position: absolute;
-  bottom: 10%; /* Matches Slot 4's exact bottom position perfectly! */
+  bottom: 3%; 
   width: 100%;
   z-index: 2; 
 }
