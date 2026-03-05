@@ -13,7 +13,7 @@ let savedDifficulty = localStorage.getItem("blackjack_diff") || "17";
 let winStreak = parseInt(localStorage.getItem("blackjack_streak")) || 0;
 
 // ==========================================
-// 2. AUDIO SETUP (100% Retained)
+// 2. AUDIO SETUP
 // ==========================================
 const cardSound = new Audio("card-flip.mp3");
 const winSound = new Audio("win.mp3");
@@ -94,7 +94,6 @@ document.getElementById("toast-modal").addEventListener("click", () => {
 
 document.getElementById("mute-btn").addEventListener("click", () => {
   isMuted = !isMuted;
-  // Swaps out the mute PNG dynamically when clicked
   document.getElementById("mute-btn").innerHTML = isMuted ? '<img src="mute.png" class="btn-icon"> Unmute' : '<img src="sound.png" class="btn-icon"> Mute';
   cardSound.muted = winSound.muted = loseSound.muted = shuffleSound.muted = tieSound.muted = isMuted;
 });
@@ -217,7 +216,7 @@ function resetTableForBetting() {
 }
 
 // ==========================================
-// 6. CORE GAME & DECK LOGIC (100% Retained)
+// 6. CORE GAME & DECK LOGIC 
 // ==========================================
 const suits = ["♠", "♥", "♦", "♣"];
 const ranks = [
@@ -418,8 +417,35 @@ function determineWinner() {
 }
 
 // ==========================================
-// 8. RENDERING CARDS & BUBBLES
+// 8. RENDERING CARDS (Full PNG Mapping)
 // ==========================================
+
+// Helper function: Maps EVERY card to its corresponding PNG file
+function getCardImage(card) {
+  const suitMap = { "♠": "Spades", "♥": "Hearts", "♦": "Diamonds", "♣": "Clubs" };
+  return `card${suitMap[card.suit]}${card.name}.png`;
+}
+
+// Helper function: Creates the HTML Element for the card
+function createCardElement(card, isHidden) {
+  const cardEl = document.createElement("div");
+  cardEl.classList.add("card");
+  
+  if (isHidden) {
+    cardEl.classList.add("hidden-card");
+    return cardEl;
+  }
+
+  let imgFile = getCardImage(card);
+  
+  // Inject the PNG for EVERY card
+  cardEl.innerHTML = `<img src="${imgFile}" style="width: 100%; height: 100%; border-radius: 6px; display: block;">`;
+  cardEl.style.border = "none";
+  cardEl.style.backgroundColor = "transparent";
+  
+  return cardEl;
+}
+
 function renderGame() {
   const playerEl = document.getElementById("player-cards");
   const dealerEl = document.getElementById("dealer-cards");
@@ -429,26 +455,18 @@ function renderGame() {
   playerEl.innerHTML = "";
   dealerEl.innerHTML = "";
 
-  playerHand.forEach((card, index) => {
-    const cardEl = document.createElement("div");
-    cardEl.classList.add("card");
-    if (card.suit === "♥" || card.suit === "♦") cardEl.classList.add("red");
-    cardEl.innerText = card.name + card.suit;
-    playerEl.appendChild(cardEl);
+  // Render Player Hand
+  playerHand.forEach((card) => {
+    playerEl.appendChild(createCardElement(card, false));
   });
 
+  // Render Dealer Hand
   dealerHand.forEach((card, index) => {
-    const cardEl = document.createElement("div");
-    cardEl.classList.add("card");
-    if (index === 1 && !isGameOver) {
-      cardEl.classList.add("hidden-card");
-    } else {
-      if (card.suit === "♥" || card.suit === "♦") cardEl.classList.add("red");
-      cardEl.innerText = card.name + card.suit;
-    }
-    dealerEl.appendChild(cardEl);
+    let isHidden = (index === 1 && !isGameOver);
+    dealerEl.appendChild(createCardElement(card, isHidden));
   });
 
+  // Update Score Bubbles
   if (playerHand.length > 0) {
     pBubble.innerText = calculateScore(playerHand);
     pBubble.classList.remove("hidden");
