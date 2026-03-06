@@ -133,10 +133,16 @@ function listenToRoom() {
         board = data.board || ["", "", "", "", "", "", "", "", ""];
         currentPlayer = data.turn;
         
+        // --- THE FIX IS HERE ---
+        // Force the game to wake up on every database sync.
+        // If the board contains a winning move, checkResult() will instantly flip this back to false!
+        gameActive = true; 
+        
         // Update the visual UI
         updateVisualBoard();
         checkResult(true); // true = skip broadcasting audio twice
         
+        // Now this will properly update the text to "YOUR TURN" when the board resets!
         if (gameActive) {
             statusDisplay.innerText = currentPlayer === mySymbol ? "YOUR TURN!" : "Opponent is thinking...";
         }
