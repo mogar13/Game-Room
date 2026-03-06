@@ -220,8 +220,15 @@ async function handleAttack(index) {
     } else {
         opponentBoard[index] = newVal;
         if (isHit) SystemUI.playSound('win'); else playBSSound('dice-throw-1');
-        turn = 2; updateVisuals();
-        if (gameState === "playing") setTimeout(aiAttack, 800);
+        
+        // THE FIX: Check for the win BEFORE the AI is allowed to shoot
+        checkWin(); 
+        
+        if (gameState === "playing") {
+            turn = 2; 
+            updateVisuals();
+            setTimeout(aiAttack, 800);
+        }
     }
     isMoving = false;
 }
@@ -300,24 +307,31 @@ function updateVisuals() {
         if (v === 3) oCells[i].classList.add("hit");
     });
     
-    // TURN LOCK
-    const isMyTurn = (gameMode === "online") ? (turn === myId) : (turn === 1);
-    if (!isMyTurn || gameState !== "playing") {
-        rollBtn.style.opacity = "0.5";
-        rollBtn.disabled = true;
-    } else {
+    // THE FIX: The "Ready to Fight" button should only be active during setup when 5 ships are placed.
+    if (gameState === "setup" && shipsPlacedCount === 5) {
         rollBtn.style.opacity = "1";
         rollBtn.disabled = false;
+    } else {
+        rollBtn.style.opacity = "0.5";
+        rollBtn.disabled = true;
     }
 }
 
 function checkWin() {
     const pRemaining = playerBoard.filter(v => v === 1).length;
     const oRemaining = opponentBoard.filter(v => v === 1).length;
+    const statusText = document.getElementById("status-display"); // Replaces the lame alert
+
     if (oRemaining === 0 && gameState === "playing") {
-        SystemUI.playSound('win'); alert("YOU WIN!"); gameState = "finished";
+        SystemUI.playSound('win'); 
+        statusText.innerText = "VICTORY! ENEMY FLEET SUNK!";
+        gameState = "finished";
+        updateVisuals();
     } else if (pRemaining === 0 && gameState === "playing") {
-        SystemUI.playSound('lose'); alert("YOU LOSE!"); gameState = "finished";
+        SystemUI.playSound('lose'); 
+        statusText.innerText = "DEFEAT! YOUR FLEET IS GONE!";
+        gameState = "finished";
+        updateVisuals();
     }
 }
 
