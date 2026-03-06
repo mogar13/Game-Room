@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battleship Pro</title>
+  <link rel="stylesheet" href="../../system/system_ui.css">
+  <link rel="stylesheet" href="battleship_style.css">
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, update, get, child } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
+      databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com", 
+      authDomain: "game-room-26e34.firebaseapp.com",
+      projectId: "game-room-26e34",
+      storageBucket: "game-room-26e34.firebasestorage.app",
+      messagingSenderId: "769541427914",
+      appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
+    };
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+    window.db = database; window.dbRef = ref; window.dbSet = set;
+    window.dbOnValue = onValue; window.dbUpdate = update;
+    window.dbGet = get; window.dbChild = child;
+  </script>
+</head>
+<body>
+  <div id="multiplayer-lobby" class="hidden">
+    <div class="lobby-box">
+      <button id="lobby-close-btn" style="position:absolute; top:10px; right:10px; background:none; border:none; color:#f1c40f; font-size:1.5rem; cursor:pointer;">&times;</button>
+      <h2>MULTIPLAYER ARENA</h2>
+      <div class="lobby-section">
+        <h3>HOST A GAME</h3>
+        <button id="btn-create-room" class="lobby-btn primary">CREATE NEW ROOM</button>
+        <div id="room-code-display" class="hidden">
+          Room Code: <span id="host-room-id" class="highlight"></span>
+          <p class="waiting-text">Waiting for opponent...</p>
+        </div>
+      </div>
+      <div class="lobby-divider">OR</div>
+      <div class="lobby-section">
+        <h3>JOIN A GAME</h3>
+        <input type="text" id="join-room-input" placeholder="Enter 4-Digit Code" maxlength="4">
+        <button id="btn-join-room" class="lobby-btn secondary">JOIN ROOM</button>
+      </div>
+      <p id="lobby-error-msg" class="error-text"></p>
+      <button id="btn-cancel-lobby" class="lobby-btn" style="background:#444; margin-top:10px;">BACK TO LOCAL PLAY</button>
+    </div>
+  </div>
+
+  <div id="game-container">
+    <div id="game-header">
+        <h2 id="status-display">PLACE YOUR FLEET</h2>
+        <div id="ship-selector">
+            <div class="ship-grid">
+                <button class="ship-btn" data-size="5" data-name="Carrier">Carrier (5)</button>
+                <button class="ship-btn" data-size="4" data-name="Battleship">Battleship (4)</button>
+                <button class="ship-btn" data-size="3" data-name="Destroyer">Destroyer (3)</button>
+                <button class="ship-btn" data-size="3" data-name="Sub">Sub (3)</button>
+                <button class="ship-btn" data-size="2" data-name="Patrol">Patrol (2)</button>
+            </div>
+            <div class="tool-grid">
+                <button id="rotate-btn" class="tool-btn">HORIZONTAL</button>
+                <button id="delete-mode-btn" class="tool-btn delete-off">DELETE: OFF</button>
+                <button id="clear-board-btn" class="tool-btn danger">CLEAR ALL</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="boards-container">
+        <div class="board-wrapper">
+            <h3>MY FLEET</h3>
+            <div id="player-board" class="board"></div>
+        </div>
+        <div class="board-wrapper">
+            <h3>RADAR (ATTACK)</h3>
+            <div id="opponent-board" class="board"></div>
+        </div>
+    </div>
+
+    <div class="controls">
+      <button id="fire-btn" class="sys-btn" disabled>🔥 READY TO FIGHT</button>
+      <button id="auto-place-btn" class="sys-btn">🎲 AUTO-PLACE</button>
+      <button id="restart-btn" class="sys-btn" style="background:#555;">🔄 RESTART</button>
+    </div>
+  </div>
+
+  <script src="../../system/system_ui.js"></script>
+  <script src="battleship_app.js"></script>
+</body>
+</html>
