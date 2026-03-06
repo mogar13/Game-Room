@@ -49,18 +49,7 @@ let winStreak = parseInt(localStorage.getItem("blackjack_streak")) || 0;
 function updateStreakUI() { document.getElementById("streak-val").innerText = winStreak; }
 updateStreakUI();
 
-// Audio
-const cardSound = new Audio("card-flip.mp3");
-const winSound = new Audio("win.mp3");
-const loseSound = new Audio("lose.mp3");
-const shuffleSound = new Audio("shuffle.mp3");
-const tieSound = new Audio("tie.mp3");
-
-function playSfx(audioObj) {
-    if (!SystemUI.isMuted) { audioObj.currentTime = 0; audioObj.play(); }
-}
-
-// OS BETTING INTEGRATION
+// OS BETTING INTEGRATION (Smart Sound Routing)
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
         if (!isGameOver) return;
@@ -68,6 +57,14 @@ SystemUI.setupBetting("os-betting-rack", {
             showToast("Not Enough Cash", "You don't have enough bankroll for that bet.");
             return;
         }
+        
+        // Smart Audio: First chip hits table, rest stack!
+        if (currentBet === 0) {
+            SystemUI.playSound('chipTable');
+        } else {
+            SystemUI.playSound('chipStack');
+        }
+
         currentBet += val;
         updateBetUI();
     },
@@ -101,12 +98,11 @@ function renderTableChips() {
     
     if (currentBet === 0) {
         potDisplay.classList.add("hidden");
-        SystemUI.renderTableStacks(0, "table-bet-chips"); // clears player
-        if (document.getElementById("dealer-bet-chips")) SystemUI.renderTableStacks(0, "dealer-bet-chips"); // clears dealer
+        SystemUI.renderTableStacks(0, "table-bet-chips");
+        if (document.getElementById("dealer-bet-chips")) SystemUI.renderTableStacks(0, "dealer-bet-chips"); 
         return;
     }
 
-    // Multiply by 2 to represent the actual total pot (Player bet + Dealer Match)
     potDisplay.innerText = `POT: $${currentBet * 2}`;
     potDisplay.classList.remove("hidden");
 
@@ -117,7 +113,6 @@ function renderTableChips() {
 }
 
 
-// Toast Modal
 let modalTimer;
 let resetPending = false;
 function showToast(title, message, resetTableAfter = false) {
@@ -186,7 +181,7 @@ function shuffleDeck() {
 
 function dealCard(hand) {
   hand.push(deck.pop());
-  playSfx(cardSound);
+  SystemUI.playSound('card'); // Triggers OS random card sounds
 }
 
 function calculateScore(hand) {
@@ -204,8 +199,10 @@ document.getElementById("deal-btn").addEventListener("click", () => {
   SystemUI.updateMoneyDisplay();
   
   isGameOver = false;
-  updateBetUI(); // Turns chips gray
-  playSfx(shuffleSound);
+  updateBetUI(); 
+  
+  // OS Audio Instead of Local Audio
+  SystemUI.playSound('shuffle');
 
   document.getElementById("betting-controls").classList.add("hidden");
   document.getElementById("playing-controls").classList.remove("hidden");
@@ -217,12 +214,16 @@ document.getElementById("deal-btn").addEventListener("click", () => {
   let numDecks = (savedDifficulty === "19") ? 6 : (savedDifficulty === "17" ? 4 : 1);
   if (deck.length < 20) { createDeck(numDecks); shuffleDeck(); }
 
-  dealCard(playerHand); dealCard(dealerHand);
-  dealCard(playerHand); dealCard(dealerHand);
-  renderGame();
-
-  if (dealerHand[0].name === "A") document.getElementById("insurance-btn").classList.remove("hidden");
-  if (calculateScore(playerHand) === 21) handleStand();
+  // Added slight delays so the card sounds don't all trigger at the exact same millisecond
+  setTimeout(() => dealCard(playerHand), 100);
+  setTimeout(() => dealCard(dealerHand), 300);
+  setTimeout(() => dealCard(playerHand), 500);
+  setTimeout(() => {
+      dealCard(dealerHand);
+      renderGame();
+      if (dealerHand[0].name === "A") document.getElementById("insurance-btn").classList.remove("hidden");
+      if (calculateScore(playerHand) === 21) handleStand();
+  }, 700);
 });
 
 document.getElementById("hit-btn").addEventListener("click", () => {
@@ -242,13 +243,18 @@ function handleStand() {
   if (isGameOver) return;
   document.getElementById("insurance-btn").classList.add("hidden");
   const difficultyLimit = Number(savedDifficulty);
-  let dealerScore = calculateScore(dealerHand);
   
-  while (dealerScore < difficultyLimit) {
-    dealCard(dealerHand);
-    dealerScore = calculateScore(dealerHand);
+  function playDealerTurn() {
+      let dealerScore = calculateScore(dealerHand);
+      if (dealerScore < difficultyLimit) {
+          dealCard(dealerHand);
+          renderGame();
+          setTimeout(playDealerTurn, 600); // 600ms delay between dealer draws for tension!
+      } else {
+          determineWinner();
+      }
   }
-  determineWinner();
+  playDealerTurn();
 }
 
 document.getElementById("double-btn").addEventListener("click", () => {
@@ -286,6 +292,7 @@ document.getElementById("insurance-btn").addEventListener("click", () => {
   if (calculateScore(dealerHand) === 21) {
     SystemUI.money += (insBet * 3); 
     SystemUI.updateMoneyDisplay();
+    SystemUI.playSound('win');
     showToast("Insurance Paid!", `Dealer has Blackjack. You won $${insBet * 2}.`);
     setTimeout(handleStand, 2500);
   } else {
@@ -309,19 +316,19 @@ function determineWinner() {
 
   if (pScore > 21) {
     title = "Busted!"; message = `You went over 21. Lost $${currentBet}.`;
-    winStreak = 0; playSfx(loseSound);
+    winStreak = 0; SystemUI.playSound('lose');
   } else if (playerHasBlackjack && !dealerHasBlackjack) {
     title = "Blackjack!"; message = `Natural 21! Won $${currentBet * 1.5}!`;
-    SystemUI.money += (currentBet * 2.5); winStreak++; playSfx(winSound);
+    SystemUI.money += (currentBet * 2.5); winStreak++; SystemUI.playSound('win');
   } else if (dScore > 21 || pScore > dScore) {
     title = "You Win!"; message = `Beat the dealer! Won $${currentBet * 2}!`;
-    SystemUI.money += (currentBet * 2); winStreak++; playSfx(winSound);
+    SystemUI.money += (currentBet * 2); winStreak++; SystemUI.playSound('win');
   } else if (dScore > pScore) {
     title = "Dealer Wins!"; message = `Dealer had a higher score. Lost $${currentBet}.`;
-    winStreak = 0; playSfx(loseSound);
+    winStreak = 0; SystemUI.playSound('lose');
   } else {
     title = "Push (Tie)!"; message = "It's a tie. Bet returned.";
-    SystemUI.money += currentBet; winStreak = 0; playSfx(tieSound);
+    SystemUI.money += currentBet; winStreak = 0; SystemUI.playSound('tie');
   }
 
   SystemUI.updateMoneyDisplay();
@@ -331,7 +338,8 @@ function determineWinner() {
 
 function getCardImage(card) {
   const suitMap = { "♠": "Spades", "♥": "Hearts", "♦": "Diamonds", "♣": "Clubs" };
-  return `card${suitMap[card.suit]}${card.name}.png`;
+  // FIXED: Pointing to the new standard cards folder
+  return `../../system/images/cards/standard/card${suitMap[card.suit]}${card.name}.png`;
 }
 
 function createCardElement(card, isHidden) {

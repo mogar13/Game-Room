@@ -42,7 +42,6 @@ body {
 #dealer-area { position: absolute; top: 60px; width: 100%; }
 #dealer-bet-chips { margin-top: 30px; display: flex; flex-direction: row; justify-content: center; gap: 12px; height: 30px; }
 
-/* FIXED: Moved to the exact center of the felt */
 .table-text {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: 100%; text-align: center; opacity: 0.35; color: #fff; text-transform: uppercase; pointer-events: none; z-index: 0;
@@ -54,17 +53,14 @@ body {
 .boxes-arc { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 .box-slot { width: 66px; height: 96px; position: absolute; pointer-events: auto; }
 
-/* FIXED: Pushed the chips higher up the table away from the cards */
 .slot-4 { left: 50%; bottom: 20%; transform: translateX(-50%); opacity: 1; }
 
 #table-bet-chips { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 46px; height: 46px; display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 10px; }
 
-/* FIXED: Pulled the player cards up slightly from the wood rail */
 #player-area { position: absolute; bottom: 8%; width: 100%; z-index: 2; }
 .card-area { display: flex; flex-direction: column; align-items: center; position: relative;}
 .card-container { display: flex; justify-content: center; }
 
-/* FIXED: Anchored mathematically to the top-right of the center card */
 .score-bubble {
   position: absolute; bottom: -45px; right: calc(50% - 65px);
   background: rgba(0, 0, 0, 0.9); color: white;
@@ -81,7 +77,17 @@ body {
 }
 .card:first-child { margin-left: 0; } 
 .card.red { color: #d40000; }
-.card.hidden-card { background-color: transparent; background-image: url('cardBack_red2.png'); background-size: 100% 100%; background-position: center; color: transparent; border: none; }
+
+/* FIXED: Pointing to the new standard cards folder */
+.card.hidden-card { 
+  background-color: transparent; 
+  background-image: url('../../system/images/cards/standard/cardBack_red2.png'); 
+  background-size: 100% 100%; 
+  background-position: center; 
+  color: transparent; 
+  border: none; 
+}
+
 #dealer-cards .card:first-child { z-index: 2; }
 #dealer-cards .card:nth-child(2) { z-index: 1; }
 
@@ -115,38 +121,20 @@ body {
    MOBILE & SMALL SCREEN RESPONSIVENESS
    ========================================= */
 @media (max-width: 768px), (max-height: 750px) {
-  
-  /* 1. Shrink the cards so they don't collide */
   .card { 
-    width: 50px; 
-    height: 75px; 
-    font-size: 18px; 
-    margin-left: -25px; /* Keeps them nicely stacked */
+    width: 50px; height: 75px; font-size: 18px; margin-left: -25px; 
   }
-
-  /* 2. Shrink the center text so it gets out of the way */
   .table-text h1 { font-size: 1rem; border-width: 1px; }
   .table-text h2 { font-size: 0.7rem; }
   .table-text h3 { font-size: 0.85rem; }
-
-  /* 3. Shrink the score bubbles */
-  .score-bubble { 
-    width: 28px; 
-    height: 28px; 
-    font-size: 0.9rem; 
-  }
-
-  /* 4. Shrink the dealer tray and shoe to free up top space */
+  .score-bubble { width: 28px; height: 28px; font-size: 0.9rem; }
   .dealer-tray { width: 140px; height: 20px; }
   .chip-rows { width: 120px; height: 8px; }
   .dealer-shoe { width: 40px; height: 60px; right: 2%; top: 10px; }
-
-  /* 5. Scale down the top-left stats so they don't overlap the dealer */
   #table-stats-container { transform: scale(0.85); transform-origin: top left; }
 }
 
-/* Extra safety for very short screens (like playing landscape on a phone) */
 @media (max-height: 600px) {
-    .table-text { display: none; } /* Hide the text completely if height is dangerously low */
+    .table-text { display: none; } 
     #dealer-area { top: 25px; }
 }

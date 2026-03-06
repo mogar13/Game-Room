@@ -2,7 +2,57 @@ const SystemUI = {
     money: parseInt(localStorage.getItem("blackjack_money")) || 5000,
     isMuted: localStorage.getItem("casino_muted") === "true",
     
+    audioTracks: {}, 
+
+    preloadAudio: function() {
+        const basePath = "../../system/audio/";
+        this.audioTracks = {
+            chipTable: new Audio(basePath + 'chip-lay-3.ogg'),
+            chipStack: [
+                new Audio(basePath + 'chip-lay-1.ogg'),
+                new Audio(basePath + 'chip-lay-2.ogg')
+            ],
+            card: [
+                new Audio(basePath + 'card-slide-6.ogg'),
+                new Audio(basePath + 'cardPlace2.ogg')
+            ],
+            win: new Audio(basePath + 'win.mp3'),
+            click: new Audio(basePath + 'switch4.ogg'),
+            roulette: new Audio(basePath + 'roulette.mp3'),
+            // Newly added globals!
+            lose: new Audio(basePath + 'lose.mp3'),
+            tie: new Audio(basePath + 'tie.mp3'),
+            shuffle: new Audio(basePath + 'shuffle.mp3'),
+            diceShake: [
+                new Audio(basePath + 'dice-shake-1.ogg'),
+                new Audio(basePath + 'dice-shake-2.ogg')
+            ],
+            diceThrow: [
+                new Audio(basePath + 'dice-throw-1.ogg'),
+                new Audio(basePath + 'dice-throw-2.ogg')
+            ]
+        };
+    },
+
+    playSound: function(type) {
+        if (this.isMuted || !this.audioTracks[type]) return null;
+
+        let sound;
+        if (Array.isArray(this.audioTracks[type])) {
+            sound = this.audioTracks[type][Math.floor(Math.random() * this.audioTracks[type].length)];
+        } else {
+            sound = this.audioTracks[type];
+        }
+
+        let soundClone = sound.cloneNode();
+        soundClone.volume = 0.6; 
+        soundClone.play().catch(e => console.log("Audio blocked:", e));
+        
+        return soundClone;
+    },
+
     init: function(config) {
+        this.preloadAudio(); 
         this.injectHTML();
         this.bindEvents();
         
@@ -38,11 +88,12 @@ const SystemUI = {
     injectHTML: function() {
         if (document.getElementById("universal-hud")) return;
 
+        // FIXED: Now points to the new /images/icons/ folder!
         const uiHTML = `
         <div id="universal-hud">
-           <a href="../../index.html" class="hud-btn" id="home-btn"><img src="../blackjack/home.png" class="hud-icon"></a>
-           <div class="hud-stat"><img src="../blackjack/dollar.png" class="hud-icon"> $<span id="sys-money">${this.money}</span></div>
-           <button class="hud-btn" id="sys-settings-btn"><img src="../blackjack/settings.png" class="hud-icon"></button>
+           <a href="../../index.html" class="hud-btn" id="home-btn"><img src="../../system/images/icons/home.png" class="hud-icon"></a>
+           <div class="hud-stat"><img src="../../system/images/icons/dollar.png" class="hud-icon"> $<span id="sys-money">${this.money}</span></div>
+           <button class="hud-btn" id="sys-settings-btn"><img src="../../system/images/icons/settings.png" class="hud-icon"></button>
         </div>
 
         <div id="sys-modal" class="sys-hidden">
@@ -75,30 +126,32 @@ const SystemUI = {
 
     bindEvents: function() {
         document.getElementById("sys-settings-btn").addEventListener("click", () => {
+            this.playSound('click'); 
             document.getElementById("sys-modal").classList.remove("sys-hidden");
         });
         document.getElementById("sys-close-btn").addEventListener("click", () => {
+            this.playSound('click'); 
             document.getElementById("sys-modal").classList.add("sys-hidden");
         });
         document.getElementById("sys-mute-btn").addEventListener("click", () => {
+            this.playSound('click'); 
             this.isMuted = !this.isMuted;
             localStorage.setItem("casino_muted", this.isMuted);
             this.updateMuteBtn();
         });
         document.getElementById("sys-nuke-btn").addEventListener("click", () => {
-            if (confirm("WARNING: This will permanently erase your $5,000 bankroll and ALL game data across the entire library. Are you absolutely sure?")) {
+            this.playSound('click');
+            if (confirm("WARNING: This will permanently erase your bankroll and ALL game data. Are you absolutely sure?")) {
                 localStorage.clear();
                 window.location.reload();
             }
         });
     },
 
-    // --- NEW: UNIVERSAL BETTING RACK ---
     setupBetting: function(containerId, options) {
         const container = document.getElementById(containerId);
         if (!container) return;
 
-        // Default layout if none is passed
         const denoms = options.chips || [
             { val: 1, cls: 'sys-chip-1', text: '1' },
             { val: 5, cls: 'sys-chip-5', text: '5' },
@@ -122,7 +175,6 @@ const SystemUI = {
             </div>
         `;
 
-        // Wire up the clicks to ping your individual game files!
         container.querySelectorAll('.sys-chip').forEach(chip => {
             chip.addEventListener('click', () => {
                 let val = parseInt(chip.dataset.val);
@@ -131,6 +183,7 @@ const SystemUI = {
         });
 
         document.getElementById('sys-clear-bet-btn').addEventListener('click', () => {
+            this.playSound('click');
             if (options.onClear) options.onClear();
         });
     },
@@ -146,15 +199,14 @@ const SystemUI = {
             container.querySelectorAll("button").forEach(btn => btn.disabled = !isEnabled);
         }
     },
-    // --- NEW: 3D TABLE CHIP STACKER ---
+
     renderTableStacks: function(amount, containerId) {
         const container = document.getElementById(containerId);
         if (!container) return;
-        container.innerHTML = ""; // Clear old chips
+        container.innerHTML = ""; 
 
         if (amount <= 0) return;
 
-        // The math to break a bet down into the largest possible chips
         const denoms = [
             { val: 1000, cls: 'sys-table-chip-1k' },
             { val: 500, cls: 'sys-table-chip-500' },
@@ -165,8 +217,6 @@ const SystemUI = {
         ];
 
         let tempAmount = amount;
-        
-        // A wrapper to line the stacks up neatly side-by-side
         let flexContainer = document.createElement('div');
         flexContainer.style.display = 'flex';
         flexContainer.style.gap = '8px';
@@ -184,11 +234,10 @@ const SystemUI = {
                 let col = document.createElement("div");
                 col.className = "sys-table-chip-stack";
                 
-                // Stack them visually by offsetting the 'bottom' style
                 for(let i=0; i<count; i++) {
                     let cEl = document.createElement("div");
                     cEl.className = `sys-table-chip ${d.cls}`;
-                    cEl.style.bottom = `${i * 6}px`; // 6px creates the 3D overlap thickness
+                    cEl.style.bottom = `${i * 6}px`; 
                     col.appendChild(cEl);
                 }
                 flexContainer.appendChild(col);

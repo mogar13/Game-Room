@@ -4,11 +4,11 @@ SystemUI.init({
     rules: `
         <strong style="color:#f1c40f;">Wins evaluate left-to-right on active paylines.</strong><br><br>
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-            <img src="lucky-seven.png" style="width:25px;"> 
+            <img src="../../system/images/icons/lucky-seven.png" style="width:25px;"> 
             <span><strong>JACKPOT:</strong> 5x = 100x | 4x = 25x | 3x = 5x</span>
         </div>
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-            <img src="diamond.png" style="width:25px;"> <img src="gold.png" style="width:25px;"> 
+            <img src="../../system/images/icons/diamond.png" style="width:25px;"> <img src="../../system/images/icons/gold.png" style="width:25px;"> 
             <span><strong>HIGH TIER:</strong> 5x = 50x | 4x = 10x | 3x = 2x</span>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
@@ -22,8 +22,19 @@ SystemUI.init({
 let baseBet = 0;
 let activeLines = 5;
 let isSpinning = false;
+let activeSpinSound = null; // To track and stop the spin sound
 
-const symbols = ["bell.png", "cherries.png", "orange.png", "plum.png", "watermelon.png", "lucky-seven.png", "diamond.png", "gold.png"];
+// FIXED PATHS: Pointing to your new icons folder
+const symbols = [
+    "../../system/images/icons/bell.png", 
+    "../../system/images/icons/cherries.png", 
+    "../../system/images/icons/orange.png", 
+    "../../system/images/icons/plum.png", 
+    "../../system/images/icons/watermelon.png", 
+    "../../system/images/icons/lucky-seven.png", 
+    "../../system/images/icons/diamond.png", 
+    "../../system/images/icons/gold.png"
+];
 
 const paylines = [
     [1, 1, 1, 1, 1], // Mid
@@ -37,7 +48,6 @@ const paylines = [
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
         if (isSpinning) return;
-        // In slots, selecting a chip increases the BASE bet per line
         if (SystemUI.money >= (baseBet + val) * activeLines) { 
             baseBet += val; 
             updateHUD(); 
@@ -50,14 +60,11 @@ SystemUI.setupBetting("os-betting-rack", {
     }
 });
 
-
 function updateHUD() {
     let totalBet = baseBet * activeLines;
     
     SystemUI.updateMoneyDisplay();
-    // Update the OS rack's total display
     SystemUI.updateBetDisplay(totalBet);
-    // Disable chips while spinning
     SystemUI.enableBetting(!isSpinning);
 
     document.getElementById("deck-base-bet").innerText = baseBet;
@@ -108,6 +115,7 @@ function clearLinePreview() {
 document.querySelectorAll(".line-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
         if (isSpinning) return;
+        SystemUI.playSound('click'); // OS Click Sound
         activeLines = parseInt(e.target.dataset.line);
         updateLineButtons();
         updateHUD();
@@ -116,7 +124,6 @@ document.querySelectorAll(".line-btn").forEach(btn => {
     btn.addEventListener("mouseleave", clearLinePreview);
 });
 
-// Wire the "INFO" button to trigger the OS Modal
 document.getElementById("btn-paytable").addEventListener("click", () => {
     document.getElementById("sys-modal").classList.remove("sys-hidden");
 });
@@ -125,11 +132,13 @@ document.getElementById("btn-spin").addEventListener("click", () => {
     if (isSpinning || (baseBet * activeLines) > SystemUI.money) return;
     clearLinePreview();
     
-    // Deduct money directly from the OS
     SystemUI.money -= (baseBet * activeLines);
-    
     isSpinning = true;
     updateHUD();
+    
+    // Play the OS spin sound!
+    activeSpinSound = SystemUI.playSound('roulette');
+
     document.getElementById("deck-win").innerText = "0";
     document.querySelectorAll(".winning-pulse").forEach(el => el.classList.remove("winning-pulse"));
 
@@ -144,6 +153,7 @@ document.getElementById("btn-spin").addEventListener("click", () => {
         spinReel(`strip-${col + 1}`, resultMatrix[0][col], resultMatrix[1][col], resultMatrix[2][col], 2000 + (col * 300));
     }
 
+    // Evaluate slightly after the last reel stops
     setTimeout(() => evaluateMatrix(resultMatrix), 2000 + (4 * 300) + 100);
 });
 
@@ -169,6 +179,13 @@ function spinReel(stripId, symTop, symMid, symBot, duration) {
 }
 
 function evaluateMatrix(matrix) {
+    // Stop the spin sound exactly when reels finish
+    if (activeSpinSound) {
+        activeSpinSound.pause();
+        activeSpinSound.currentTime = 0;
+        activeSpinSound = null;
+    }
+
     let totalWin = 0;
     let winningCoords = [];
 
@@ -186,8 +203,8 @@ function evaluateMatrix(matrix) {
         }
         
         if (matchCount >= 3) {
-            let multi = (startSymbol === "lucky-seven.png") ? (matchCount === 5 ? 100 : (matchCount === 4 ? 25 : 5)) :
-                        (startSymbol === "diamond.png" || startSymbol === "gold.png") ? (matchCount === 5 ? 50 : (matchCount === 4 ? 10 : 2)) :
+            let multi = (startSymbol.includes("lucky-seven.png")) ? (matchCount === 5 ? 100 : (matchCount === 4 ? 25 : 5)) :
+                        (startSymbol.includes("diamond.png") || startSymbol.includes("gold.png")) ? (matchCount === 5 ? 50 : (matchCount === 4 ? 10 : 2)) :
                         (matchCount === 5 ? 10 : (matchCount === 4 ? 3 : 1));
             
             totalWin += (baseBet * multi);
@@ -198,9 +215,12 @@ function evaluateMatrix(matrix) {
     const winDisp = document.getElementById("deck-win");
     winDisp.innerText = totalWin;
     winDisp.style.color = totalWin > 0 ? "#2ecc71" : "white";
-    if (totalWin > 0) highlightWinners(winningCoords);
+    
+    if (totalWin > 0) {
+        SystemUI.playSound('win'); // OS Win Sound!
+        highlightWinners(winningCoords);
+    }
 
-    // Pay the OS
     SystemUI.money += totalWin;
     
     isSpinning = false;

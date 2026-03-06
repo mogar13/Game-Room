@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Memory Casino</title>
-  <link rel="stylesheet" href="../../system/system_ui.css"> <link rel="stylesheet" href="memory_style.css">
+  <link rel="stylesheet" href="../../system/system_ui.css"> 
+  <link rel="stylesheet" href="memory_style.css">
 </head>
 <body>
 
@@ -14,14 +15,21 @@
       Moves: <span id="move-count">0</span>
     </div>
 
-    <div id="memory-grid">
-      </div>
+    <div id="memory-grid"></div>
     
     <div id="controls">
       <button id="start-game-btn">BUY IN ($100)</button>
     </div>
   </div>
 
-  <script src="../../system/system_ui.js"></script> <script src="memory_app.js"></script>
+  <div id="toast-modal" class="hidden modal-overlay">
+    <div id="modal-box" class="toast-box">
+      <h2 id="modal-title">Result</h2>
+      <p id="modal-message">Message goes here.</p>
+    </div>
+  </div>
+
+  <script src="../../system/system_ui.js"></script> 
+  <script src="memory_app.js"></script>
 </body>
 </html>

@@ -20,9 +20,8 @@ let selectedChipAmount = 10;
 let bets = {}; 
 let isSpinning = false;
 let currentRotation = 0; 
-let ballRotation = 0; // Tracks the ball's independent spin
+let ballRotation = 0; 
 
-// IMAGE CALIBRATION (Adjust if the ball lands on the wrong number)
 let calibrationOffset = 0; 
 
 const wheelOrder = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
@@ -42,7 +41,6 @@ function initTable() {
     const grid = document.getElementById("numbers-grid");
     const order = [3, 2, 1]; 
     
-    // Explicitly fix the Zero bet bug
     const zeroCell = document.getElementById("zero-cell");
     if (zeroCell) zeroCell.addEventListener("click", () => placeBet("0", zeroCell));
 
@@ -66,6 +64,7 @@ function initTable() {
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
         if (isSpinning) return;
+        SystemUI.playSound('click'); // Selecting a chip just clicks
         selectedChipAmount = val; 
     },
     onClear: function() {
@@ -86,6 +85,13 @@ function placeBet(id, element) {
     if (isSpinning) return;
     if (SystemUI.money < selectedChipAmount) return showToast("Not Enough Cash", "You don't have enough bankroll for that chip.");
 
+    // Smart Audio: If bet already exists here, play stack sound. Else table sound.
+    if (bets[id]) {
+        SystemUI.playSound('chipStack');
+    } else {
+        SystemUI.playSound('chipTable');
+    }
+
     SystemUI.money -= selectedChipAmount;
     currentTotalBet += selectedChipAmount;
     bets[id] = (bets[id] || 0) + selectedChipAmount;
@@ -102,9 +108,6 @@ function placeBet(id, element) {
     updateUI();
 }
 
-// ==========================================
-// 5. TOAST MODAL LOGIC
-// ==========================================
 let modalTimer;
 function showToast(title, message) {
   document.getElementById("modal-title").innerText = title;
@@ -128,6 +131,10 @@ document.getElementById("spin-btn").addEventListener("click", () => {
     
     isSpinning = true;
     updateUI();
+    
+    // Trigger OS Roulette Sound!
+    SystemUI.playSound('roulette');
+
     const wheel = document.getElementById("roulette-wheel");
     const ballTrack = document.getElementById("ball-track");
     const winningNumber = Math.floor(Math.random() * 37);
@@ -135,17 +142,14 @@ document.getElementById("spin-btn").addEventListener("click", () => {
     const pocketIndex = wheelOrder.indexOf(winningNumber);
     const sliceAngle = 360 / 37;
     
-    // Wheel spins clockwise 7 full times + offset to bring the winning pocket to the top
     const targetAngle = 360 - (pocketIndex * sliceAngle) - calibrationOffset;
     const spinAmount = (360 * 7) + targetAngle - (currentRotation % 360);
     currentRotation += spinAmount;
     wheel.style.transform = `rotate(${currentRotation}deg)`;
 
-    // Ball spins counter-clockwise 10 full times and stops exactly at 0 degrees (the top pointer)
     ballRotation -= (360 * 10);
     ballTrack.style.transform = `rotate(${ballRotation}deg)`;
 
-    // Wait exactly 6.1 seconds (CSS transition is 6s)
     setTimeout(() => { determineWinners(winningNumber); }, 6100);
 });
 
@@ -168,6 +172,7 @@ function determineWinners(winningNum) {
     }
 
     if (totalWin > 0) {
+        SystemUI.playSound('win');
         showToast(`Number ${winningNum}!`, `You won $${totalWin}!`);
         SystemUI.money += totalWin;
     } else {

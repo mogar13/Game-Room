@@ -79,14 +79,6 @@
 .sys-chip:active { transform: scale(0.9); }
 .sys-chip:disabled { filter: grayscale(1); opacity: 0.5; cursor: not-allowed; }
 
-/* Image Mappings (Ensure PNGs are in the same folder as this CSS file) */
-.sys-chip-1   { background-image: url('chipWhite.png'); color: black; }
-.sys-chip-5   { background-image: url('chipRedWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
-.sys-chip-25  { background-image: url('chipGreenWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
-.sys-chip-100 { background-image: url('chipBlackWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
-.sys-chip-500 { background-image: url('chipBlueWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
-.sys-chip-1k  { background-image: url('chipWhiteBlue.png'); color: black; }
-
 /* --- 3D ISOMETRIC TABLE CHIPS --- */
 .sys-table-chip-stack {
   position: relative;
@@ -114,10 +106,18 @@
   to { transform: translateY(0) scale(1); opacity: 1; } 
 }
 
+/* Image Mappings (Updated to new architecture) */
+.sys-chip-1   { background-image: url('images/chips/chipWhite.png'); color: black; }
+.sys-chip-5   { background-image: url('images/chips/chipRedWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
+.sys-chip-25  { background-image: url('images/chips/chipGreenWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
+.sys-chip-100 { background-image: url('images/chips/chipBlackWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
+.sys-chip-500 { background-image: url('images/chips/chipBlueWhite.png'); color: white; text-shadow: 1px 1px 2px black; }
+.sys-chip-1k  { background-image: url('images/chips/chipWhiteBlue.png'); color: black; }
+
 /* Map the Isometric PNGs */
-.sys-table-chip-1   { background-image: url('chipWhite_side.png'); }
-.sys-table-chip-5   { background-image: url('chipRedWhite_side.png'); }
-.sys-table-chip-25  { background-image: url('chipGreenWhite_side.png'); }
-.sys-table-chip-100 { background-image: url('chipBlackWhite_side.png'); }
-.sys-table-chip-500 { background-image: url('chipBlueWhite_side.png'); }
-.sys-table-chip-1k  { background-image: url('chipWhiteBlue_side.png'); }
+.sys-table-chip-1   { background-image: url('images/chips/chipWhite_side.png'); }
+.sys-table-chip-5   { background-image: url('images/chips/chipRedWhite_side.png'); }
+.sys-table-chip-25  { background-image: url('images/chips/chipGreenWhite_side.png'); }
+.sys-table-chip-100 { background-image: url('images/chips/chipBlackWhite_side.png'); }
+.sys-table-chip-500 { background-image: url('images/chips/chipBlueWhite_side.png'); }
+.sys-table-chip-1k  { background-image: url('images/chips/chipWhiteBlue_side.png'); }

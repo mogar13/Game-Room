@@ -33,7 +33,6 @@ const cpuBox = document.getElementById("cpu-hand");
 const statusText = document.getElementById("status-text");
 const resultOverlay = document.getElementById("result-overlay");
 
-// Setup Universal Betting Rack
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
         if (isAnimating) return;
@@ -55,10 +54,8 @@ SystemUI.setupBetting("os-betting-rack", {
 
 function updateUI() {
     SystemUI.updateMoneyDisplay(); 
-    SystemUI.updateBetDisplay(currentBet); // Updates OS bubble
+    SystemUI.updateBetDisplay(currentBet); 
     document.getElementById("streak-val").innerText = winStreak;
-    
-    // Disable play buttons if no bet placed
     document.querySelectorAll(".choice-btn").forEach(btn => btn.disabled = (currentBet === 0 || isAnimating));
 }
 
@@ -75,14 +72,15 @@ function startThrow(playerChoice) {
     isAnimating = true;
     resultOverlay.classList.add("hidden");
     
-    playerImg.src = "rock.png";
-    cpuImg.src = "rock.png";
+    // FIXED: Point to system folder during animation
+    playerImg.src = "../../system/images/icons/rock.png";
+    cpuImg.src = "../../system/images/icons/rock.png";
 
     playerBox.classList.add("shaking");
     cpuBox.classList.add("shaking");
 
     updateUI(); 
-    SystemUI.enableBetting(false); // OS visually grays out chips
+    SystemUI.enableBetting(false); 
 
     setTimeout(() => {
         playerBox.classList.remove("shaking");
@@ -95,22 +93,26 @@ function resolveGame(playerChoice) {
     const choices = ["rock", "paper", "scissors"];
     const cpuChoice = choices[Math.floor(Math.random() * 3)];
     
-    playerImg.src = `${playerChoice}.png`;
-    cpuImg.src = `${cpuChoice}.png`;
+    // FIXED: Point to system folder for final reveal
+    playerImg.src = `../../system/images/icons/${playerChoice}.png`;
+    cpuImg.src = `../../system/images/icons/${cpuChoice}.png`;
 
     if (playerChoice === cpuChoice) {
         statusText.innerText = "TIE!";
-        SystemUI.money += currentBet; // Push
+        SystemUI.playSound('tie'); // OS Audio
+        SystemUI.money += currentBet; 
     } else if (
         (playerChoice === "rock" && cpuChoice === "scissors") ||
         (playerChoice === "paper" && cpuChoice === "rock") ||
         (playerChoice === "scissors" && cpuChoice === "paper")
     ) {
         statusText.innerText = "YOU WIN!";
-        SystemUI.money += (currentBet * 2); // Payout
+        SystemUI.playSound('win'); // OS Audio
+        SystemUI.money += (currentBet * 2); 
         winStreak++;
     } else {
         statusText.innerText = "CPU WINS!";
+        SystemUI.playSound('lose'); // OS Audio
         winStreak = 0;
     }
 
@@ -120,7 +122,7 @@ function resolveGame(playerChoice) {
     
     localStorage.setItem("rps_streak", winStreak);
     updateUI();
-    SystemUI.enableBetting(true); // OS re-enables chips
+    SystemUI.enableBetting(true); 
 }
 
 updateUI();

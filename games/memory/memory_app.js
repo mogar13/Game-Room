@@ -24,18 +24,31 @@ SystemUI.init({
     `
 });
 
-// Wire up the OS Settings Toggle
 document.getElementById("sys-diff-select").addEventListener("change", (e) => {
     difficulty = e.target.value;
     const cost = difficulty === "easy" ? 50 : (difficulty === "normal" ? 100 : 250);
     document.getElementById("start-game-btn").innerText = `BUY IN ($${cost})`;
-    
-    // Auto-close modal to resume play
     document.getElementById("sys-modal").classList.add("sys-hidden");
 });
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
+    SystemUI.playSound('click');
     alert("Memory Match does not track persistent stats yet!");
+});
+
+// Toast Modal logic
+let modalTimer;
+function showToast(title, message) {
+  document.getElementById("modal-title").innerText = title;
+  document.getElementById("modal-message").innerText = message;
+  const overlay = document.getElementById("toast-modal");
+  overlay.classList.remove("hidden");
+
+  clearTimeout(modalTimer);
+  modalTimer = setTimeout(() => { overlay.classList.add("hidden"); }, 3500);
+}
+document.getElementById("toast-modal").addEventListener("click", () => {
+  document.getElementById("toast-modal").classList.add("hidden");
 });
 
 
@@ -48,10 +61,10 @@ let secondCard = null;
 let isLocking = false;
 let matchesFound = 0;
 
-const totalIcons = 18; // Total unique icons available
+const totalIcons = 18; 
 
 function updateUI() {
-    SystemUI.updateMoneyDisplay(); // Syncs top bar
+    SystemUI.updateMoneyDisplay(); 
     document.getElementById("move-count").innerText = moves;
 }
 
@@ -63,9 +76,12 @@ function initGame() {
     };
     const config = configs[difficulty];
 
-    // Check global OS money
-    if (SystemUI.money < config.cost) return alert("Insufficient funds for this difficulty!");
+    if (SystemUI.money < config.cost) {
+        showToast("Insufficient Funds", "You don't have enough cash for this difficulty!");
+        return;
+    }
     
+    SystemUI.playSound('shuffle'); // Shuffle sound when buying in!
     SystemUI.money -= config.cost;
     moves = 0;
     matchesFound = 0;
@@ -75,7 +91,6 @@ function initGame() {
     grid.innerHTML = "";
     grid.className = config.cols;
 
-    // Select random icons and double them
     let icons = Array.from({length: totalIcons}, (_, i) => i + 1);
     icons.sort(() => Math.random() - 0.5);
     let gameIcons = icons.slice(0, config.pairs);
@@ -88,7 +103,7 @@ function initGame() {
         card.dataset.icon = num;
         card.innerHTML = `
             <div class="card-face card-front"></div>
-            <div class="card-face card-back"><img src="icon${num}.png"></div>
+            <div class="card-face card-back"><img src="../../system/images/icons/icon${num}.png"></div>
         `;
         card.addEventListener("click", () => flipCard(card));
         grid.appendChild(card);
@@ -97,6 +112,8 @@ function initGame() {
 
 function flipCard(card) {
     if (isLocking || card === firstCard || card.classList.contains("matched")) return;
+    
+    SystemUI.playSound('card'); // Card slide sound!
     card.classList.add("flipped");
 
     if (!firstCard) {
@@ -120,13 +137,12 @@ function checkMatch() {
             matchesFound++;
             resetTurn();
             
-            // Check win condition
             const winTarget = difficulty === "easy" ? 4 : (difficulty === "normal" ? 8 : 18);
             if (matchesFound === winTarget) endGame();
         }, 500);
     } else {
-        // Delay to memorize if not a match
         setTimeout(() => {
+            SystemUI.playSound('card'); // Sound when flipping back over
             firstCard.classList.remove("flipped");
             secondCard.classList.remove("flipped");
             resetTurn();
@@ -139,13 +155,12 @@ function resetTurn() {
 }
 
 function endGame() {
-    // Multiplier based on performance and difficulty
     const baseWin = difficulty === "easy" ? 100 : (difficulty === "normal" ? 300 : 1000);
     
-    // Pay global OS
     SystemUI.money += baseWin;
+    SystemUI.playSound('win'); // OS Win Sound!
     
-    alert(`Jackpot! You won $${baseWin}`);
+    showToast("Jackpot!", `You found all pairs and won $${baseWin} in ${moves} moves!`);
     updateUI();
 }
 
