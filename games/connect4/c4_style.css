@@ -1,7 +1,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
 
 body {
-  /* Smooth dark gradient for eye comfort */
+  /* Smooth dark gradient that is easy on the eyes and professional */
   background: radial-gradient(circle at center, #1e272e 0%, #050505 100%);
   color: white;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -28,7 +28,7 @@ body {
   font-size: 1.5rem;
   text-transform: uppercase;
   letter-spacing: 2px;
-  margin-bottom: 30px; 
+  margin-bottom: 40px; 
   text-shadow: 0 2px 4px rgba(0,0,0,0.5);
 }
 
@@ -43,7 +43,7 @@ body {
   background: linear-gradient(145deg, #0984e3, #074b83);
   border-radius: 12px;
   
-  /* The 3D tilt you liked */
+  /* The 3D tilt */
   transform: rotateX(8deg);
   transform-style: preserve-3d;
   border: 2px solid #37a1ff; 
@@ -53,7 +53,7 @@ body {
     0 25px 35px rgba(0,0,0,0.8),  
     inset 0 4px 15px rgba(255,255,255,0.3); 
   
-  margin: 0 auto; /* Centered */
+  margin: 0 auto; /* Ensures it's perfectly centered */
 }
 
 /* --- THE LEGS / FEET --- */
@@ -82,7 +82,7 @@ body {
   cursor: pointer;
 }
 
-/* Shadow Overlay for holes */
+/* Shadow Overlay - This makes the chips look like they are INSIDE the board */
 .slot::after {
   content: "";
   position: absolute;
@@ -101,18 +101,19 @@ body {
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
-  transform: translateZ(2px);
+  transform: translateZ(2px); /* Pops it forward just enough */
   z-index: 2; 
 }
 
-/* --- CHIP PATHS --- */
+/* --- CORRECTED PATHS & COLORS --- */
 .player1 {
+  /* Using your Yellow folder */
   background-image: url("../../system/images/pieces/yellow/pieceYellow_border10.png");
   animation: dropIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
 .player2 {
-  /* Switched to Red folder because blue blends into board */
+  /* Switched to Red folder because blue piece + blue board = invisible */
   background-image: url("../../system/images/pieces/purple/piecePurple_border11.png");
   animation: dropIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
@@ -136,6 +137,7 @@ body {
 /* --- MOBILE OPTIMIZATION --- */
 @media (max-width: 500px) {
   #c4-board {
+    /* Scale the board down for phone screens */
     grid-template-columns: repeat(7, 40px);
     grid-template-rows: repeat(6, 40px);
     gap: 8px;
