@@ -129,20 +129,21 @@ function listenToRoom() {
             SystemUI.playSound('win'); // Happy sound when connected
         }
 
-        // Sync local board state with Firebase
-        board = data.board || ["", "", "", "", "", "", "", "", ""];
-        currentPlayer = data.turn;
+        // --- THE FIREBASE CHOP FIX ---
+        // Force the board to always have 9 slots, restoring any empty strings Firebase deleted
+        board = ["", "", "", "", "", "", "", "", ""];
+        if (data.board) {
+            for (let i = 0; i < 9; i++) {
+                board[i] = data.board[i] || "";
+            }
+        }
         
-        // --- THE FIX IS HERE ---
-        // Force the game to wake up on every database sync.
-        // If the board contains a winning move, checkResult() will instantly flip this back to false!
+        currentPlayer = data.turn;
         gameActive = true; 
         
-        // Update the visual UI
         updateVisualBoard();
-        checkResult(true); // true = skip broadcasting audio twice
+        checkResult(true); 
         
-        // Now this will properly update the text to "YOUR TURN" when the board resets!
         if (gameActive) {
             statusDisplay.innerText = currentPlayer === mySymbol ? "YOUR TURN!" : "Opponent is thinking...";
         }
