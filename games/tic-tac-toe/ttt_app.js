@@ -1,10 +1,11 @@
 // ==========================================
 // 1. INITIALIZE CASINO OS & MULTIPLAYER STATE
 // ==========================================
-let gameMode = localStorage.getItem("ttt_mode") || "ai"; // "ai", "local", or "online"
-let mySymbol = "X"; // Defaults to X for local/AI. In online, Host=X, Guest=O.
+let gameMode = localStorage.getItem("ttt_mode") || "ai"; 
+let mySymbol = "X"; 
 let currentRoomId = null; 
 let isHost = false;
+let chatStarted = false; // NEW: Tracks if we've loaded the chat yet
 
 SystemUI.init({
     gameName: "TIC-TAC-TOE",
@@ -33,7 +34,9 @@ document.getElementById("sys-ttt-mode").addEventListener("change", (e) => {
         document.getElementById("multiplayer-lobby").classList.remove("hidden");
     } else {
         document.getElementById("multiplayer-lobby").classList.add("hidden");
-        currentRoomId = null; // Disconnect from online
+        currentRoomId = null; 
+        SystemUI.stopChat();
+        chatStarted = false;
         restartGame();
     }
 });
@@ -71,8 +74,8 @@ btnCreateRoom.addEventListener("click", () => {
     currentRoomId = generateRoomCode();
     isHost = true;
     mySymbol = "X";
+    chatStarted = false;
     
-    // Create the room structure in Firebase
     window.dbSet(window.dbRef(window.db, 'rooms/' + currentRoomId), {
         board: ["", "", "", "", "", "", "", "", ""],
         turn: "X",
@@ -82,7 +85,7 @@ btnCreateRoom.addEventListener("click", () => {
         document.getElementById("room-code-display").classList.remove("hidden");
         document.getElementById("host-room-id").innerText = currentRoomId;
         btnCreateRoom.disabled = true;
-        listenToRoom(); // Start watching the database
+        listenToRoom(); 
     });
 });
 
@@ -92,15 +95,14 @@ btnJoinRoom.addEventListener("click", () => {
     const code = joinInput.value.toUpperCase();
     if(code.length !== 4) { errorMsg.innerText = "Code must be 4 characters."; return; }
     
-    // Check if room exists in Firebase
     window.dbGet(window.dbChild(window.dbRef(window.db), `rooms/${code}`)).then((snapshot) => {
         if (snapshot.exists()) {
             const data = snapshot.val();
             if (data.players === 1) {
-                // Room is open! Join it.
                 currentRoomId = code;
                 isHost = false;
                 mySymbol = "O";
+                chatStarted = false;
                 
                 window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
                     players: 2,
@@ -118,20 +120,20 @@ btnJoinRoom.addEventListener("click", () => {
     });
 });
 
-// The Magic Listener: Triggers instantly when Firebase data changes
+// The Magic Listener
 function listenToRoom() {
     window.dbOnValue(window.dbRef(window.db, 'rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if(!data) return; // Room deleted
+        if(!data) return; 
 
-        // If guest joined, hide lobby for the host
-        if(data.status === "playing" && !lobbyUI.classList.contains("hidden")) {
+        // THE FIX: Trigger chat for BOTH players reliably
+        if(data.status === "playing" && !chatStarted) {
+            chatStarted = true;
             lobbyUI.classList.add("hidden");
-            SystemUI.playSound('win'); // Happy sound when connected
+            SystemUI.playSound('win'); 
+            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
         }
 
-        // --- THE FIREBASE CHOP FIX ---
-        // Force the board to always have 9 slots, restoring any empty strings Firebase deleted
         board = ["", "", "", "", "", "", "", "", ""];
         if (data.board) {
             for (let i = 0; i < 9; i++) {
@@ -151,7 +153,6 @@ function listenToRoom() {
     });
 }
 
-
 // ==========================================
 // 3. CORE ENGINE STATE
 // ==========================================
@@ -166,7 +167,6 @@ const winningConditions = [
 
 statusDisplay.innerText = `It's ${currentPlayer}'s turn`;
 
-
 // ==========================================
 // 4. GAMEPLAY LOGIC
 // ==========================================
@@ -175,16 +175,14 @@ function handleCellClick(clickedCellEvent) {
 
     if (board[clickedCellIndex] !== "" || !gameActive) return;
 
-    // ONLINE NETWORK CHECK: Is it actually my turn?
     if (gameMode === "online") {
         if (currentPlayer !== mySymbol) {
-            SystemUI.playSound('click'); // Reject sound
+            SystemUI.playSound('click'); 
             return; 
         }
         
         SystemUI.playSound('chipTable');
         
-        // Build new board array and send to Firebase
         let newBoard = [...board];
         newBoard[clickedCellIndex] = mySymbol;
         let nextTurn = mySymbol === "X" ? "O" : "X";
@@ -193,10 +191,9 @@ function handleCellClick(clickedCellEvent) {
             board: newBoard,
             turn: nextTurn
         });
-        return; // Exit function. The listener will draw the X/O for us!
+        return; 
     }
 
-    // LOCAL / AI LOGIC
     SystemUI.playSound('chipTable');
     updateCell(clickedCellEvent.target, clickedCellIndex);
     checkResult(false);
@@ -263,7 +260,7 @@ function checkResult(isFromNetwork) {
 
     if (roundWon) {
         if (gameMode === "online") {
-            let winner = currentPlayer === "X" ? "O" : "X"; // The person who just moved won
+            let winner = currentPlayer === "X" ? "O" : "X"; 
             statusDisplay.innerText = winner === mySymbol ? "YOU WIN!" : "OPPONENT WINS!";
             if(!isFromNetwork) SystemUI.playSound(winner === mySymbol ? 'win' : 'lose');
         } else if (gameMode === "ai" && currentPlayer === "O") {
@@ -321,7 +318,6 @@ function restartGame() {
 
 document.querySelectorAll('.cell').forEach(cell => cell.addEventListener('click', handleCellClick));
 
-// Handle OS Lobby Escapes (Added for new global modal compatibility)
 document.getElementById("lobby-close-btn").addEventListener("click", () => {
     SystemUI.playSound('click');
     document.getElementById("multiplayer-lobby").classList.add("hidden");
@@ -330,8 +326,8 @@ document.getElementById("lobby-close-btn").addEventListener("click", () => {
 document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     SystemUI.playSound('click');
     document.getElementById("multiplayer-lobby").classList.add("hidden");
-    
-    // Switch the dropdown back to local and trigger the game reset
+    SystemUI.stopChat();
+    chatStarted = false;
     const modeSelect = document.getElementById("sys-ttt-mode");
     modeSelect.value = "local";
     modeSelect.dispatchEvent(new Event("change")); 

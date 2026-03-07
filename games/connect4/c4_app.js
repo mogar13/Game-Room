@@ -5,6 +5,7 @@ let gameMode = localStorage.getItem("c4_mode") || "ai"; // "ai", "local", or "on
 let myPlayerId = 1; // 1 = Yellow (Host), 2 = Blue (Guest)
 let currentRoomId = null; 
 let isHost = false;
+let chatStarted = false; // NEW: Tracks if we've loaded the chat yet
 
 SystemUI.init({
     gameName: "CONNECT 4",
@@ -32,6 +33,8 @@ document.getElementById("sys-c4-mode").addEventListener("change", (e) => {
     } else {
         document.getElementById("multiplayer-lobby").classList.add("hidden");
         currentRoomId = null; 
+        SystemUI.stopChat();
+        chatStarted = false;
         restartGame();
     }
 });
@@ -71,7 +74,6 @@ function createBoard() {
             slot.className = "slot";
             slot.id = `slot-${r}-${c}`;
             
-            // Create a wrapper for the chip to handle the animation cleanly inside the hole
             let chip = document.createElement("div");
             chip.className = "chip";
             slot.appendChild(chip);
@@ -106,6 +108,7 @@ if(btnCreateRoom) {
         currentRoomId = generateRoomCode();
         isHost = true;
         myPlayerId = 1;
+        chatStarted = false;
         
         window.dbSet(window.dbRef(window.db, 'c4_rooms/' + currentRoomId), {
             board: board,
@@ -132,6 +135,7 @@ if(btnJoinRoom) {
                 currentRoomId = code;
                 isHost = false;
                 myPlayerId = 2;
+                chatStarted = false;
                 
                 window.dbUpdate(window.dbRef(window.db, 'c4_rooms/' + currentRoomId), {
                     players: 2,
@@ -152,9 +156,12 @@ function listenToRoom() {
         const data = snapshot.val();
         if(!data) return; 
 
-        if(data.status === "playing" && lobbyUI && !lobbyUI.classList.contains("hidden")) {
-            lobbyUI.classList.add("hidden");
+        // THE FIX: Trigger chat for BOTH players reliably
+        if(data.status === "playing" && !chatStarted) {
+            chatStarted = true;
+            if(lobbyUI) lobbyUI.classList.add("hidden");
             SystemUI.playSound('win'); 
+            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
         }
 
         board = [];
@@ -195,7 +202,7 @@ function handleColumnClick(col) {
     }
 
     let targetRow = getLowestEmptyRow(board, col);
-    if (targetRow === -1) return; // Column full
+    if (targetRow === -1) return; 
 
     SystemUI.playSound('chipStack'); 
 
@@ -225,7 +232,6 @@ function updateVisualBoard() {
     for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
             let chip = document.getElementById(`slot-${r}-${c}`).querySelector('.chip');
-            // Remove previous classes safely
             chip.className = "chip"; 
             if (board[r][c] === 1) chip.classList.add("player1");
             if (board[r][c] === 2) chip.classList.add("player2");
@@ -258,30 +264,26 @@ function computerMove() {
 
     let bestCol = -1;
 
-    // Priority 1: Can the AI win right now?
     for(let c of validCols) {
         let r = getLowestEmptyRow(board, c);
         let tempBoard = JSON.parse(JSON.stringify(board));
-        tempBoard[r][c] = 2; // AI is Player 2
+        tempBoard[r][c] = 2; 
         if(checkWinLogic(tempBoard, 2)) { bestCol = c; break; }
     }
 
-    // Priority 2: Must the AI block the player from winning next turn?
     if(bestCol === -1) {
         for(let c of validCols) {
             let r = getLowestEmptyRow(board, c);
             let tempBoard = JSON.parse(JSON.stringify(board));
-            tempBoard[r][c] = 1; // Human is Player 1
+            tempBoard[r][c] = 1; 
             if(checkWinLogic(tempBoard, 1)) { bestCol = c; break; }
         }
     }
 
-    // Priority 3: Try to take the center column if it's available and not forced to block
     if(bestCol === -1 && validCols.includes(3) && Math.random() > 0.4) {
         bestCol = 3;
     }
 
-    // Priority 4: Pick a random valid column
     if(bestCol === -1) {
         bestCol = validCols[Math.floor(Math.random() * validCols.length)];
     }
@@ -289,27 +291,22 @@ function computerMove() {
     handleColumnClick(bestCol);
 }
 
-// A pure logic function that ONLY checks for wins on a simulated board without updating the screen
 function checkWinLogic(b, player) {
-    // Horizontal
     for(let c=0; c<COLS-3; c++) {
         for(let r=0; r<ROWS; r++) {
             if(b[r][c] === player && b[r][c+1] === player && b[r][c+2] === player && b[r][c+3] === player) return true;
         }
     }
-    // Vertical
     for(let c=0; c<COLS; c++) {
         for(let r=0; r<ROWS-3; r++) {
             if(b[r][c] === player && b[r+1][c] === player && b[r+2][c] === player && b[r+3][c] === player) return true;
         }
     }
-    // Diagonal Down-Right
     for(let c=0; c<COLS-3; c++) {
         for(let r=0; r<ROWS-3; r++) {
             if(b[r][c] === player && b[r+1][c+1] === player && b[r+2][c+2] === player && b[r+3][c+3] === player) return true;
         }
     }
-    // Diagonal Down-Left
     for(let c=0; c<COLS-3; c++) {
         for(let r=3; r<ROWS; r++) {
             if(b[r][c] === player && b[r-1][c+1] === player && b[r-2][c+2] === player && b[r-3][c+3] === player) return true;
@@ -325,7 +322,6 @@ function checkResult(isFromNetwork) {
     let won = false;
     let winningSlots = [];
 
-    // Horizontal
     for (let c = 0; c < COLS - 3; c++) {
         for (let r = 0; r < ROWS; r++) {
             let p = board[r][c];
@@ -334,7 +330,6 @@ function checkResult(isFromNetwork) {
             }
         }
     }
-    // Vertical
     if (!won) {
         for (let c = 0; c < COLS; c++) {
             for (let r = 0; r < ROWS - 3; r++) {
@@ -345,7 +340,6 @@ function checkResult(isFromNetwork) {
             }
         }
     }
-    // Diagonal Down-Right
     if (!won) {
         for (let c = 0; c < COLS - 3; c++) {
             for (let r = 0; r < ROWS - 3; r++) {
@@ -356,7 +350,6 @@ function checkResult(isFromNetwork) {
             }
         }
     }
-    // Diagonal Down-Left
     if (!won) {
         for (let c = 0; c < COLS - 3; c++) {
             for (let r = 3; r < ROWS; r++) {
@@ -388,7 +381,6 @@ function checkResult(isFromNetwork) {
         gameActive = false; return;
     }
 
-    // Check Draw
     if (board[0].every(val => val !== 0)) {
         statusDisplay.innerText = "It's a draw!";
         if(!isFromNetwork) SystemUI.playSound('tie');
@@ -426,10 +418,8 @@ function restartGame() {
     createBoard();
 }
 
-// Kickstart
 createBoard();
 
-// Handle OS Lobby Escapes
 document.getElementById("lobby-close-btn").addEventListener("click", () => {
     SystemUI.playSound('click');
     document.getElementById("multiplayer-lobby").classList.add("hidden");
@@ -441,5 +431,7 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     document.getElementById("sys-c4-mode").value = "ai";
     localStorage.setItem("c4_mode", "ai");
     document.getElementById("multiplayer-lobby").classList.add("hidden");
+    SystemUI.stopChat();
+    chatStarted = false;
     restartGame();
 });

@@ -3,6 +3,7 @@ const SystemUI = {
     isMuted: localStorage.getItem("casino_muted") === "true",
     
     audioTracks: {}, 
+    audioUnlocked: false, // Flag to track if audio has been unlocked
 
     preloadAudio: function() {
         const basePath = "../../system/audio/";
@@ -16,14 +17,29 @@ const SystemUI = {
                 new Audio(basePath + 'card-slide-6.ogg'),
                 new Audio(basePath + 'cardPlace2.ogg')
             ],
-            win: new Audio(basePath + 'win.mp3'),
+            win: new Audio(basePath + 'win.ogg'),
             click: new Audio(basePath + 'switch4.ogg'),
+            exit: new Audio(basePath + 'exit.ogg'),
             roulette: new Audio(basePath + 'roulette.mp3'),
-            // Newly added globals!
-            lose: new Audio(basePath + 'lose.mp3'),
-            tie: new Audio(basePath + 'tie.mp3'),
+            lose: new Audio(basePath + 'lose.ogg'),
+            tie: new Audio(basePath + 'tie.ogg'),
             shuffle: new Audio(basePath + 'shuffle.mp3')
         };
+    },
+
+    unlockAudio: function() {
+        if (this.audioUnlocked) return;
+        // Play and immediately pause a silent sound or a short click to unlock the context
+        if (this.audioTracks.click) {
+            this.audioTracks.click.volume = 0; // Mute for the unlock action
+            this.audioTracks.click.play().then(() => {
+                this.audioTracks.click.pause();
+                this.audioTracks.click.currentTime = 0;
+                this.audioTracks.click.volume = 1; // Restore volume
+                this.audioUnlocked = true;
+                console.log("Audio context unlocked.");
+            }).catch(e => console.log("Unlock failed:", e));
+        }
     },
 
     playSound: function(type) {
@@ -60,6 +76,10 @@ const SystemUI = {
                 </div>
                 ${dropdownsHTML ? `<div class="hud-center">${dropdownsHTML}</div>` : ''}
                 <div style="display:flex; gap:10px; justify-content:flex-end;">
+                    <button class="hud-btn" id="sys-btn-chat" title="Chat" style="font-size:0.7rem; font-weight:bold; width:32px; height:32px; letter-spacing:-0.5px;">
+                        CHAT
+                        <span id="sys-chat-badge"></span>
+                    </button>
                     <button class="hud-btn" id="sys-btn-sound" title="Toggle Sound">
                         <img src="../../system/images/icons/${this.isMuted ? 'mute' : 'sound'}.png" class="hud-icon">
                     </button>
@@ -108,9 +128,15 @@ const SystemUI = {
     },
 
     bindEvents: function() {
+        // Attempt to unlock audio on the first click anywhere on the document
+        document.addEventListener('click', () => this.unlockAudio(), { once: true });
+        document.addEventListener('touchstart', () => this.unlockAudio(), { once: true });
+
         document.getElementById('sys-btn-home').addEventListener('click', () => {
-            this.playSound('click');
-            window.location.href = '../../index.html'; 
+            this.playSound('exit');
+            setTimeout(() => {
+                window.location.href = '../../index.html'; 
+            }, 150);
         });
 
         document.getElementById('sys-btn-sound').addEventListener('click', (e) => {
@@ -135,6 +161,12 @@ const SystemUI = {
 
         const refillBtn = document.getElementById('sys-bankrupt-refill');
         if (refillBtn) refillBtn.addEventListener('click', () => this.refillBankroll());
+
+        const chatBtn = document.getElementById('sys-btn-chat');
+        if (chatBtn) chatBtn.addEventListener('click', () => {
+            if (this._chatOpen) this.closeChat();
+            else this.openChat();
+        });
     },
 
     updateMoneyDisplay: function() {
@@ -179,7 +211,6 @@ const SystemUI = {
                 const val = parseInt(e.target.dataset.val);
                 if(onBet) onBet(val);
                 
-                // Add a small bounce animation on the specific chip element clicked
                 const el = e.target.closest('.sys-chip');
                 el.style.transform = "scale(0.85)";
                 setTimeout(() => el.style.transform = "scale(1)", 100);
@@ -203,7 +234,6 @@ const SystemUI = {
         });
     },
 
-    // Only callable when broke — button only visible when money <= 0
     refillBankroll: function() {
         this.money = 1000;
         this.updateMoneyDisplay();
@@ -214,7 +244,140 @@ const SystemUI = {
         return localStorage.getItem("casino_player_name") || "Player";
     },
 
-    // Generates absolute 3D stacks based on an array mapping
+    // ==========================================
+    // IN-GAME CHAT
+    // ==========================================
+    _chatRoomId: null,
+    _chatPlayerName: null,
+    _chatListener: null,
+    _chatOpen: false,
+    _chatUnread: false,
+    _chatLastKey: null,
+
+    startChat: function(roomId, playerName) {
+        this._chatRoomId = roomId;
+        this._chatPlayerName = playerName || this.getPlayerName();
+
+        document.getElementById('sys-chat-messages').innerHTML = '';
+        this._chatLastKey = null;
+        this._chatUnread = false;
+
+        const btn = document.getElementById('sys-btn-chat');
+        if (btn) btn.classList.add('chat-visible');
+        this._updateBadge(false);
+
+        this._addSystemMessage('Connected to room ' + roomId);
+
+        const msgRef = window.dbRef(window.db, 'chat/' + roomId + '/messages');
+        this._chatListener = window.dbOnValue(msgRef, (snapshot) => {
+            const data = snapshot.val();
+            if (!data) return;
+
+            const keys = Object.keys(data).sort();
+            keys.forEach(k => {
+                if (this._chatLastKey && k <= this._chatLastKey) return;
+                const msg = data[k];
+                const isMine = msg.from === this._chatPlayerName;
+                this._renderBubble(msg.text, msg.from, isMine);
+                this._chatLastKey = k;
+
+                if (!this._chatOpen && !isMine) {
+                    this._updateBadge(true);
+                    this.playSound('click');
+                }
+            });
+        });
+    },
+
+    stopChat: function() {
+        if (this._chatListener) {
+            this._chatListener();
+            this._chatListener = null;
+        }
+        if (this._chatRoomId && window.db) {
+            window.dbSet(window.dbRef(window.db, 'chat/' + this._chatRoomId + '/messages'), null);
+        }
+        this._chatRoomId = null;
+        this._chatPlayerName = null;
+        this._chatLastKey = null;
+        this._chatUnread = false;
+
+        document.getElementById('sys-chat-messages').innerHTML = '';
+        const btn = document.getElementById('sys-btn-chat');
+        if (btn) btn.classList.remove('chat-visible');
+        this._updateBadge(false);
+        this.closeChat();
+    },
+
+    openChat: function() {
+        this._chatOpen = true;
+        document.getElementById('sys-chat-panel').classList.add('open');
+        document.getElementById('sys-chat-backdrop').classList.add('open');
+        this._updateBadge(false);
+        const msgs = document.getElementById('sys-chat-messages');
+        msgs.scrollTop = msgs.scrollHeight;
+        if (window.innerWidth > 600) {
+            document.getElementById('sys-chat-input').focus();
+        }
+    },
+
+    closeChat: function() {
+        this._chatOpen = false;
+        document.getElementById('sys-chat-panel').classList.remove('open');
+        document.getElementById('sys-chat-backdrop').classList.remove('open');
+    },
+
+    _sendMessage: function() {
+        const input = document.getElementById('sys-chat-input');
+        const text = input.value.trim().slice(0, 80);
+        if (!text || !this._chatRoomId) return;
+
+        input.value = '';
+
+        const key = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        window.dbSet(
+            window.dbRef(window.db, 'chat/' + this._chatRoomId + '/messages/' + key),
+            { text: text, from: this._chatPlayerName, ts: Date.now() }
+        );
+    },
+
+    _renderBubble: function(text, from, isMine) {
+        const msgs = document.getElementById('sys-chat-messages');
+        const row = document.createElement('div');
+        row.className = 'chat-bubble-row ' + (isMine ? 'mine' : 'theirs');
+
+        const sender = document.createElement('div');
+        sender.className = 'chat-sender';
+        sender.innerText = from;
+
+        const bubble = document.createElement('div');
+        bubble.className = 'chat-bubble';
+        bubble.innerText = text;
+
+        row.appendChild(sender);
+        row.appendChild(bubble);
+        msgs.appendChild(row);
+        msgs.scrollTop = msgs.scrollHeight;
+    },
+
+    _addSystemMessage: function(text) {
+        const msgs = document.getElementById('sys-chat-messages');
+        const div = document.createElement('div');
+        div.className = 'chat-system-msg';
+        div.innerText = text;
+        msgs.appendChild(div);
+        msgs.scrollTop = msgs.scrollHeight;
+    },
+
+    _updateBadge: function(show) {
+        this._chatUnread = show;
+        const badge = document.getElementById('sys-chat-badge');
+        if (badge) {
+            if (show) badge.classList.add('has-unread');
+            else badge.classList.remove('has-unread');
+        }
+    },
+
     renderTableStacks: function(amount, containerId) {
         const container = document.getElementById(containerId);
         if(!container) return;
@@ -245,8 +408,6 @@ const SystemUI = {
                     let chipEl = document.createElement("div");
                     chipEl.className = `sys-table-chip ${tier.cls}`;
                     
-                    // The magic calculation to simulate 3D stacking (shifting them up Y-axis)
-                    // The isometric chip graphics require ~4px shift per physical chip
                     chipEl.style.bottom = `${i * 4}px`; 
                     
                     if(i === renderCount - 1 && count > 5) {
@@ -272,11 +433,6 @@ const SystemUI = {
     }
 };
 
-// ==========================================
-// GLOBAL CASINO OS ADDITIONS (MULTIPLAYER MODAL & FULLSCREEN)
-// ==========================================
-
-// 1. INJECT GLOBAL MULTIPLAYER LOBBY SYNCHRONOUSLY
 if (!document.getElementById("multiplayer-lobby")) {
     const lobbyHTML = `
     <div id="multiplayer-lobby" class="hidden">
@@ -305,7 +461,30 @@ if (!document.getElementById("multiplayer-lobby")) {
     document.body.insertAdjacentHTML('beforeend', lobbyHTML);
 }
 
-// 2. FORCE FULLSCREEN ON MOBILE (Triggered on first tap)
+if (!document.getElementById("sys-chat-panel")) {
+    const chatHTML = `
+    <div id="sys-chat-backdrop"></div>
+    <div id="sys-chat-panel">
+        <div id="sys-chat-header">
+            <span id="sys-chat-header-title">💬 ROOM CHAT</span>
+            <button id="sys-chat-close">&times;</button>
+        </div>
+        <div id="sys-chat-messages"></div>
+        <div id="sys-chat-input-row">
+            <input id="sys-chat-input" type="text" maxlength="80" placeholder="Say something..." autocomplete="off">
+            <button id="sys-chat-send">&#9658;</button>
+        </div>
+    </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', chatHTML);
+
+    document.getElementById('sys-chat-close').addEventListener('click', () => SystemUI.closeChat());
+    document.getElementById('sys-chat-backdrop').addEventListener('click', () => SystemUI.closeChat());
+    document.getElementById('sys-chat-send').addEventListener('click', () => SystemUI._sendMessage());
+    document.getElementById('sys-chat-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); SystemUI._sendMessage(); }
+    });
+}
 const isMobileDevice = window.innerWidth <= 800 || /Mobi|Android/i.test(navigator.userAgent);
 if (isMobileDevice) {
     const goFullscreen = () => {
