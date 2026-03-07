@@ -10,15 +10,15 @@ let isHost = false;
 SystemUI.init({
     gameName: "BATTLESHIP PRO",
     rules: "1. Select a ship and tap your fleet to place. 2. Auto-place for speed. 3. Hit all enemy ships to win!",
-    customToggles: `
-        <div class="settings-group" style="text-align:left;">
-            <label style="display:block; margin-bottom:5px; color:#bdc3c7;">Game Mode:</label>
-            <select id="sys-bs-mode" style="width:100%; padding:10px; border-radius:5px; border:1px solid #34495e; background:#2c3e50; color:white;">
-                <option value="ai">🤖 Play vs AI</option>
-                <option value="online">🌐 Online Multiplayer</option>
-            </select>
-        </div>
-    `
+    hudDropdowns: [
+        {
+            id: "sys-bs-mode",
+            options: [
+                { value: "ai", label: "🤖 Play vs AI" },
+                { value: "online", label: "🌐 Online" }
+            ]
+        }
+    ]
 });
 
 function playBSSound(file) {

@@ -9,23 +9,35 @@ SystemUI.init({
             <li><strong>Insurance:</strong> If Dealer shows an Ace, insure for half your bet. Pays 2:1 if Dealer has Blackjack.</li>
         </ul>
     `,
-    customToggles: `
-        <div class="settings-group" style="text-align:left;">
-            <label style="display:block; margin-bottom:5px; color:#bdc3c7;">Table Difficulty:</label>
-            <select id="sys-difficulty" style="width:100%; padding:10px; border-radius:5px; border:1px solid #34495e; background:#2c3e50; color:white;">
-                <option value="15">Easy ($2 Min)</option>
-                <option value="17">Normal ($5 Min)</option>
-                <option value="19">Hard ($10 Min)</option>
-            </select>
-        </div>
-    `
+    hudDropdowns: [
+        {
+            id: "sys-difficulty",
+            label: "Difficulty",
+            options: [
+                { value: "15", label: "Easy" },
+                { value: "17", label: "Normal" },
+                { value: "19", label: "Hard" }
+            ]
+        }
+    ]
 });
 
 document.getElementById("sys-difficulty").value = savedDifficulty;
+
+function updateDealerRuleText() {
+    const el = document.getElementById("dealer-rule-text");
+    if (!el) return;
+    if (savedDifficulty === "15")      el.textContent = "Dealer must draw to 14 and stand on 15";
+    else if (savedDifficulty === "19") el.textContent = "Dealer must draw to 18 and stand on 19";
+    else                               el.textContent = "Dealer must draw to 16 and stand on 17";
+}
+updateDealerRuleText();
+
 document.getElementById("sys-difficulty").addEventListener("change", (e) => {
     savedDifficulty = e.target.value;
     localStorage.setItem("blackjack_diff", savedDifficulty);
-    deck = []; 
+    deck = [];
+    updateDealerRuleText();
     showToast("Difficulty Changed", "Rules updated for the next hand.");
     updateBetUI();
 });
@@ -138,11 +150,6 @@ document.getElementById("toast-modal").addEventListener("click", () => {
 });
 
 function resetTableForBetting() {
-  if (SystemUI.money <= 0) {
-    SystemUI.money = 1000; 
-    SystemUI.updateMoneyDisplay();
-    showToast("Bankrupt!", "The casino pities you. Here is $1000 on the house.");
-  }
   isGameOver = true;
   playerHand = [];
   dealerHand = [];
@@ -206,9 +213,10 @@ document.getElementById("deal-btn").addEventListener("click", () => {
 
   document.getElementById("betting-controls").classList.add("hidden");
   document.getElementById("playing-controls").classList.remove("hidden");
-  document.getElementById("hit-btn").disabled = false;
-  document.getElementById("stand-btn").disabled = false;
-  document.getElementById("double-btn").disabled = false;
+  // Keep buttons locked during the deal animation to prevent spam
+  document.getElementById("hit-btn").disabled = true;
+  document.getElementById("stand-btn").disabled = true;
+  document.getElementById("double-btn").disabled = true;
   document.getElementById("insurance-btn").classList.add("hidden");
 
   let numDecks = (savedDifficulty === "19") ? 6 : (savedDifficulty === "17" ? 4 : 1);
@@ -221,6 +229,10 @@ document.getElementById("deal-btn").addEventListener("click", () => {
   setTimeout(() => {
       dealCard(dealerHand);
       renderGame();
+      // Unlock buttons only after all 4 cards are fully dealt
+      document.getElementById("hit-btn").disabled = false;
+      document.getElementById("stand-btn").disabled = false;
+      document.getElementById("double-btn").disabled = false;
       if (dealerHand[0].name === "A") document.getElementById("insurance-btn").classList.remove("hidden");
       if (calculateScore(playerHand) === 21) handleStand();
   }, 700);

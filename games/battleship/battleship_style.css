@@ -10,25 +10,6 @@ body {
   height: 100vh; overflow: hidden;
 }
 
-#multiplayer-lobby {
-  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(10, 10, 10, 0.95); z-index: 500;
-  display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);
-}
-.lobby-box {
-  background: #222; border: 2px solid #f1c40f; border-radius: 12px;
-  padding: 30px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-  position: relative;
-}
-.lobby-box h2 { color: #f1c40f; margin-top: 0; margin-bottom: 25px; letter-spacing: 2px; text-transform: uppercase; }
-
-.lobby-btn {
-  width: 100%; padding: 12px; font-family: 'Orbitron', sans-serif; font-weight: bold;
-  font-size: 1rem; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s;
-}
-.lobby-btn.primary { background: #3498db; color: white; }
-.lobby-btn.secondary { background: #2ecc71; color: white; margin-top: 10px; }
-
 #ship-selector {
     display: flex; flex-direction: column; gap: 10px;
     background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid #34495e;
@@ -58,3 +39,60 @@ body {
 #status-display { color: #f1c40f; font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; letter-spacing: 2px; }
 .sys-btn { font-family: 'Orbitron', sans-serif; font-weight: bold; padding: 10px 20px; border-radius: 4px; border: none; cursor: pointer; }
 .sys-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* =========================================
+   MOBILE RESPONSIVENESS (VERTICAL STACKING)
+   ========================================= */
+
+/* On narrow screens (phones in portrait mode), stack the boards and shrink the cells */
+@media screen and (max-width: 800px) {
+  body {
+    /* Enforce Casino OS dark mode */
+    background: #050505 !important;
+    overflow-y: auto; /* Allow scrolling if it overflows vertically */
+  }
+
+  /* Adjust the header and tool grid for smaller width */
+  #game-header {
+    margin-top: 50px; /* Push down to clear the OS HUD */
+    transform: scale(0.9);
+  }
+  
+  #ship-selector {
+    padding: 10px;
+  }
+
+  /* Stack the boards vertically instead of side-by-side */
+  .boards-container { 
+    flex-direction: column; 
+    gap: 15px; 
+    margin-bottom: 20px;
+    align-items: center;
+  }
+
+  /* Shrink the cells so a 10x10 board fits within the phone width */
+  .board {
+    grid-template-columns: repeat(10, 30px);
+    grid-template-rows: repeat(10, 30px);
+    padding: 3px;
+  }
+
+  .cell { 
+    width: 30px; 
+    height: 30px; 
+  }
+
+  h3 {
+    text-align: center;
+    font-size: 1rem;
+    margin-bottom: 5px;
+  }
+
+  /* Ensure controls stay visible at the bottom */
+  .controls {
+    margin-bottom: 30px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+}

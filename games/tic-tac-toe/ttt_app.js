@@ -9,16 +9,17 @@ let isHost = false;
 SystemUI.init({
     gameName: "TIC-TAC-TOE",
     rules: "Take turns placing X's and O's. Match 3 symbols to win.<br><br>• Challenge a friend locally, test your skills against the AI, or play Online!",
-    customToggles: `
-        <div class="settings-group" style="text-align:left;">
-            <label style="display:block; margin-bottom:5px; color:#bdc3c7;">Game Mode:</label>
-            <select id="sys-ttt-mode" style="width:100%; padding:10px; border-radius:5px; border:1px solid #34495e; background:#2c3e50; color:white;">
-                <option value="ai">🤖 Play vs AI</option>
-                <option value="local">👥 Local Multiplayer</option>
-                <option value="online">🌐 Online Multiplayer</option>
-            </select>
-        </div>
-    `
+    hudDropdowns: [
+        {
+            id: "sys-ttt-mode",
+            label: "Game Mode",
+            options: [
+                { value: "ai",     label: "🤖 vs AI" },
+                { value: "local",  label: "👥 Local" },
+                { value: "online", label: "🌐 Online" }
+            ]
+        }
+    ]
 });
 
 // Handle OS Menu Changes
@@ -319,3 +320,19 @@ function restartGame() {
 }
 
 document.querySelectorAll('.cell').forEach(cell => cell.addEventListener('click', handleCellClick));
+
+// Handle OS Lobby Escapes (Added for new global modal compatibility)
+document.getElementById("lobby-close-btn").addEventListener("click", () => {
+    SystemUI.playSound('click');
+    document.getElementById("multiplayer-lobby").classList.add("hidden");
+});
+
+document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
+    SystemUI.playSound('click');
+    document.getElementById("multiplayer-lobby").classList.add("hidden");
+    
+    // Switch the dropdown back to local and trigger the game reset
+    const modeSelect = document.getElementById("sys-ttt-mode");
+    modeSelect.value = "local";
+    modeSelect.dispatchEvent(new Event("change")); 
+});

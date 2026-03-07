@@ -8,9 +8,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#111111">
   <meta name="color-scheme" content="dark">
-  <title>Memory Casino</title>
-  <link rel="stylesheet" href="../../system/system_ui.css"> 
-  <link rel="stylesheet" href="memory_style.css">
+  <title>Yahtzee Casino</title>
+  <link rel="stylesheet" href="../../system/system_ui.css">
+  <link rel="stylesheet" href="yahtzee_style.css">
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
@@ -47,8 +47,9 @@
         <span class="stat-label" id="p1-label">You</span>
         <span class="stat-score" id="p1-score">0</span>
       </div>
-      <div id="stats-badge">
-        Moves: <span id="move-count">0</span>
+      <div id="round-badge">
+        <span id="round-label">Round</span>
+        <span id="round-display">—</span>
       </div>
       <div class="stat-box" id="p2-stat">
         <span class="stat-label" id="p2-label">AI</span>
@@ -58,12 +59,38 @@
 
     <div id="turn-banner" class="hidden">Your Turn</div>
 
-    <div id="memory-grid"></div>
+    <div id="dice-section">
+      <div id="dice-tray">
+        <!-- dice injected by JS -->
+      </div>
+      <div id="roll-info" class="hidden">
+        <span id="rolls-left-text">3 rolls left</span>
+        <span id="kept-hint">· tap dice to keep</span>
+      </div>
+    </div>
+
+    <div id="action-row">
+      <button id="roll-btn" class="hidden">🎲 ROLL</button>
+      <button id="scorecard-toggle-btn" class="hidden">📋 SCORECARD</button>
+    </div>
 
     <div id="controls">
-      <button id="start-game-btn">BUY IN ($100)</button>
+      <button id="start-game-btn">BUY IN ($200)</button>
+    </div>
+
+  </div>
+
+  <!-- Slide-up scorecard panel -->
+  <div id="scorecard-panel">
+    <div id="scorecard-handle">
+      <div id="scorecard-title">SCORECARD</div>
+      <button id="scorecard-close-btn">✕</button>
+    </div>
+    <div id="scorecard-inner">
+      <!-- injected by JS -->
     </div>
   </div>
+  <div id="scorecard-backdrop" class="hidden"></div>
 
   <div id="toast-modal" class="hidden modal-overlay">
     <div id="modal-box" class="toast-box">
@@ -73,6 +100,6 @@
   </div>
 
   <script src="../../system/system_ui.js"></script>
-  <script src="memory_app.js"></script>
+  <script src="yahtzee_app.js"></script>
 </body>
 </html>

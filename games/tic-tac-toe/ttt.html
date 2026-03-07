@@ -42,31 +42,6 @@
 </head>
 <body>
 
-  <div id="multiplayer-lobby" class="hidden">
-    <div class="lobby-box">
-      <h2>MULTIPLAYER ARENA</h2>
-      
-      <div class="lobby-section">
-        <h3>HOST A GAME</h3>
-        <button id="btn-create-room" class="lobby-btn primary">CREATE NEW ROOM</button>
-        <div id="room-code-display" class="hidden">
-          Room Code: <span id="host-room-id" class="highlight"></span>
-          <p class="waiting-text">Waiting for opponent...</p>
-        </div>
-      </div>
-
-      <div class="lobby-divider">OR</div>
-
-      <div class="lobby-section">
-        <h3>JOIN A GAME</h3>
-        <input type="text" id="join-room-input" placeholder="Enter 4-Digit Code" maxlength="4">
-        <button id="btn-join-room" class="lobby-btn secondary">JOIN ROOM</button>
-      </div>
-      
-      <p id="lobby-error-msg" class="error-text"></p>
-    </div>
-  </div>
-
   <div id="game-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh;">
       <h2 id="status-display">Let's Play!</h2>
 

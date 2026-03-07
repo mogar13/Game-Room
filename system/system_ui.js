@@ -22,228 +22,303 @@ const SystemUI = {
             // Newly added globals!
             lose: new Audio(basePath + 'lose.mp3'),
             tie: new Audio(basePath + 'tie.mp3'),
-            shuffle: new Audio(basePath + 'shuffle.mp3'),
-            diceShake: [
-                new Audio(basePath + 'dice-shake-1.ogg'),
-                new Audio(basePath + 'dice-shake-2.ogg')
-            ],
-            diceThrow: [
-                new Audio(basePath + 'dice-throw-1.ogg'),
-                new Audio(basePath + 'dice-throw-2.ogg')
-            ]
+            shuffle: new Audio(basePath + 'shuffle.mp3')
         };
     },
 
     playSound: function(type) {
-        if (this.isMuted || !this.audioTracks[type]) return null;
+        if (this.isMuted) return;
+        
+        let sound = this.audioTracks[type];
+        if (!sound) return;
 
-        let sound;
-        if (Array.isArray(this.audioTracks[type])) {
-            sound = this.audioTracks[type][Math.floor(Math.random() * this.audioTracks[type].length)];
+        if (Array.isArray(sound)) {
+            let randomTrack = sound[Math.floor(Math.random() * sound.length)];
+            randomTrack.currentTime = 0;
+            randomTrack.play().catch(e => console.log("Audio play failed:", e));
         } else {
-            sound = this.audioTracks[type];
-        }
-
-        let soundClone = sound.cloneNode();
-        soundClone.volume = 0.6; 
-        soundClone.play().catch(e => console.log("Audio blocked:", e));
-        
-        return soundClone;
-    },
-
-    init: function(config) {
-        this.preloadAudio(); 
-        this.injectHTML();
-        this.bindEvents();
-        
-        document.getElementById("sys-game-title").innerText = (config.gameName || "CASINO") + " SETTINGS";
-        document.getElementById("sys-rules-text").innerHTML = config.rules || "No rules provided.";
-        
-        if (config.customToggles) {
-            document.getElementById("sys-custom-toggles-container").style.display = "block";
-            document.getElementById("sys-custom-toggles").innerHTML = config.customToggles;
-        }
-
-        this.updateMoneyDisplay();
-        this.updateMuteBtn();
-    },
-
-    updateMoneyDisplay: function() {
-        localStorage.setItem("blackjack_money", this.money);
-        const display = document.getElementById("sys-money");
-        if (display) display.innerText = this.money;
-    },
-
-    updateMuteBtn: function() {
-        const btn = document.getElementById("sys-mute-btn");
-        if (this.isMuted) {
-            btn.innerText = "🔊 AUDIO: MUTED";
-            btn.style.color = "#e74c3c";
-        } else {
-            btn.innerText = "🔊 AUDIO: ON";
-            btn.style.color = "white";
+            sound.currentTime = 0;
+            sound.play().catch(e => console.log("Audio play failed:", e));
         }
     },
 
-    injectHTML: function() {
-        if (document.getElementById("universal-hud")) return;
+    init: function(config = {}) {
+        this.preloadAudio();
 
-        // FIXED: Now points to the new /images/icons/ folder!
-        const uiHTML = `
-        <div id="universal-hud">
-           <a href="../../index.html" class="hud-btn" id="home-btn"><img src="../../system/images/icons/home.png" class="hud-icon"></a>
-           <div class="hud-stat"><img src="../../system/images/icons/dollar.png" class="hud-icon"> $<span id="sys-money">${this.money}</span></div>
-           <button class="hud-btn" id="sys-settings-btn"><img src="../../system/images/icons/settings.png" class="hud-icon"></button>
-        </div>
-
-        <div id="sys-modal" class="sys-hidden">
-           <div class="sys-modal-box">
-               <h2 id="sys-game-title">SETTINGS</h2>
-               <div class="sys-section">
-                   <h3>RULES & MECHANICS</h3>
-                   <div class="sys-rules-text" id="sys-rules-text"></div>
-               </div>
-               <div class="sys-section" id="sys-custom-toggles-container" style="display:none;">
-                   <h3>GAME OPTIONS</h3>
-                   <div id="sys-custom-toggles"></div>
-               </div>
-               <div class="sys-section">
-                   <h3>GLOBAL AUDIO</h3>
-                   <button class="sys-btn" id="sys-mute-btn">AUDIO: ON</button>
-               </div>
-               <div class="sys-section sys-danger-zone">
-                   <h3>DANGER ZONE</h3>
-                   <button class="sys-btn" id="sys-reset-game-btn">RESET CURRENT GAME STATS</button>
-                   <button class="sys-btn btn-nuke" id="sys-nuke-btn">NUKE ENTIRE ACCOUNT</button>
-               </div>
-               <button id="sys-close-btn">CLOSE</button>
-           </div>
-        </div>
-        `;
-        document.body.insertAdjacentHTML('afterbegin', uiHTML);
-        document.body.classList.add("game-wrapper-padding"); 
-    },
-
-    bindEvents: function() {
-        document.getElementById("sys-settings-btn").addEventListener("click", () => {
-            this.playSound('click'); 
-            document.getElementById("sys-modal").classList.remove("sys-hidden");
-        });
-        document.getElementById("sys-close-btn").addEventListener("click", () => {
-            this.playSound('click'); 
-            document.getElementById("sys-modal").classList.add("sys-hidden");
-        });
-        document.getElementById("sys-mute-btn").addEventListener("click", () => {
-            this.playSound('click'); 
-            this.isMuted = !this.isMuted;
-            localStorage.setItem("casino_muted", this.isMuted);
-            this.updateMuteBtn();
-        });
-        document.getElementById("sys-nuke-btn").addEventListener("click", () => {
-            this.playSound('click');
-            if (confirm("WARNING: This will permanently erase your bankroll and ALL game data. Are you absolutely sure?")) {
-                localStorage.clear();
-                window.location.reload();
-            }
-        });
-    },
-
-    setupBetting: function(containerId, options) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-
-        const denoms = options.chips || [
-            { val: 1, cls: 'sys-chip-1', text: '1' },
-            { val: 5, cls: 'sys-chip-5', text: '5' },
-            { val: 25, cls: 'sys-chip-25', text: '25' },
-            { val: 100, cls: 'sys-chip-100', text: '100' },
-            { val: 500, cls: 'sys-chip-500', text: '500' },
-            { val: 1000, cls: 'sys-chip-1k', text: '1K' }
-        ];
-
-        let chipsHTML = denoms.map(d => `<button class="sys-chip ${d.cls}" data-val="${d.val}">${d.text}</button>`).join('');
-
-        container.innerHTML = `
-            <div class="sys-betting-zone">
-                <div class="sys-bet-info">
-                    <span id="sys-current-bet-display">Bet: $0</span>
-                    <button class="sys-clear-bet" id="sys-clear-bet-btn">Clear</button>
+        const dropdownsHTML = (config.hudDropdowns || []).map(d => `
+            <select id="${d.id}" class="hud-dropdown" title="${d.label || ''}">
+                ${d.options.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
+            </select>
+        `).join('');
+        
+        const hudHTML = `
+            <div id="universal-hud">
+                <div class="hud-stat">
+                    <img src="../../system/images/icons/dollar.png" class="hud-icon" alt="Chips">
+                    $<span id="sys-money">${this.money}</span>
+                    <button id="sys-bankrupt-refill" class="hud-refill-btn sys-hidden">↺ REFILL</button>
                 </div>
-                <div class="sys-chip-rack">
-                    ${chipsHTML}
+                ${dropdownsHTML ? `<div class="hud-center">${dropdownsHTML}</div>` : ''}
+                <div style="display:flex; gap:10px; justify-content:flex-end;">
+                    <button class="hud-btn" id="sys-btn-sound" title="Toggle Sound">
+                        <img src="../../system/images/icons/${this.isMuted ? 'mute' : 'sound'}.png" class="hud-icon">
+                    </button>
+                    <button class="hud-btn" id="sys-btn-menu" title="Menu">
+                        <img src="../../system/images/icons/settings.png" class="hud-icon">
+                    </button>
+                    <button class="hud-btn" id="sys-btn-home" title="Return to Casino">
+                        <img src="../../system/images/icons/home.png" class="hud-icon">
+                    </button>
+                </div>
+            </div>
+            
+            <div id="sys-modal" class="sys-hidden">
+                <div class="sys-modal-box">
+                    <h2>${config.gameName || 'CASINO OS'}</h2>
+                    
+                    <div class="sys-section">
+                        <h3>📖 HOW TO PLAY</h3>
+                        <p class="sys-rules-text">${config.rules || 'Rules not loaded.'}</p>
+                    </div>
+
+                    ${config.customToggles ? `
+                        <div class="sys-section" id="sys-custom-settings">
+                            <h3>⚙️ TABLE SETTINGS</h3>
+                            ${config.customToggles}
+                        </div>
+                    ` : ''}
+
+                    <div class="sys-section sys-danger-zone">
+                        <h3>⚠️ DANGER ZONE</h3>
+                        <p class="sys-rules-text" style="margin-bottom:10px;">Reset your progress, streak, and settings for this game.</p>
+                        <button class="sys-btn btn-nuke" id="sys-reset-game-btn">RESET GAME PROGRESS</button>
+                    </div>
+                    
+                    <button id="sys-close-btn">BACK TO GAME</button>
                 </div>
             </div>
         `;
 
-        container.querySelectorAll('.sys-chip').forEach(chip => {
-            chip.addEventListener('click', () => {
-                let val = parseInt(chip.dataset.val);
-                if (options.onBet) options.onBet(val);
-            });
-        });
+        document.body.insertAdjacentHTML('afterbegin', hudHTML);
+        
+        // Add padding dynamically if not already applied
+        document.body.classList.add('game-wrapper-padding');
 
-        document.getElementById('sys-clear-bet-btn').addEventListener('click', () => {
+        this.bindEvents();
+    },
+
+    bindEvents: function() {
+        document.getElementById('sys-btn-home').addEventListener('click', () => {
             this.playSound('click');
-            if (options.onClear) options.onClear();
+            window.location.href = '../../index.html'; 
         });
+
+        document.getElementById('sys-btn-sound').addEventListener('click', (e) => {
+            this.isMuted = !this.isMuted;
+            localStorage.setItem("casino_muted", this.isMuted);
+            let iconImg = e.target.tagName === 'IMG' ? e.target : e.target.querySelector('img');
+            if (iconImg) {
+                iconImg.src = `../../system/images/icons/${this.isMuted ? 'mute' : 'sound'}.png`;
+            }
+            if (!this.isMuted) this.playSound('click');
+        });
+
+        document.getElementById('sys-btn-menu').addEventListener('click', () => {
+            this.playSound('click');
+            document.getElementById('sys-modal').classList.remove('sys-hidden');
+        });
+        
+        document.getElementById('sys-close-btn').addEventListener('click', () => {
+            this.playSound('click');
+            document.getElementById('sys-modal').classList.add('sys-hidden');
+        });
+
+        const refillBtn = document.getElementById('sys-bankrupt-refill');
+        if (refillBtn) refillBtn.addEventListener('click', () => this.refillBankroll());
     },
 
-    updateBetDisplay: function(amount) {
-        const display = document.getElementById("sys-current-bet-display");
-        if (display) display.innerText = `Bet: $${amount}`;
-    },
-    
-    enableBetting: function(isEnabled) {
-        const container = document.querySelector(".sys-betting-zone");
-        if(container) {
-            container.querySelectorAll("button").forEach(btn => btn.disabled = !isEnabled);
+    updateMoneyDisplay: function() {
+        const moneyEl = document.getElementById("sys-money");
+        if (moneyEl) moneyEl.innerText = this.money;
+        localStorage.setItem("blackjack_money", this.money);
+
+        const refillBtn = document.getElementById("sys-bankrupt-refill");
+        if (refillBtn) {
+            if (this.money <= 0) refillBtn.classList.remove("sys-hidden");
+            else refillBtn.classList.add("sys-hidden");
         }
     },
 
-    renderTableStacks: function(amount, containerId) {
+    setupBetting: function(containerId, options = {}) {
         const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = ""; 
+        if(!container) return;
 
-        if (amount <= 0) return;
+        const { minBet = 5, maxBet = 500, onBet, onClear } = options;
 
-        const denoms = [
-            { val: 1000, cls: 'sys-table-chip-1k' },
-            { val: 500, cls: 'sys-table-chip-500' },
-            { val: 100, cls: 'sys-table-chip-100' },
-            { val: 25, cls: 'sys-table-chip-25' },
-            { val: 5, cls: 'sys-table-chip-5' },
-            { val: 1, cls: 'sys-table-chip-1' }
-        ];
+        const html = `
+            <div class="sys-betting-zone">
+                <div class="sys-bet-info">
+                    BET: $<span id="sys-current-bet-display">0</span>
+                    <button class="sys-clear-bet" id="sys-clear-bet">CLEAR</button>
+                </div>
+                <div class="sys-chip-rack">
+                    <button class="sys-chip sys-chip-1" data-val="1">1</button>
+                    <button class="sys-chip sys-chip-5" data-val="5">5</button>
+                    <button class="sys-chip sys-chip-25" data-val="25">25</button>
+                    <button class="sys-chip sys-chip-100" data-val="100">100</button>
+                    <button class="sys-chip sys-chip-500" data-val="500">500</button>
+                    <button class="sys-chip sys-chip-1k" data-val="1000">1K</button>
+                </div>
+            </div>
+        `;
 
-        let tempAmount = amount;
-        let flexContainer = document.createElement('div');
-        flexContainer.style.display = 'flex';
-        flexContainer.style.gap = '8px';
-        flexContainer.style.justifyContent = 'center';
-        flexContainer.style.alignItems = 'flex-end';
+        container.innerHTML = html;
 
-        denoms.forEach(d => {
-            let count = 0;
-            while(tempAmount >= d.val) {
-                tempAmount -= d.val;
-                count++;
-            }
-
-            if (count > 0) {
-                let col = document.createElement("div");
-                col.className = "sys-table-chip-stack";
+        container.querySelectorAll(".sys-chip").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const val = parseInt(e.target.dataset.val);
+                if(onBet) onBet(val);
                 
-                for(let i=0; i<count; i++) {
-                    let cEl = document.createElement("div");
-                    cEl.className = `sys-table-chip ${d.cls}`;
-                    cEl.style.bottom = `${i * 6}px`; 
-                    col.appendChild(cEl);
-                }
-                flexContainer.appendChild(col);
-            }
+                // Add a small bounce animation on the specific chip element clicked
+                const el = e.target.closest('.sys-chip');
+                el.style.transform = "scale(0.85)";
+                setTimeout(() => el.style.transform = "scale(1)", 100);
+            });
         });
 
-        container.appendChild(flexContainer);
+        document.getElementById("sys-clear-bet").addEventListener("click", () => {
+            this.playSound('click');
+            if(onClear) onClear();
+        });
+    },
+
+    updateBetDisplay: function(betAmount) {
+        const betEl = document.getElementById("sys-current-bet-display");
+        if(betEl) betEl.innerText = betAmount;
+    },
+
+    enableBetting: function(enable) {
+        document.querySelectorAll(".sys-chip, .sys-clear-bet").forEach(btn => {
+            btn.disabled = !enable;
+        });
+    },
+
+    // Only callable when broke — button only visible when money <= 0
+    refillBankroll: function() {
+        this.money = 1000;
+        this.updateMoneyDisplay();
+        this.playSound('win');
+    },
+
+    getPlayerName: function() {
+        return localStorage.getItem("casino_player_name") || "Player";
+    },
+
+    // Generates absolute 3D stacks based on an array mapping
+    renderTableStacks: function(amount, containerId) {
+        const container = document.getElementById(containerId);
+        if(!container) return;
+        
+        container.innerHTML = "";
+        if(amount <= 0) return;
+
+        const chipTiers = [
+            {val: 1000, cls: 'sys-table-chip-1k'},
+            {val: 500, cls: 'sys-table-chip-500'},
+            {val: 100, cls: 'sys-table-chip-100'},
+            {val: 25, cls: 'sys-table-chip-25'},
+            {val: 5, cls: 'sys-table-chip-5'},
+            {val: 1, cls: 'sys-table-chip-1'}
+        ];
+
+        let remaining = amount;
+        
+        chipTiers.forEach(tier => {
+            let count = Math.floor(remaining / tier.val);
+            if(count > 0) {
+                let stackContainer = document.createElement("div");
+                stackContainer.className = "sys-table-chip-stack";
+                
+                let renderCount = Math.min(count, 5); 
+                
+                for(let i=0; i<renderCount; i++) {
+                    let chipEl = document.createElement("div");
+                    chipEl.className = `sys-table-chip ${tier.cls}`;
+                    
+                    // The magic calculation to simulate 3D stacking (shifting them up Y-axis)
+                    // The isometric chip graphics require ~4px shift per physical chip
+                    chipEl.style.bottom = `${i * 4}px`; 
+                    
+                    if(i === renderCount - 1 && count > 5) {
+                        let multi = document.createElement("div");
+                        multi.innerText = `x${count}`;
+                        multi.style.position = "absolute";
+                        multi.style.top = "-15px";
+                        multi.style.right = "-20px";
+                        multi.style.background = "rgba(0,0,0,0.8)";
+                        multi.style.color = "white";
+                        multi.style.padding = "2px 5px";
+                        multi.style.borderRadius = "5px";
+                        multi.style.fontSize = "10px";
+                        multi.style.fontWeight = "bold";
+                        chipEl.appendChild(multi);
+                    }
+                    stackContainer.appendChild(chipEl);
+                }
+                container.appendChild(stackContainer);
+                remaining %= tier.val;
+            }
+        });
     }
 };
+
+// ==========================================
+// GLOBAL CASINO OS ADDITIONS (MULTIPLAYER MODAL & FULLSCREEN)
+// ==========================================
+
+// 1. INJECT GLOBAL MULTIPLAYER LOBBY SYNCHRONOUSLY
+if (!document.getElementById("multiplayer-lobby")) {
+    const lobbyHTML = `
+    <div id="multiplayer-lobby" class="hidden">
+      <div class="lobby-box">
+        <button id="lobby-close-btn" style="position:absolute; top:10px; right:10px; background:none; border:none; color:#f1c40f; font-size:1.5rem; cursor:pointer; font-family: inherit;">&times;</button>
+        <h2 style="font-family: inherit;">MULTIPLAYER ARENA</h2>
+        <div class="lobby-section">
+          <h3 style="font-family: inherit;">HOST A GAME</h3>
+          <button id="btn-create-room" class="lobby-btn primary" style="font-family: inherit;">CREATE NEW ROOM</button>
+          <div id="room-code-display" class="hidden">
+            <span style="font-family: inherit;">Room Code: </span><span id="host-room-id" class="highlight" style="font-family: inherit;"></span>
+            <p class="waiting-text" style="font-family: inherit;">Waiting for opponent...</p>
+          </div>
+        </div>
+        <div class="lobby-divider" style="font-family: inherit;">OR</div>
+        <div class="lobby-section">
+          <h3 style="font-family: inherit;">JOIN A GAME</h3>
+          <input type="text" id="join-room-input" placeholder="Enter 4-Digit Code" maxlength="4" style="font-family: inherit;">
+          <button id="btn-join-room" class="lobby-btn secondary" style="font-family: inherit;">JOIN ROOM</button>
+        </div>
+        <p id="lobby-error-msg" class="error-text" style="font-family: inherit;"></p>
+        <button id="btn-cancel-lobby" class="lobby-btn" style="background:#444; margin-top:10px; font-family: inherit;">BACK TO LOCAL PLAY</button>
+      </div>
+    </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', lobbyHTML);
+}
+
+// 2. FORCE FULLSCREEN ON MOBILE (Triggered on first tap)
+const isMobileDevice = window.innerWidth <= 800 || /Mobi|Android/i.test(navigator.userAgent);
+if (isMobileDevice) {
+    const goFullscreen = () => {
+        const doc = document.documentElement;
+        if (doc.requestFullscreen && !document.fullscreenElement) {
+            doc.requestFullscreen().catch(e => console.log("Fullscreen blocked:", e));
+        } else if (doc.webkitRequestFullscreen && !document.webkitFullscreenElement) {
+            doc.webkitRequestFullscreen().catch(e => console.log("Fullscreen blocked:", e));
+        }
+        document.removeEventListener('touchstart', goFullscreen);
+        document.removeEventListener('click', goFullscreen);
+    };
+    
+    document.addEventListener('touchstart', goFullscreen, { passive: true });
+    document.addEventListener('click', goFullscreen, { passive: true });
+}

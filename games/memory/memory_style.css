@@ -6,25 +6,66 @@ body {
   height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
 }
 
-#game-container { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px; }
-
-/* Stats Badge */
-#stats-badge {
-  background: rgba(0, 0, 0, 0.6); padding: 5px 15px; border-radius: 10px;
-  color: #f1c40f; font-weight: bold; border: 1px solid #f1c40f;
-  margin-bottom: 15px; font-size: 1.1rem; letter-spacing: 1px;
+#game-container {
+  flex-grow: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 15px;
 }
 
+/* --- STATS BAR (scores + moves) --- */
+#stats-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; max-width: 500px; margin-bottom: 10px; gap: 10px;
+}
+
+.stat-box {
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(0,0,0,0.5); border: 1px solid #444;
+  border-radius: 10px; padding: 6px 16px; min-width: 70px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.stat-box.active-turn {
+  border-color: #f1c40f;
+  box-shadow: 0 0 10px rgba(241, 196, 15, 0.4);
+}
+
+.stat-label {
+  font-size: 0.7rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px;
+}
+
+.stat-score {
+  font-size: 1.6rem; font-weight: bold; color: #f1c40f; line-height: 1.2;
+}
+
+#stats-badge {
+  background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 10px;
+  color: #f1c40f; font-weight: bold; border: 1px solid #f1c40f;
+  font-size: 1rem; letter-spacing: 1px; text-align: center;
+}
+
+/* --- TURN BANNER --- */
+#turn-banner {
+  font-size: 1rem; font-weight: bold; letter-spacing: 1px;
+  color: #f1c40f; margin-bottom: 10px; min-height: 1.4em;
+  text-align: center;
+}
+
+/* --- GRID --- */
 #memory-grid {
   display: grid; gap: 8px; width: 100%; max-width: 500px; perspective: 1000px;
 }
 
-/* Grid Sizes */
-#memory-grid.easy { grid-template-columns: repeat(4, 1fr); }
+#memory-grid.easy   { grid-template-columns: repeat(4, 1fr); }
 #memory-grid.normal { grid-template-columns: repeat(4, 1fr); }
-#memory-grid.hard { grid-template-columns: repeat(6, 1fr); max-width: 600px; }
+#memory-grid.hard   { grid-template-columns: repeat(6, 1fr); max-width: 600px; }
 
-.card { aspect-ratio: 2/3; position: relative; transform-style: preserve-3d; transition: transform 0.5s; cursor: pointer; }
+/* --- CARDS --- */
+.card {
+  aspect-ratio: 2/3; position: relative;
+  transform-style: preserve-3d; transition: transform 0.5s;
+  cursor: pointer;
+}
+
 .card.flipped { transform: rotateY(180deg); }
 
 .card-face {
@@ -33,20 +74,29 @@ body {
   display: flex; align-items: center; justify-content: center;
 }
 
-/* FIXED PATH: Pointing to the new standard cards folder */
-.card-front{
+.card-front {
   background-color: transparent;
-  background-image: url('../../system/images/cards/standard/cardBack_blue2.png'); 
-  background-size: 100% 100%; background-position: center; color: transparent; border: none; 
+  background-image: url('../../system/images/cards/standard/cardBack_blue2.png');
+  background-size: 100% 100%; background-position: center;
+  color: transparent; border: none;
 }
 
-.card-back { background: white; color: black; transform: rotateY(180deg); border: 2px solid #ccc; }
+.card-back {
+  background: white; color: black;
+  transform: rotateY(180deg); border: 2px solid #ccc;
+}
 .card-back img { width: 80%; height: auto; }
 
-.card.matched { visibility: hidden; pointer-events: none; transition: visibility 0s 0.5s; }
+.card.matched {
+  visibility: hidden; pointer-events: none;
+  transition: visibility 0s 0.5s;
+}
+
+/* --- CONTROLS --- */
+#controls { margin-top: 15px; }
 
 #start-game-btn {
-  margin-top: 20px; padding: 12px 30px; border-radius: 25px;
+  padding: 12px 30px; border-radius: 25px;
   background: linear-gradient(to bottom, #2ecc71, #27ae60);
   color: white; border: none; font-weight: bold; cursor: pointer;
   box-shadow: 0 4px 10px rgba(0,0,0,0.5); font-size: 1.1rem;
@@ -54,7 +104,19 @@ body {
 #start-game-btn:active { transform: scale(0.95); }
 
 /* --- TOAST MODAL --- */
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.toast-box { background: #1a252f; padding: 25px; border-radius: 12px; border: 2px solid #f1c40f; color: white; width: 90%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); text-align: center; }
-.toast-box h2 { color: #f1c40f; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; }
+.modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.85); display: flex;
+  align-items: center; justify-content: center; z-index: 2000;
+}
+.toast-box {
+  background: #1a252f; padding: 25px; border-radius: 12px;
+  border: 2px solid #f1c40f; color: white; width: 90%; max-width: 400px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8); text-align: center;
+}
+.toast-box h2 {
+  color: #f1c40f; margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px;
+}
+
 .hidden { display: none !important; }

@@ -9,16 +9,16 @@ let isHost = false;
 SystemUI.init({
     gameName: "CONNECT 4",
     rules: "Drop your chips into the columns. The first player to connect 4 chips in a row (horizontal, vertical, or diagonal) wins!<br><br>• Play locally, test your skills against the AI, or play Online!",
-    customToggles: `
-        <div class="settings-group" style="text-align:left;">
-            <label style="display:block; margin-bottom:5px; color:#bdc3c7;">Game Mode:</label>
-            <select id="sys-c4-mode" style="width:100%; padding:10px; border-radius:5px; border:1px solid #34495e; background:#2c3e50; color:white;">
-                <option value="ai">🤖 Play vs AI</option>
-                <option value="local">👥 Local Multiplayer</option>
-                <option value="online">🌐 Online Multiplayer</option>
-            </select>
-        </div>
-    `
+    hudDropdowns: [
+        {
+            id: "sys-c4-mode",
+            options: [
+                { value: "ai", label: "🤖 Play vs AI" },
+                { value: "local", label: "👥 Local Multiplayer" },
+                { value: "online", label: "🌐 Online Multiplayer" }
+            ]
+        }
+    ]
 });
 
 document.getElementById("sys-c4-mode").value = gameMode;
@@ -428,3 +428,18 @@ function restartGame() {
 
 // Kickstart
 createBoard();
+
+// Handle OS Lobby Escapes
+document.getElementById("lobby-close-btn").addEventListener("click", () => {
+    SystemUI.playSound('click');
+    document.getElementById("multiplayer-lobby").classList.add("hidden");
+});
+
+document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
+    SystemUI.playSound('click');
+    gameMode = "ai";
+    document.getElementById("sys-c4-mode").value = "ai";
+    localStorage.setItem("c4_mode", "ai");
+    document.getElementById("multiplayer-lobby").classList.add("hidden");
+    restartGame();
+});

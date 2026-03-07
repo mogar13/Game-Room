@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#111111">
+  <meta name="color-scheme" content="dark">
   <title>Connect 4 Pro</title>
   <link rel="stylesheet" href="../../system/system_ui.css">
   <link rel="stylesheet" href="c4_style.css">
@@ -34,31 +39,6 @@
   </script>
 </head>
 <body>
-
-  <div id="multiplayer-lobby" class="hidden">
-    <div class="lobby-box">
-      <h2>MULTIPLAYER ARENA</h2>
-      
-      <div class="lobby-section">
-        <h3>HOST A GAME</h3>
-        <button id="btn-create-room" class="lobby-btn primary">CREATE NEW ROOM</button>
-        <div id="room-code-display" class="hidden">
-          Room Code: <span id="host-room-id" class="highlight"></span>
-          <p class="waiting-text">Waiting for opponent...</p>
-        </div>
-      </div>
-
-      <div class="lobby-divider">OR</div>
-
-      <div class="lobby-section">
-        <h3>JOIN A GAME</h3>
-        <input type="text" id="join-room-input" placeholder="Enter 4-Digit Code" maxlength="4">
-        <button id="btn-join-room" class="lobby-btn secondary">JOIN ROOM</button>
-      </div>
-      
-      <p id="lobby-error-msg" class="error-text"></p>
-    </div>
-  </div>
 
   <div id="game-container" class="game-wrapper-padding">
     <h2 id="status-display">Player 1's Turn</h2>

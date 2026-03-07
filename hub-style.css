@@ -1,128 +1,397 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@400;700&display=swap');
+
+/*--------- Variables & Themes ---------*/
+:root {
+  --bg-image: url('system/images/bgs/background_1.png'); 
+  --bg-size: cover;
+  --bg-repeat: no-repeat;
+  --header-bg: rgba(10, 15, 30, 0.85);
+  --accent-color: #00d2ff;
+  --text-color: #ffffff;
+  --card-bg: rgba(20, 30, 60, 0.7);
+  --card-border: #00d2ff;
+  --card-hover: #3a86ff;
+}
+
+.theme-casino {
+  --bg-image: url('system/images/bgs/background_3.png'); 
+  --bg-size: auto; 
+  --bg-repeat: repeat; 
+  --header-bg: rgba(5, 40, 15, 0.9);
+  --accent-color: #f1c40f;
+  --card-bg: rgba(10, 60, 20, 0.8);
+  --card-border: #f1c40f;
+  --card-hover: #f39c12;
+}
+
+.theme-arcade {
+  --bg-image: url('system/images/bgs/background_2.png'); 
+  --bg-size: cover;
+  --bg-repeat: no-repeat;
+  --header-bg: rgba(5, 20, 25, 0.9);
+  --accent-color: #39ff14; 
+  --card-bg: rgba(15, 35, 40, 0.8);
+  --card-border: #39ff14;
+  --card-hover: #00ff00;
+}
+
 body {
-  background-color: var(--bg-color);
+  background-color: #050505;
+  background-image: var(--bg-image);
+  background-size: var(--bg-size);
+  background-repeat: var(--bg-repeat);
+  background-attachment: fixed;
+  background-position: center;
   color: var(--text-color);
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Roboto', sans-serif;
   margin: 0;
   text-align: center;
-  transition: background-color 0.4s;
+  transition: background-image 0.5s ease-in-out;
   touch-action: manipulation;
+  overflow-x: hidden;
 }
 
+/*--------- The Centered 3D Header ---------*/
 header {
-  padding: 40px 20px;
+  padding: 30px 20px;
   background-color: var(--header-bg);
   border-bottom: 4px solid var(--accent-color);
+  box-shadow: 0 5px 25px rgba(0,0,0,0.5);
+  backdrop-filter: blur(10px);
+  margin-bottom: 20px;
 }
 
-header h1 {
-  margin: 0;
+.logo-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.shack-title {
+  position: relative;
+  font-family: 'Orbitron', sans-serif;
   font-size: 2.5rem;
+  font-weight: 900;
+  color: #fff;
   letter-spacing: 2px;
+  margin: 0;
+  text-align: center;
+  /* Cool rigid 3D shadow effect */
+  text-shadow: 
+    2px 2px 0px var(--accent-color),
+    4px 4px 0px rgba(0,0,0,0.8);
 }
 
-header p {
-  color: #a2a2bd;
+/*--------- Search & Themes ---------*/
+.search-container {
+  margin-bottom: 20px;
 }
 
+#game-search {
+  width: 90%;
+  max-width: 400px;
+  padding: 12px 20px;
+  border-radius: 25px;
+  border: 2px solid var(--accent-color);
+  background: rgba(0,0,0,0.6);
+  color: white;
+  font-size: 1rem;
+  font-family: 'Roboto', sans-serif;
+  outline: none;
+  transition: box-shadow 0.3s;
+}
+
+#game-search:focus {
+  box-shadow: 0 0 15px var(--accent-color);
+}
+
+.theme-selector {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.theme-selector button {
+  padding: 8px 16px;
+  cursor: pointer;
+  border: 2px solid var(--accent-color);
+  background: rgba(0,0,0,0.5);
+  color: white;
+  border-radius: 20px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.8rem;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.theme-selector button:hover, .active-theme {
+  background: var(--accent-color) !important;
+  color: #000 !important;
+  box-shadow: 0 0 15px var(--accent-color);
+}
+
+/*--------- The Carousel Layout ---------*/
+#carousel-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.nav-btn {
+  background: rgba(0,0,0,0.6);
+  border: 2px solid var(--accent-color);
+  color: var(--accent-color);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: 0.2s;
+  z-index: 10;
+}
+
+.nav-btn:hover {
+  background: var(--accent-color);
+  color: #000;
+  transform: scale(1.1);
+}
+
+#prev-page { margin-right: 10px; }
+#next-page { margin-left: 10px; }
+
+#pagination-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+  margin-bottom: 40px;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  background: #444;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.dot.active {
+  background: var(--accent-color);
+  box-shadow: 0 0 8px var(--accent-color);
+  transform: scale(1.2);
+}
+
+/*--------- The Game Grid ---------*/
 .game-grid {
   display: grid;
-  /* FORCING 2 COLUMNS ON MOBILE */
   grid-template-columns: repeat(2, 1fr); 
   gap: 15px; 
-  padding: 20px;
-  max-width: 1000px;
-  margin: 0 auto;
+  flex-grow: 1;
+  padding: 10px;
+  /* Enforces a minimum height so navigation arrows don't jump around when typing in search */
+  min-height: 450px; 
+  align-content: start;
 }
 
 .game-card {
   background-color: var(--card-bg);
-  border: 2px solid var(--accent-color);
-  border-radius: 15px;
-  /* REMOVED fixed width: 250px so it fits the grid columns */
+  border: 2px solid var(--card-border);
+  border-radius: 12px;
   padding: 20px 10px; 
   text-decoration: none;
   color: white;
   display: flex;
   flex-direction: column;
   align-items: center;
-  transition: transform 0.2s, box-shadow 0.2s;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  backdrop-filter: blur(5px);
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.5), 0 5px 15px rgba(0,0,0,0.3);
 }
 
 .game-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 20px rgba(233, 69, 96, 0.4);
+  transform: translateY(-5px) scale(1.02);
+  border-color: var(--card-hover);
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.5), 0 10px 20px rgba(0,0,0,0.6);
+  background-color: rgba(20, 30, 60, 0.9); 
 }
 
 .card-icon {
-  font-size: 2.5rem; /* Sized down for mobile grid */
+  width: 50px;
+  height: 50px;
   margin-bottom: 10px;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 5px 5px rgba(0,0,0,0.5));
 }
 
 .game-card h2 {
-  margin: 0 0 5px 0;
-  font-size: 1.1rem; /* Sized down for mobile grid */
-  color: var(--accent-color);
+  margin: 0;
+  font-size: 1rem;
+  font-family: 'Orbitron', sans-serif;
+  color: var(--card-border);
+  letter-spacing: 1px;
 }
 
 .game-card p {
-  display: none; /* Hiding descriptions on mobile to keep the grid clean */
+  display: none; 
 }
 
-/*---------Themes---------*/
-
-:root {
-  --bg-color: #1a1a2e;
-  --header-bg: #16213e;
-  --accent-color: #e94560;
-  --text-color: #ffffff;
-  --card-bg: #0f3460;
-}
-
-.theme-selector {
-  margin: 20px;
-}
-
-.theme-selector button {
-  padding: 10px;
-  margin: 5px;
-  cursor: pointer;
-  border: 1px solid var(--accent-color);
-  background: var(--card-bg);
-  color: white;
-  border-radius: 5px;
-}
-
-.theme-casino {
-  --bg-color: #0b5d2a;
-  --header-bg: #0f7a3a;
-  --accent-color: #f1c40f;
-  --card-bg: #1a1a1a;
-}
-
-.theme-arcade {
-  --bg-color: #000000;
-  --header-bg: #1a1a1a;
-  --accent-color: #39ff14; /* Neon Green */
-  --card-bg: #222222;
-}
-
+/*--------- Desktop Enhancements ---------*/
 @media (min-width: 768px) {
-  .game-grid {
-    /* Draws exactly 2 columns, max 350px wide, and centers them in the screen */
-    grid-template-columns: repeat(2, minmax(250px, 350px)); 
-    justify-content: center; 
-    gap: 30px;
-  }
-  
-  .card-icon {
+  .shack-title {
     font-size: 4rem;
   }
   
+  .game-grid {
+    grid-template-columns: repeat(3, 1fr); 
+    gap: 20px;
+    padding: 20px;
+  }
+  
+  .card-icon {
+    width: 70px;
+    height: 70px;
+    margin-bottom: 15px;
+  }
+  
   .game-card h2 {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
+    margin-bottom: 10px;
   }
 
   .game-card p {
     display: block; 
+    font-size: 0.85rem;
+    color: #ccc;
+    margin: 0;
+    padding: 0 10px;
+  }
+  
+  .nav-btn {
+    width: 50px;
+    height: 50px;
+    font-size: 1.5rem;
   }
 }
+
+@media (max-width: 450px) {
+  .nav-btn {
+    display: none;
+  }
+}
+
+/*======================================================
+  NEW ADDITIONS: PROFILE, CATEGORIES, BADGES
+========================================================*/
+
+/* 1. Profile Banner */
+.profile-banner {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+  border-bottom: 2px solid var(--accent-color);
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 20px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.9rem;
+  font-weight: bold;
+  color: #fff;
+  z-index: 100;
+  position: relative;
+}
+.profile-icon {
+  margin-right: 5px;
+}
+.profile-right {
+  color: #2ecc71; /* Money green */
+  letter-spacing: 1px;
+}
+
+/* 2. Category Filter Buttons */
+.category-filters {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.cat-btn {
+  background: transparent;
+  color: #888;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 5px 10px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: 0.3s;
+}
+.cat-btn:hover {
+  color: #fff;
+}
+.active-cat {
+  color: var(--accent-color);
+  border-bottom: 2px solid var(--accent-color);
+}
+
+/* 3. Game Badges */
+.card-badges {
+  display: flex;
+  gap: 5px;
+  margin-top: 5px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.badge {
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 3px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.b-online { background: rgba(52, 152, 219, 0.2); color: #3498db; border: 1px solid #3498db; }
+.b-casino { background: rgba(241, 196, 15, 0.2); color: #f1c40f; border: 1px solid #f1c40f; }
+.b-solo { background: rgba(155, 89, 182, 0.2); color: #9b59b6; border: 1px solid #9b59b6; }
+
+/* 4. Daily Bonus Button */
+#daily-bonus-btn {
+  background: #2ecc71;
+  color: #000;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.75rem;
+  font-weight: bold;
+  margin-left: 10px;
+  cursor: pointer;
+  transition: 0.2s;
+  box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);
+}
+#daily-bonus-btn:hover:not(:disabled) {
+  background: #27ae60;
+  transform: scale(1.05);
+}
+#daily-bonus-btn:disabled {
+  background: #444;
+  color: #888;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
