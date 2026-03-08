@@ -1,31 +1,33 @@
 // ==========================================
 // 1. INITIALIZE CASINO OS & MULTIPLAYER STATE
 // ==========================================
-let gameMode = localStorage.getItem("c4_mode") || "ai"; // "ai", "local", or "online"
-let myPlayerId = 1; // 1 = Yellow (Host), 2 = Blue (Guest)
+let gameMode = localStorage.getItem("ttt_mode") || "ai"; 
+let mySymbol = "X"; 
 let currentRoomId = null; 
 let isHost = false;
 let chatStarted = false; // NEW: Tracks if we've loaded the chat yet
 
 SystemUI.init({
-    gameName: "CONNECT 4",
-    rules: "Drop your chips into the columns. The first player to connect 4 chips in a row (horizontal, vertical, or diagonal) wins!<br><br>• Play locally, test your skills against the AI, or play Online!",
+    gameName: "TIC-TAC-TOE",
+    rules: "Take turns placing X's and O's. Match 3 symbols to win.<br><br>• Challenge a friend locally, test your skills against the AI, or play Online!",
     hudDropdowns: [
         {
-            id: "sys-c4-mode",
+            id: "sys-ttt-mode",
+            label: "Game Mode",
             options: [
-                { value: "ai", label: "🤖 Play vs AI" },
-                { value: "local", label: "👥 Local Multiplayer" },
-                { value: "online", label: "🌐 Online Multiplayer" }
+                { value: "ai",     label: "🤖 vs AI" },
+                { value: "local",  label: "👥 Hotseat" },
+                { value: "online", label: "🌐 Online" }
             ]
         }
     ]
 });
 
-document.getElementById("sys-c4-mode").value = gameMode;
-document.getElementById("sys-c4-mode").addEventListener("change", (e) => {
+// Handle OS Menu Changes
+document.getElementById("sys-ttt-mode").value = gameMode;
+document.getElementById("sys-ttt-mode").addEventListener("change", (e) => {
     gameMode = e.target.value;
-    localStorage.setItem("c4_mode", gameMode);
+    localStorage.setItem("ttt_mode", gameMode);
     document.getElementById("sys-modal").classList.add("sys-hidden"); 
     
     if (gameMode === "online") {
@@ -39,10 +41,8 @@ document.getElementById("sys-c4-mode").addEventListener("change", (e) => {
     }
 });
 
-if (gameMode === "online") {
-    const lobby = document.getElementById("multiplayer-lobby");
-    if(lobby) lobby.classList.remove("hidden");
-}
+// Sync gameMode after system_ui.js forces dropdown to 'ai' via setTimeout(0)
+setTimeout(() => { gameMode = document.getElementById("sys-ttt-mode").value; }, 10);
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
     if(confirm("Wipe the board and restart the game?")) {
@@ -52,42 +52,7 @@ document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
 });
 
 // ==========================================
-// 2. BUILD THE BOARD (7 Cols x 6 Rows)
-// ==========================================
-const ROWS = 6;
-const COLS = 7;
-let board = []; 
-let currentPlayer = 1; 
-let gameActive = true;
-const statusDisplay = document.getElementById("status-display");
-
-function createBoard() {
-    const boardElement = document.getElementById("c4-board");
-    boardElement.innerHTML = ""; 
-    board = [];
-
-    for (let r = 0; r < ROWS; r++) {
-        let rowArray = [];
-        for (let c = 0; c < COLS; c++) {
-            rowArray.push(0); 
-            let slot = document.createElement("div");
-            slot.className = "slot";
-            slot.id = `slot-${r}-${c}`;
-            
-            let chip = document.createElement("div");
-            chip.className = "chip";
-            slot.appendChild(chip);
-
-            slot.addEventListener("click", () => handleColumnClick(c));
-            boardElement.appendChild(slot);
-        }
-        board.push(rowArray);
-    }
-    updateStatus();
-}
-
-// ==========================================
-// 3. FIREBASE MULTIPLAYER LOGIC
+// 2. FIREBASE MULTIPLAYER LOBBY LOGIC
 // ==========================================
 const btnCreateRoom = document.getElementById("btn-create-room");
 const btnJoinRoom = document.getElementById("btn-join-room");
@@ -102,42 +67,43 @@ function generateRoomCode() {
     return code;
 }
 
-if(btnCreateRoom) {
-    btnCreateRoom.addEventListener("click", () => {
-        SystemUI.playSound('click');
-        currentRoomId = generateRoomCode();
-        isHost = true;
-        myPlayerId = 1;
-        chatStarted = false;
-        
-        window.dbSet(window.dbRef(window.db, 'c4_rooms/' + currentRoomId), {
-            board: board,
-            turn: 1,
-            players: 1,
-            status: "waiting"
-        }).then(() => {
-            document.getElementById("room-code-display").classList.remove("hidden");
-            document.getElementById("host-room-id").innerText = currentRoomId;
-            btnCreateRoom.disabled = true;
-            listenToRoom(); 
-        });
+// HOST creates a room
+btnCreateRoom.addEventListener("click", () => {
+    SystemUI.playSound('click');
+    currentRoomId = generateRoomCode();
+    isHost = true;
+    mySymbol = "X";
+    chatStarted = false;
+    
+    window.dbSet(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+        board: ["", "", "", "", "", "", "", "", ""],
+        turn: "X",
+        players: 1,
+        status: "waiting"
+    }).then(() => {
+        document.getElementById("room-code-display").classList.remove("hidden");
+        document.getElementById("host-room-id").innerText = currentRoomId;
+        btnCreateRoom.disabled = true;
+        listenToRoom(); 
     });
-}
+});
 
-if(btnJoinRoom) {
-    btnJoinRoom.addEventListener("click", () => {
-        SystemUI.playSound('click');
-        const code = joinInput.value.toUpperCase();
-        if(code.length !== 4) { errorMsg.innerText = "Code must be 4 characters."; return; }
-        
-        window.dbGet(window.dbChild(window.dbRef(window.db), `c4_rooms/${code}`)).then((snapshot) => {
-            if (snapshot.exists() && snapshot.val().players === 1) {
+// GUEST joins a room
+btnJoinRoom.addEventListener("click", () => {
+    SystemUI.playSound('click');
+    const code = joinInput.value.toUpperCase();
+    if(code.length !== 4) { errorMsg.innerText = "Code must be 4 characters."; return; }
+    
+    window.dbGet(window.dbChild(window.dbRef(window.db), `rooms/${code}`)).then((snapshot) => {
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            if (data.players === 1) {
                 currentRoomId = code;
                 isHost = false;
-                myPlayerId = 2;
+                mySymbol = "O";
                 chatStarted = false;
                 
-                window.dbUpdate(window.dbRef(window.db, 'c4_rooms/' + currentRoomId), {
+                window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
                     players: 2,
                     status: "playing"
                 });
@@ -145,32 +111,39 @@ if(btnJoinRoom) {
                 lobbyUI.classList.add("hidden");
                 listenToRoom();
             } else {
-                errorMsg.innerText = "Room full or not found.";
+                errorMsg.innerText = "Room is full!";
             }
-        });
+        } else {
+            errorMsg.innerText = "Room not found. Check the code.";
+        }
     });
-}
+});
 
+// The Magic Listener
 function listenToRoom() {
-    window.dbOnValue(window.dbRef(window.db, 'c4_rooms/' + currentRoomId), (snapshot) => {
+    let onlineGameStarted = false;
+    window.dbOnValue(window.dbRef(window.db, 'rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if(!data) return; 
+        if(!data) return;
 
-        // THE FIX: Trigger chat for BOTH players reliably
-        if(data.status === "playing" && !chatStarted) {
-            chatStarted = true;
-            if(lobbyUI) lobbyUI.classList.add("hidden");
-            SystemUI.playSound('win'); 
-            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+        // Fire once for BOTH host and joiner when game starts
+        if (data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true;
+            lobbyUI.classList.add("hidden");
+            if (!chatStarted) {
+                chatStarted = true;
+                SystemUI.playSound('win');
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
         }
 
-        board = [];
-        for(let r = 0; r < ROWS; r++) {
-            let newRow = [];
-            for(let c = 0; c < COLS; c++) {
-                newRow.push((data.board && data.board[r] && data.board[r][c]) ? data.board[r][c] : 0);
+        if (data.status !== "playing") return;
+
+        board = ["", "", "", "", "", "", "", "", ""];
+        if (data.board) {
+            for (let i = 0; i < 9; i++) {
+                board[i] = data.board[i] || "";
             }
-            board.push(newRow);
         }
         
         currentPlayer = data.turn;
@@ -179,217 +152,143 @@ function listenToRoom() {
         updateVisualBoard();
         checkResult(true); 
         
-        if (gameActive) updateStatus();
+        if (gameActive) {
+            statusDisplay.innerText = currentPlayer === mySymbol ? "YOUR TURN!" : "Opponent is thinking...";
+        }
     });
 }
 
 // ==========================================
-// 4. GAMEPLAY LOGIC (Gravity & Placing)
+// 3. CORE ENGINE STATE
 // ==========================================
-function getLowestEmptyRow(boardState, col) {
-    for (let r = ROWS - 1; r >= 0; r--) {
-        if (boardState[r][col] === 0) return r;
-    }
-    return -1;
-}
+let board = ["", "", "", "", "", "", "", "", ""];
+let currentPlayer = "X";
+let gameActive = true;
+const statusDisplay = document.getElementById("status-display");
 
-function handleColumnClick(col) {
-    if (!gameActive) return;
+const winningConditions = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]
+];
 
-    if (gameMode === "online" && currentPlayer !== myPlayerId) {
-        SystemUI.playSound('click'); 
-        return; 
-    }
+statusDisplay.innerText = `It's ${currentPlayer}'s turn`;
 
-    let targetRow = getLowestEmptyRow(board, col);
-    if (targetRow === -1) return; 
+// ==========================================
+// 4. GAMEPLAY LOGIC
+// ==========================================
+function handleCellClick(clickedCellEvent) {
+    const clickedCellIndex = parseInt(clickedCellEvent.target.getAttribute('data-index'));
 
-    SystemUI.playSound('chipStack'); 
+    if (board[clickedCellIndex] !== "" || !gameActive) return;
 
     if (gameMode === "online") {
-        let newBoard = JSON.parse(JSON.stringify(board)); 
-        newBoard[targetRow][col] = myPlayerId;
-        let nextTurn = myPlayerId === 1 ? 2 : 1;
+        if (currentPlayer !== mySymbol) {
+            SystemUI.playSound('click'); 
+            return; 
+        }
         
-        window.dbUpdate(window.dbRef(window.db, 'c4_rooms/' + currentRoomId), {
+        SystemUI.playSound('chipTable');
+        
+        let newBoard = [...board];
+        newBoard[clickedCellIndex] = mySymbol;
+        let nextTurn = mySymbol === "X" ? "O" : "X";
+        
+        window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
             board: newBoard,
             turn: nextTurn
         });
         return; 
     }
 
-    board[targetRow][col] = currentPlayer;
-    updateVisualBoard();
+    SystemUI.playSound('chipTable');
+    updateCell(clickedCellEvent.target, clickedCellIndex);
     checkResult(false);
 
-    if (gameMode === "ai" && gameActive && currentPlayer === 2) {
-        statusDisplay.innerText = "AI is thinking...";
+    if (gameMode === "ai" && gameActive && currentPlayer === "O") {
+        statusDisplay.innerText = "Computer is thinking...";
         setTimeout(computerMove, 600); 
     }
 }
 
+function updateCell(cell, index) {
+    board[index] = currentPlayer;
+    cell.innerText = currentPlayer;
+    cell.classList.add(currentPlayer.toLowerCase()); 
+}
+
 function updateVisualBoard() {
-    for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
-            let chip = document.getElementById(`slot-${r}-${c}`).querySelector('.chip');
-            chip.className = "chip"; 
-            if (board[r][c] === 1) chip.classList.add("player1");
-            if (board[r][c] === 2) chip.classList.add("player2");
-        }
-    }
+    const cells = document.querySelectorAll('.cell');
+    cells.forEach((cell, index) => {
+        let val = board[index];
+        cell.innerText = val;
+        cell.className = "cell"; 
+        if(val) cell.classList.add(val.toLowerCase());
+    });
 }
 
-function updateStatus() {
-    if(gameMode === "online") {
-        statusDisplay.innerText = currentPlayer === myPlayerId ? "YOUR TURN!" : "Opponent's Turn...";
-        statusDisplay.style.color = myPlayerId === 1 ? "#f1c40f" : "#3498db";
-    } else {
-        let name = currentPlayer === 1 ? "Yellow" : "Blue";
-        statusDisplay.innerText = `${name}'s Turn`;
-        statusDisplay.style.color = currentPlayer === 1 ? "#f1c40f" : "#3498db";
-    }
-}
-
-// ==========================================
-// 5. SMARTER AI LOGIC (Win, Block, Center)
-// ==========================================
 function computerMove() {
     if (!gameActive) return;
-    
-    let validCols = [];
-    for(let c=0; c<COLS; c++) {
-        if(board[0][c] === 0) validCols.push(c);
-    }
-    if(validCols.length === 0) return;
+    let availableMoves = [];
+    board.forEach((val, index) => { if (val === "") availableMoves.push(index); });
+    let moveIndex = -1;
 
-    let bestCol = -1;
-
-    for(let c of validCols) {
-        let r = getLowestEmptyRow(board, c);
-        let tempBoard = JSON.parse(JSON.stringify(board));
-        tempBoard[r][c] = 2; 
-        if(checkWinLogic(tempBoard, 2)) { bestCol = c; break; }
+    moveIndex = findBestMove("O"); 
+    if (moveIndex === -1) moveIndex = findBestMove("X"); 
+    if (moveIndex === -1 && board[4] === "") moveIndex = 4; 
+    if (moveIndex === -1) { 
+        moveIndex = availableMoves[Math.floor(Math.random() * availableMoves.length)];
     }
 
-    if(bestCol === -1) {
-        for(let c of validCols) {
-            let r = getLowestEmptyRow(board, c);
-            let tempBoard = JSON.parse(JSON.stringify(board));
-            tempBoard[r][c] = 1; 
-            if(checkWinLogic(tempBoard, 1)) { bestCol = c; break; }
-        }
-    }
-
-    if(bestCol === -1 && validCols.includes(3) && Math.random() > 0.4) {
-        bestCol = 3;
-    }
-
-    if(bestCol === -1) {
-        bestCol = validCols[Math.floor(Math.random() * validCols.length)];
-    }
-
-    handleColumnClick(bestCol);
+    const targetCell = document.querySelector(`.cell[data-index="${moveIndex}"]`);
+    SystemUI.playSound('chipTable');
+    updateCell(targetCell, moveIndex);
+    checkResult(false);
 }
 
-function checkWinLogic(b, player) {
-    for(let c=0; c<COLS-3; c++) {
-        for(let r=0; r<ROWS; r++) {
-            if(b[r][c] === player && b[r][c+1] === player && b[r][c+2] === player && b[r][c+3] === player) return true;
-        }
+function findBestMove(playerSymbol) {
+    for (let i = 0; i < winningConditions.length; i++) {
+        const [a, b, c] = winningConditions[i];
+        if (board[a] === playerSymbol && board[b] === playerSymbol && board[c] === "") return c;
+        if (board[a] === playerSymbol && board[c] === playerSymbol && board[b] === "") return b;
+        if (board[b] === playerSymbol && board[c] === playerSymbol && board[a] === "") return a;
     }
-    for(let c=0; c<COLS; c++) {
-        for(let r=0; r<ROWS-3; r++) {
-            if(b[r][c] === player && b[r+1][c] === player && b[r+2][c] === player && b[r+3][c] === player) return true;
-        }
-    }
-    for(let c=0; c<COLS-3; c++) {
-        for(let r=0; r<ROWS-3; r++) {
-            if(b[r][c] === player && b[r+1][c+1] === player && b[r+2][c+2] === player && b[r+3][c+3] === player) return true;
-        }
-    }
-    for(let c=0; c<COLS-3; c++) {
-        for(let r=3; r<ROWS; r++) {
-            if(b[r][c] === player && b[r-1][c+1] === player && b[r-2][c+2] === player && b[r-3][c+3] === player) return true;
-        }
-    }
-    return false;
+    return -1; 
 }
 
-// ==========================================
-// 6. VISUAL WIN CHECK
-// ==========================================
 function checkResult(isFromNetwork) {
-    let won = false;
-    let winningSlots = [];
-
-    for (let c = 0; c < COLS - 3; c++) {
-        for (let r = 0; r < ROWS; r++) {
-            let p = board[r][c];
-            if (p !== 0 && p === board[r][c+1] && p === board[r][c+2] && p === board[r][c+3]) {
-                won = true; winningSlots = [[r,c], [r,c+1], [r,c+2], [r,c+3]];
-            }
-        }
-    }
-    if (!won) {
-        for (let c = 0; c < COLS; c++) {
-            for (let r = 0; r < ROWS - 3; r++) {
-                let p = board[r][c];
-                if (p !== 0 && p === board[r+1][c] && p === board[r+2][c] && p === board[r+3][c]) {
-                    won = true; winningSlots = [[r,c], [r+1,c], [r+2,c], [r+3,c]];
-                }
-            }
-        }
-    }
-    if (!won) {
-        for (let c = 0; c < COLS - 3; c++) {
-            for (let r = 0; r < ROWS - 3; r++) {
-                let p = board[r][c];
-                if (p !== 0 && p === board[r+1][c+1] && p === board[r+2][c+2] && p === board[r+3][c+3]) {
-                    won = true; winningSlots = [[r,c], [r+1,c+1], [r+2,c+2], [r+3,c+3]];
-                }
-            }
-        }
-    }
-    if (!won) {
-        for (let c = 0; c < COLS - 3; c++) {
-            for (let r = 3; r < ROWS; r++) {
-                let p = board[r][c];
-                if (p !== 0 && p === board[r-1][c+1] && p === board[r-2][c+2] && p === board[r-3][c+3]) {
-                    won = true; winningSlots = [[r,c], [r-1,c+1], [r-2,c+2], [r-3,c+3]];
-                }
-            }
+    let roundWon = false;
+    for (let i = 0; i < winningConditions.length; i++) {
+        const [a, b, c] = winningConditions[i];
+        if (board[a] && board[a] === board[b] && board[b] === board[c]) {
+            roundWon = true; break;
         }
     }
 
-    if (won) {
-        winningSlots.forEach(([r, c]) => {
-            let chip = document.getElementById(`slot-${r}-${c}`).querySelector('.chip');
-            chip.classList.add('winning-piece');
-        });
-        
+    if (roundWon) {
         if (gameMode === "online") {
-            let winner = currentPlayer === 1 ? 2 : 1; 
-            statusDisplay.innerText = winner === myPlayerId ? "YOU WIN!" : "OPPONENT WINS!";
-            if(!isFromNetwork) SystemUI.playSound(winner === myPlayerId ? 'win' : 'lose');
-        } else if (gameMode === "ai" && currentPlayer === 2) {
+            let winner = currentPlayer === "X" ? "O" : "X"; 
+            statusDisplay.innerText = winner === mySymbol ? "YOU WIN!" : "OPPONENT WINS!";
+            if(!isFromNetwork) SystemUI.playSound(winner === mySymbol ? 'win' : 'lose');
+        } else if (gameMode === "ai" && currentPlayer === "O") {
             statusDisplay.innerText = "Computer Wins!";
             if(!isFromNetwork) SystemUI.playSound('lose');
         } else {
-            statusDisplay.innerText = currentPlayer === 1 ? "Yellow Wins!" : "Blue Wins!";
+            statusDisplay.innerText = `Player ${currentPlayer} Wins!`;
             if(!isFromNetwork) SystemUI.playSound('win');
         }
         gameActive = false; return;
     }
 
-    if (board[0].every(val => val !== 0)) {
+    if (!board.includes("")) {
         statusDisplay.innerText = "It's a draw!";
         if(!isFromNetwork) SystemUI.playSound('tie');
         gameActive = false; return;
     }
 
     if(gameMode !== "online") {
-        currentPlayer = currentPlayer === 1 ? 2 : 1;
-        updateStatus();
+        currentPlayer = currentPlayer === "X" ? "O" : "X";
+        if (gameMode !== "ai" || currentPlayer === "X") {
+            statusDisplay.innerText = `It's ${currentPlayer}'s turn`;
+        }
     }
 }
 
@@ -402,10 +301,9 @@ function restartGame() {
 
     if (gameMode === "online") {
         if (isHost) {
-            let emptyBoard = Array(6).fill().map(() => Array(7).fill(0));
-            window.dbUpdate(window.dbRef(window.db, 'c4_rooms/' + currentRoomId), {
-                board: emptyBoard,
-                turn: 1
+            window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+                board: ["", "", "", "", "", "", "", "", ""],
+                turn: "X"
             });
         } else {
             alert("Only the Host can restart the game!");
@@ -413,12 +311,17 @@ function restartGame() {
         return;
     }
 
-    currentPlayer = 1;
+    board = ["", "", "", "", "", "", "", "", ""];
+    currentPlayer = "X";
     gameActive = true;
-    createBoard();
+    statusDisplay.innerText = `It's ${currentPlayer}'s turn`;
+    document.querySelectorAll('.cell').forEach(cell => {
+        cell.innerText = "";
+        cell.className = "cell";
+    });
 }
 
-createBoard();
+document.querySelectorAll('.cell').forEach(cell => cell.addEventListener('click', handleCellClick));
 
 document.getElementById("lobby-close-btn").addEventListener("click", () => {
     SystemUI.playSound('click');
@@ -427,11 +330,10 @@ document.getElementById("lobby-close-btn").addEventListener("click", () => {
 
 document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     SystemUI.playSound('click');
-    gameMode = "ai";
-    document.getElementById("sys-c4-mode").value = "ai";
-    localStorage.setItem("c4_mode", "ai");
     document.getElementById("multiplayer-lobby").classList.add("hidden");
     SystemUI.stopChat();
     chatStarted = false;
-    restartGame();
+    const modeSelect = document.getElementById("sys-ttt-mode");
+    modeSelect.value = "local";
+    modeSelect.dispatchEvent(new Event("change")); 
 });

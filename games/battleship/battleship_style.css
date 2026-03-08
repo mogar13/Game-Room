@@ -15,7 +15,7 @@ body {
     background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid #34495e;
     margin-bottom: 20px;
 }
-.ship-grid, .tool-grid { display: flex; gap: 8px; justify-content: center; }
+.ship-grid, .tool-grid { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
 .tool-btn, .ship-btn {
     padding: 8px 12px; background: #2c3e50; border: 1px solid #34495e;
@@ -39,60 +39,99 @@ body {
 #status-display { color: #f1c40f; font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; letter-spacing: 2px; }
 .sys-btn { font-family: 'Orbitron', sans-serif; font-weight: bold; padding: 10px 20px; border-radius: 4px; border: none; cursor: pointer; }
 .sys-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-/* =========================================
-   MOBILE RESPONSIVENESS (VERTICAL STACKING)
-   ========================================= */
 
-/* On narrow screens (phones in portrait mode), stack the boards and shrink the cells */
+/* =========================================
+   MOBILE RESPONSIVENESS (SCROLL FIT)
+   ========================================= */
 @media screen and (max-width: 800px) {
   body {
-    /* Enforce Casino OS dark mode */
     background: #050505 !important;
-    overflow-y: auto; /* Allow scrolling if it overflows vertically */
+    height: auto !important; /* Overrides the desktop 100vh lock */
+    min-height: 100dvh;
+    overflow-y: auto !important; /* Restores vertical scrolling */
+    justify-content: flex-start;
   }
 
-  /* Adjust the header and tool grid for smaller width */
-  #game-header {
-    margin-top: 50px; /* Push down to clear the OS HUD */
-    transform: scale(0.9);
-  }
-  
-  #ship-selector {
-    padding: 10px;
-  }
-
-  /* Stack the boards vertically instead of side-by-side */
-  .boards-container { 
-    flex-direction: column; 
-    gap: 15px; 
-    margin-bottom: 20px;
+  #game-container {
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    justify-content: flex-start;
+    height: auto;
+    min-height: 100%;
+    width: 100vw;
+    padding-top: 10px; /* Moved up a bit from 65px */
+    padding-bottom: 30px; /* Added padding so you can scroll past the bottom buttons */
+    box-sizing: border-box;
   }
 
-  /* Shrink the cells so a 10x10 board fits within the phone width */
-  .board {
-    grid-template-columns: repeat(10, 30px);
-    grid-template-rows: repeat(10, 30px);
-    padding: 3px;
+  #game-header {
+    margin-top: 0;
+    margin-bottom: 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
   }
 
-  .cell { 
-    width: 30px; 
-    height: 30px; 
-  }
-
-  h3 {
-    text-align: center;
+  #status-display {
     font-size: 1rem;
     margin-bottom: 5px;
   }
 
-  /* Ensure controls stay visible at the bottom */
+  #ship-selector {
+    padding: 5px;
+    margin-bottom: 5px;
+    width: 95%;
+    max-width: 380px;
+    gap: 5px;
+  }
+
+  .ship-grid, .tool-grid {
+    gap: 4px;
+  }
+
+  .tool-btn, .ship-btn {
+    padding: 5px 8px;
+    font-size: 0.7rem;
+  }
+
+  .boards-container { 
+    flex-direction: column; 
+    gap: 5px; 
+    margin-bottom: 5px;
+    align-items: center;
+  }
+
+  h3 {
+    text-align: center;
+    font-size: 0.8rem;
+    margin-bottom: 2px;
+  }
+
+  .board {
+    grid-template-columns: repeat(10, min(8.5vw, 3vh));
+    grid-template-rows: repeat(10, min(8.5vw, 3vh));
+    gap: 1px;
+    padding: 2px;
+  }
+
+  .cell { 
+    width: min(8.5vw, 3vh); 
+    height: min(8.5vw, 3vh); 
+  }
+
   .controls {
-    margin-bottom: 30px;
+    margin-bottom: 0;
+    margin-top: 15px; /* Adds a gap before the buttons */
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 10px;
+    gap: 5px;
+  }
+  
+  .sys-btn {
+    padding: 8px 15px;
+    font-size: 0.8rem;
   }
 }

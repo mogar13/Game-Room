@@ -5,6 +5,7 @@ let gameMode = localStorage.getItem("snl_mode") || "ai";
 let myId = 1; 
 let currentRoomId = null; 
 let isHost = false;
+let chatStarted = false; // NEW: Tracks if we've loaded the chat yet
 
 SystemUI.init({
     gameName: "SNAKES & LADDERS PRO",
@@ -20,9 +21,9 @@ SystemUI.init({
         {
             id: "sys-snl-mode",
             options: [
-                { value: "ai", label: "🤖 Play vs AI" },
-                { value: "local", label: "👥 Local PvP" },
-                { value: "online", label: "🌐 Online Multiplayer" }
+                { value: "ai", label: "🤖 vs AI" },
+                { value: "local", label: "👥 Hotseat" },
+                { value: "online", label: "🌐 Online" }
             ]
         }
     ]
@@ -39,6 +40,8 @@ document.getElementById("sys-snl-mode").addEventListener("change", (e) => {
         document.getElementById("multiplayer-lobby").classList.remove("hidden");
     } else {
         document.getElementById("multiplayer-lobby").classList.add("hidden");
+        SystemUI.stopChat();
+        chatStarted = false;
         resetGame();
     }
 });
@@ -76,6 +79,7 @@ btnCreateRoom.addEventListener("click", () => {
     currentRoomId = generateRoomCode();
     isHost = true;
     myId = 1;
+    chatStarted = false;
 
     window.dbSet(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), {
         pos1: 1,
@@ -104,6 +108,7 @@ btnJoinRoom.addEventListener("click", () => {
                 currentRoomId = code;
                 isHost = false;
                 myId = 2;
+                chatStarted = false;
 
                 window.dbUpdate(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), {
                     players: 2,
@@ -127,10 +132,12 @@ function listenToRoom() {
         const data = snapshot.val();
         if (!data) return;
 
-        // If guest joined, hide lobby for the host
-        if (data.status === "playing" && !lobbyUI.classList.contains("hidden")) {
-            lobbyUI.classList.add("hidden");
+        // If guest joined, hide lobby for the host and trigger chat
+        if (data.status === "playing" && !chatStarted) {
+            chatStarted = true;
+            if (lobbyUI) lobbyUI.classList.add("hidden");
             SystemUI.playSound('win');
+            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
         }
 
         // Sync positions and turn from Firebase
@@ -308,7 +315,7 @@ window.addEventListener("resize", () => {
 
 // PNG piece paths
 const piecePaths = [
-    "../../system/images/pieces/red/pieceRed_border04.png",   // Player 1 - red
+    "../../system/images/pieces/red/pieceRed_border03.png",   // Player 1 - red
     "../../system/images/pieces/blue/pieceBlue_border04.png"  // Player 2 - blue
 ];
 
@@ -478,5 +485,7 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     document.getElementById("sys-snl-mode").value = "ai";
     localStorage.setItem("snl_mode", "ai");
     document.getElementById("multiplayer-lobby").classList.add("hidden");
+    SystemUI.stopChat();
+    chatStarted = false;
     resetGame();
 });

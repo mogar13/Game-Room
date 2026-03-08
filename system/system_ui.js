@@ -62,7 +62,7 @@ const SystemUI = {
         this.preloadAudio();
 
         const dropdownsHTML = (config.hudDropdowns || []).map(d => `
-            <select id="${d.id}" class="hud-dropdown" title="${d.label || ''}">
+            <select id="${d.id}" class="hud-dropdown" title="${d.label || ''}" autocomplete="off">
                 ${d.options.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
             </select>
         `).join('');
@@ -125,6 +125,14 @@ const SystemUI = {
         document.body.classList.add('game-wrapper-padding');
 
         this.bindEvents();
+
+        // Always default mode dropdowns to 'ai' on page load.
+        // setTimeout(0) fires AFTER the browser restores any cached select values (back-nav cache).
+        setTimeout(() => {
+            document.querySelectorAll('.hud-dropdown').forEach(sel => {
+                if ([...sel.options].some(o => o.value === 'ai')) sel.value = 'ai';
+            });
+        }, 0);
     },
 
     bindEvents: function() {
@@ -441,9 +449,10 @@ if (!document.getElementById("multiplayer-lobby")) {
         <h2 style="font-family: inherit;">MULTIPLAYER ARENA</h2>
         <div class="lobby-section">
           <h3 style="font-family: inherit;">HOST A GAME</h3>
-          <button id="btn-create-room" class="lobby-btn primary" style="font-family: inherit;">CREATE NEW ROOM</button>
+          <button id="btn-create-room" class="lobby-btn primary" style="font-family: inherit; margin-bottom: 14px;">CREATE NEW ROOM</button>
           <div id="room-code-display" class="hidden">
             <span style="font-family: inherit;">Room Code: </span><span id="host-room-id" class="highlight" style="font-family: inherit;"></span>
+            <button id="btn-copy-code" style="background:#f1c40f;color:#000;border:none;border-radius:6px;padding:4px 12px;font-weight:bold;cursor:pointer;font-size:0.8rem;font-family:inherit;margin-bottom:6px;">📋 COPY</button>
             <p class="waiting-text" style="font-family: inherit;">Waiting for opponent...</p>
           </div>
         </div>
@@ -459,6 +468,26 @@ if (!document.getElementById("multiplayer-lobby")) {
     </div>
     `;
     document.body.insertAdjacentHTML('beforeend', lobbyHTML);
+
+    // Copy button
+    document.getElementById('btn-copy-code').addEventListener('click', function() {
+        const code = document.getElementById('host-room-id').textContent.trim();
+        if (!code) return;
+        navigator.clipboard.writeText(code).catch(() => {});
+        this.textContent = '✓ COPIED!';
+        setTimeout(() => { this.textContent = '📋 COPY'; }, 2000);
+    });
+
+    // Cooldown on CREATE NEW ROOM — capture phase fires before the game's handler.
+    // Disables for 4s then re-enables so the user can generate a fresh code.
+    document.getElementById('btn-create-room').addEventListener('click', function() {
+        this.disabled = true;
+        this.textContent = '⏳ CREATING...';
+        setTimeout(() => {
+            this.disabled = false;
+            this.textContent = 'CREATE NEW ROOM';
+        }, 4000);
+    }, true); // capture = true: runs before game's bubble-phase handler
 }
 
 if (!document.getElementById("sys-chat-panel")) {

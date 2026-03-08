@@ -6,11 +6,12 @@
   padding: 10px 15px;
   background: rgba(0,0,0,0.8); border-bottom: 2px solid #f1c40f; 
   width: 100%; position: absolute; top: 0; left: 0; z-index: 100;
-  box-sizing: border-box; 
+  box-sizing: border-box;
+  min-width: 0;
 }
-.hud-icon { width: 22px; height: 22px; vertical-align: middle; }
-.hud-stat { font-weight: bold; display: flex; align-items: center; gap: 8px; font-size: 1.1rem; color: #f1c40f; justify-content: flex-start; }
-.hud-btn { background: white; border-radius: 8px; padding: 5px; border: none; cursor: pointer; transition: 0.2s; }
+.hud-icon { width: 22px; height: 22px; vertical-align: middle; flex-shrink: 0; }
+.hud-stat { font-weight: bold; display: flex; align-items: center; gap: 8px; font-size: 1.1rem; color: #f1c40f; justify-content: flex-start; min-width: 0; overflow: hidden; }
+.hud-btn { background: white; border-radius: 8px; padding: 5px; border: none; cursor: pointer; transition: 0.2s; flex-shrink: 0; }
 .hud-btn:hover { background: #ddd; }
 
 /* Push game containers down so they aren't hidden under the absolute HUD */
@@ -18,8 +19,8 @@
 
 /* HUD center column — sits in the middle grid cell, can never reach the sides */
 .hud-center {
-  display: flex; gap: 6px; align-items: center; justify-content: center;
-  overflow: hidden;
+  display: flex; gap: 4px; align-items: center; justify-content: center;
+  overflow: hidden; min-width: 0;
 }
 
 .hud-dropdown {
@@ -27,14 +28,17 @@
   border: 1px solid #f1c40f; border-radius: 6px;
   padding: 4px 6px; font-size: 0.8rem; font-weight: bold;
   cursor: pointer; outline: none;
-  max-width: 120px; min-width: 0;
+  max-width: 120px; min-width: 0; flex-shrink: 1;
 }
 .hud-dropdown:focus { border-color: #fff; }
 .hud-dropdown option { background: #111; color: #f1c40f; }
 
-@media (max-width: 400px) {
-  .hud-dropdown { font-size: 0.7rem; max-width: 90px; padding: 3px 4px; }
-  #universal-hud { padding: 10px; }
+@media (max-width: 480px) {
+  .hud-dropdown { font-size: 0.65rem; max-width: 80px; padding: 3px 2px; }
+  #universal-hud { padding: 8px 8px; gap: 4px; }
+  .hud-stat { font-size: 0.9rem; gap: 4px; }
+  .hud-btn { padding: 4px; }
+  .hud-icon { width: 18px; height: 18px; }
 }
 
 /* Bankruptcy refill — only visible when money hits 0 */

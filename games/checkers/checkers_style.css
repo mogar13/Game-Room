@@ -1,0 +1,260 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+
+body {
+  background: radial-gradient(ellipse at 50% 20%, #0d3320 0%, #041208 100%);
+  color: white;
+  font-family: 'Segoe UI', sans-serif;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  touch-action: manipulation;
+}
+
+/* =============================================
+   GAME CONTAINER
+   ============================================= */
+#game-container {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 4px;
+  position: relative;
+  overflow: hidden;
+  gap: 4px;
+}
+
+/* =============================================
+   STATS BAR
+   ============================================= */
+#stats-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 480px;
+  gap: 10px;
+}
+
+.stat-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid #444;
+  border-radius: 10px;
+  padding: 5px 14px;
+  min-width: 70px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.stat-box.active-turn {
+  border-color: #f1c40f;
+  box-shadow: 0 0 12px rgba(241,196,15,0.4);
+}
+.stat-label { font-size: 0.65rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+.stat-score {
+  font-size: 1.5rem; font-weight: bold; color: #f1c40f;
+  line-height: 1.2; font-family: 'Playfair Display', serif;
+}
+.stat-sub { font-size: 0.6rem; color: #777; letter-spacing: 0.5px; }
+
+#center-badge {
+  background: rgba(0,0,0,0.6);
+  border: 1px solid #f1c40f;
+  border-radius: 10px;
+  padding: 6px 12px;
+  color: #f1c40f;
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-align: center;
+  letter-spacing: 0.5px;
+  min-width: 80px;
+}
+
+/* =============================================
+   TURN BANNER
+   ============================================= */
+#turn-banner {
+  font-size: 0.9rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: #f1c40f;
+  min-height: 1.2em;
+  text-align: center;
+}
+
+/* =============================================
+   3D BOARD WRAPPER
+   ============================================= */
+#board-3d-wrapper {
+  perspective: 800px;
+  perspective-origin: 50% 35%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  /* Compensate for tilt so board appears centered vertically */
+  margin-top: -6px;
+}
+
+/* =============================================
+   CHECKERS BOARD
+   ============================================= */
+#checkers-board {
+  --sq: clamp(28px, calc(min(86vw, 40vh) / 8), 60px);
+  display: grid;
+  grid-template-columns: repeat(8, var(--sq));
+  grid-template-rows: repeat(8, var(--sq));
+  /* 3D tilt — tabletop feel */
+  transform: rotateX(18deg);
+  transform-origin: center center;
+  /* Board frame — thick bottom simulates isometric front face */
+  border-top: 10px solid #4a2010;
+  border-left: 14px solid #3d1a08;
+  border-right: 14px solid #3d1a08;
+  border-bottom: 36px solid #1a0800;
+  outline: 3px solid #7a3510;
+  box-shadow:
+    0 30px 60px rgba(0,0,0,0.95),
+    0 10px 25px rgba(0,0,0,0.7),
+    inset 0 0 30px rgba(0,0,0,0.25);
+}
+
+/* =============================================
+   SQUARES
+   ============================================= */
+.sq {
+  width: var(--sq);
+  height: var(--sq);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Classic Staunton palette */
+.sq.light { background: #f0d9b5; }
+.sq.dark  { background: #b58863; cursor: pointer; }
+
+/* Interaction states — only on dark squares */
+.sq.dark:hover            { background: #c49a72; }
+.sq.dark.selected         { background: #f6f338; }
+.sq.dark.can-move         { background: #9bc45a; }
+.sq.dark.must-jump        { background: #c0392b; }
+.sq.dark.must-jump:hover  { background: #e74c3c; }
+
+/* Move indicator dot */
+.move-dot {
+  width: 35%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.3);
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* =============================================
+   PIECES
+   ============================================= */
+.piece {
+  width: 82%;
+  aspect-ratio: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  transition: transform 0.1s;
+  cursor: pointer;
+}
+.piece:active { transform: scale(0.9); }
+
+.piece img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,0.75));
+  pointer-events: none;
+}
+
+/* King crown */
+.piece.king::after {
+  content: '♛';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: calc(var(--sq) * 0.28);
+  color: #ffd700;
+  text-shadow: 0 0 4px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,1);
+  pointer-events: none;
+  line-height: 1;
+}
+
+/* =============================================
+   CONTROLS
+   ============================================= */
+#controls {
+  display: flex;
+  justify-content: center;
+}
+
+#start-game-btn {
+  padding: 12px 32px;
+  border-radius: 25px;
+  background: linear-gradient(to bottom, #2ecc71, #27ae60);
+  color: white;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  font-size: 1rem;
+  letter-spacing: 0.5px;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+#start-game-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+/* =============================================
+   TOAST / RESULT MODAL
+   ============================================= */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.82);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000;
+  cursor: pointer;
+}
+.toast-box {
+  background: #1a252f;
+  padding: 28px 24px;
+  border-radius: 12px;
+  border: 2px solid #f1c40f;
+  color: white;
+  width: 88%;
+  max-width: 380px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.9);
+  text-align: center;
+  pointer-events: none;
+}
+.toast-box h2 {
+  color: #f1c40f;
+  margin-bottom: 10px;
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  padding-bottom: 10px;
+}
+.toast-box p {
+  color: #ccc;
+  font-size: 0.95rem;
+  margin-top: 8px;
+}

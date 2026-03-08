@@ -7,6 +7,8 @@ let aiDifficulty = localStorage.getItem("mem_ai_diff") || "adaptive";
 let myId = 1;
 let currentRoomId = null;
 let isHost = false;
+let chatStarted = false;
+let roomListenerUnsub = null;
 
 SystemUI.init({
     gameName: "MEMORY MATCH",
@@ -51,12 +53,18 @@ SystemUI.init({
     `
 });
 
-// Sync selects to saved state
-document.getElementById("sys-mem-mode").value = gameMode;
-document.getElementById("sys-diff-select").value = gridDifficulty;
-document.getElementById("sys-ai-diff").value = aiDifficulty;
-updateAiDiffVisibility();
-updateBuyInBtn();
+// Sync selects to saved state.
+// Use setTimeout(10) so this runs AFTER system_ui.js's setTimeout(0) forces
+// mode dropdowns to 'ai' — otherwise gameMode stays stale from localStorage.
+setTimeout(() => {
+    gameMode = document.getElementById("sys-mem-mode").value;
+    localStorage.setItem("mem_mode", gameMode);
+    document.getElementById("sys-diff-select").value = gridDifficulty;
+    document.getElementById("sys-ai-diff").value = aiDifficulty;
+    updateAiDiffVisibility();
+    updateBuyInBtn();
+    updatePlayerLabels();
+}, 10);
 
 document.getElementById("sys-mem-mode").addEventListener("change", (e) => {
     gameMode = e.target.value;
@@ -67,6 +75,8 @@ document.getElementById("sys-mem-mode").addEventListener("change", (e) => {
         document.getElementById("multiplayer-lobby").classList.remove("hidden");
     } else {
         document.getElementById("multiplayer-lobby").classList.add("hidden");
+        SystemUI.stopChat();
+        chatStarted = false;
     }
 });
 
@@ -127,6 +137,7 @@ document.getElementById("btn-create-room").addEventListener("click", () => {
     currentRoomId = generateRoomCode();
     isHost = true;
     myId = 1;
+    chatStarted = false;
 
     const cardSet = buildCardSet();
     window.dbSet(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), {
@@ -161,11 +172,13 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
                 currentRoomId = code;
                 isHost = false;
                 myId = 2;
+                chatStarted = false;
                 gridDifficulty = data.gridDifficulty || "normal";
                 window.dbUpdate(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), {
                     players: 2, status: "playing"
                 });
                 lobbyUI.classList.add("hidden");
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
                 listenToRoom();
             } else {
                 document.getElementById("lobby-error-msg").innerText = "Room is full!";
@@ -177,18 +190,27 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
 });
 
 function listenToRoom() {
-    window.dbOnValue(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), (snapshot) => {
+    if (roomListenerUnsub) { roomListenerUnsub(); roomListenerUnsub = null; }
+    let onlineGameStarted = false;
+    roomListenerUnsub = window.dbOnValue(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
 
-        if (data.status === "playing" && !lobbyUI.classList.contains("hidden")) {
+        if (data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true;
             lobbyUI.classList.add("hidden");
             SystemUI.playSound('shuffle');
+
+            if (!chatStarted) {
+                chatStarted = true;
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
+
             startOnlineGame(data);
             return;
         }
 
-        if (gameState === "idle") return;
+        if (gameState !== "playing") return;
 
         syncOnlineState(data);
     });
@@ -207,6 +229,8 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     lobbyUI.classList.add("hidden");
     updateAiDiffVisibility();
     updatePlayerLabels();
+    SystemUI.stopChat();
+    chatStarted = false;
 });
 
 // ==========================================
@@ -300,6 +324,42 @@ function markMatched(idx) {
 // ==========================================
 function initGame() {
     const config = GRID_CONFIGS[gridDifficulty];
+
+    // Online mode: host pushes fresh state to Firebase; joiner just re-listens
+    if (gameMode === "online") {
+        if (isHost) {
+            if (SystemUI.money < config.cost) {
+                showToast("Insufficient Funds", "You don't have enough cash!");
+                return;
+            }
+            SystemUI.money -= config.cost;
+            SystemUI.updateMoneyDisplay();
+            SystemUI.playSound('shuffle');
+            const cardSet = buildCardSet();
+            window.dbUpdate(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), {
+                cards: cardSet,
+                matched: Array(cardSet.length).fill(false),
+                turn: 1,
+                score1: 0,
+                score2: 0,
+                flip1: -1,
+                flip2: -1,
+                flipStage: 0,
+                status: "playing",
+                gridDifficulty: gridDifficulty
+            });
+        }
+        // Both host and joiner: reset local state and re-listen
+        scores = [0, 0];
+        moves = 0;
+        firstIdx = -1;
+        secondIdx = -1;
+        isLocking = false;
+        gameState = "idle"; // startOnlineGame will set it to playing
+        document.getElementById("start-game-btn").classList.add("hidden");
+        listenToRoom();
+        return;
+    }
 
     if (SystemUI.money < config.cost) {
         showToast("Insufficient Funds", "You don't have enough cash!");

@@ -16,7 +16,7 @@ SystemUI.init({
             label: "Game Mode",
             options: [
                 { value: "ai",     label: "🤖 vs AI" },
-                { value: "local",  label: "👥 Local" },
+                { value: "local",  label: "👥 Hotseat" },
                 { value: "online", label: "🌐 Online" }
             ]
         }
@@ -41,9 +41,8 @@ document.getElementById("sys-ttt-mode").addEventListener("change", (e) => {
     }
 });
 
-if (gameMode === "online") {
-    document.getElementById("multiplayer-lobby").classList.remove("hidden");
-}
+// Sync gameMode after system_ui.js forces dropdown to 'ai' via setTimeout(0)
+setTimeout(() => { gameMode = document.getElementById("sys-ttt-mode").value; }, 10);
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
     if(confirm("Wipe the board and restart the game?")) {
@@ -122,17 +121,23 @@ btnJoinRoom.addEventListener("click", () => {
 
 // The Magic Listener
 function listenToRoom() {
+    let onlineGameStarted = false;
     window.dbOnValue(window.dbRef(window.db, 'rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if(!data) return; 
+        if(!data) return;
 
-        // THE FIX: Trigger chat for BOTH players reliably
-        if(data.status === "playing" && !chatStarted) {
-            chatStarted = true;
+        // Fire once for BOTH host and joiner when game starts
+        if (data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true;
             lobbyUI.classList.add("hidden");
-            SystemUI.playSound('win'); 
-            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            if (!chatStarted) {
+                chatStarted = true;
+                SystemUI.playSound('win');
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
         }
+
+        if (data.status !== "playing") return;
 
         board = ["", "", "", "", "", "", "", "", ""];
         if (data.board) {

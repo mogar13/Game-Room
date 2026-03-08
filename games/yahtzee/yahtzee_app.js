@@ -6,6 +6,7 @@ let aiDifficulty = localStorage.getItem("ytz_diff") || "normal";
 let myId = 1;
 let currentRoomId = null;
 let isHost = false;
+let chatStarted = false;
 
 SystemUI.init({
     gameName: "YAHTZEE",
@@ -53,6 +54,8 @@ document.getElementById("sys-ytz-mode").addEventListener("change", (e) => {
         document.getElementById("multiplayer-lobby").classList.remove("hidden");
     } else {
         document.getElementById("multiplayer-lobby").classList.add("hidden");
+        SystemUI.stopChat();
+        chatStarted = false;
     }
 });
 
@@ -89,6 +92,7 @@ document.getElementById("btn-create-room").addEventListener("click", () => {
     currentRoomId = generateRoomCode();
     isHost = true;
     myId = 1;
+    chatStarted = false;
 
     const initScores = makeFreshScores();
     window.dbSet(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), {
@@ -123,10 +127,12 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
                 currentRoomId = code;
                 isHost = false;
                 myId = 2;
+                chatStarted = false;
                 window.dbUpdate(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), {
                     players: 2, status: "playing"
                 });
                 lobbyUI.classList.add("hidden");
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
                 listenToRoom();
             } else {
                 document.getElementById("lobby-error-msg").innerText = "Room is full!";
@@ -138,17 +144,25 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
 });
 
 function listenToRoom() {
+    let onlineGameStarted = false;
     window.dbOnValue(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
 
-        if (data.status === "playing" && lobbyUI && !lobbyUI.classList.contains("hidden")) {
-            lobbyUI.classList.add("hidden");
+        // Fire once for BOTH host and joiner — independent of lobby visibility
+        if (data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true;
+            if (lobbyUI) lobbyUI.classList.add("hidden");
+            if (!chatStarted) {
+                chatStarted = true;
+                SystemUI.playSound('win');
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
             startOnlineGame(data);
             return;
         }
 
-        if (gameState === "idle") return;
+        if (gameState !== "playing") return;
         syncOnlineState(data);
     });
 }
@@ -165,6 +179,8 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     lobbyUI.classList.add("hidden");
     updateAiDiffVisibility();
     updatePlayerLabels();
+    SystemUI.stopChat();
+    chatStarted = false;
 });
 
 // ==========================================
@@ -294,7 +310,7 @@ function toggleKeep(idx) {
     if (gameMode === "online" && currentTurn !== myId) return;
 
     kept[idx] = !kept[idx];
-    SystemUI.playSound('chip');
+    SystemUI.playSound('chipTable');
     updateDiceDisplay();
 }
 
@@ -307,7 +323,7 @@ function rollDice() {
     if (gameMode === "ai" && currentTurn === 2) return;
     if (gameMode === "online" && currentTurn !== myId) return;
 
-    SystemUI.playSound('shuffle');
+    new Audio('../../system/audio/dice-shake-1.ogg').play().catch(()=>{});
     document.getElementById("roll-btn").disabled = true;
 
     // Animate non-kept dice
@@ -328,6 +344,7 @@ function rollDice() {
         rollsLeft--;
         hasRolledThisTurn = true;
 
+        new Audio('../../system/audio/dice-throw-1.ogg').play().catch(()=>{});
         updateDiceDisplay();
         updateRollInfo();
         renderScorecard();
@@ -510,7 +527,7 @@ function scoreCategory(catId) {
     }
 
     myScores[catId] = val;
-    SystemUI.playSound(val > 0 ? 'chip' : 'click');
+    SystemUI.playSound(val > 0 ? 'chipTable' : 'click');
 
     if (gameMode === "online") {
         const updateObj = {
@@ -606,7 +623,7 @@ function aiRollStep(rollsRemaining) {
     if (gameState !== "playing") return;
 
     // Roll non-kept dice
-    SystemUI.playSound('shuffle');
+    new Audio('../../system/audio/dice-shake-1.ogg').play().catch(()=>{});
     for (let i = 0; i < 5; i++) {
         if (!kept[i]) dice[i] = Math.ceil(Math.random() * 6);
     }
@@ -623,6 +640,7 @@ function aiRollStep(rollsRemaining) {
     }
 
     setTimeout(() => {
+        new Audio('../../system/audio/dice-throw-1.ogg').play().catch(()=>{});
         updateDiceDisplay();
         updateRollInfo();
         renderScorecard();
@@ -659,7 +677,7 @@ function aiRollStep(rollsRemaining) {
             }
 
             scores2[catId] = val;
-            SystemUI.playSound(val > 0 ? 'chip' : 'click');
+            SystemUI.playSound(val > 0 ? 'chipTable' : 'click');
 
             updateScoreUI();
             renderScorecard();

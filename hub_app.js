@@ -72,9 +72,8 @@ window.changeTheme = function(theme) {
   document.body.className = ''; 
   if (theme !== 'default') document.body.classList.add('theme-' + theme);
   localStorage.setItem('shack_theme', theme);
-  document.querySelectorAll('.theme-selector button').forEach(btn => btn.classList.remove('active-theme'));
-  const activeBtn = document.getElementById('btn-theme-' + theme);
-  if (activeBtn) activeBtn.classList.add('active-theme');
+  const themeSelect = document.getElementById('theme-dropdown');
+  if (themeSelect) themeSelect.value = theme;
 };
 
 changeTheme(savedTheme);
@@ -88,8 +87,8 @@ const dotsContainer = document.getElementById('pagination-dots');
 const grid = document.getElementById('game-grid');
 const catBtns = document.querySelectorAll('.cat-btn');
 
-let currentPage = 1;
-const itemsPerPage = 9;
+let currentPage = parseInt(localStorage.getItem('hub_current_page')) || 1;
+const itemsPerPage = 6;
 let filteredCards = [...allCards];
 let currentCategory = 'all';
 
@@ -97,6 +96,8 @@ function renderCarousel() {
     const totalPages = Math.ceil(filteredCards.length / itemsPerPage) || 1;
     if (currentPage > totalPages) currentPage = totalPages;
     if (currentPage < 1) currentPage = 1;
+
+    localStorage.setItem('hub_current_page', currentPage);
 
     allCards.forEach(card => card.style.display = 'none');
     
@@ -125,7 +126,11 @@ function applyFilters() {
         const tagsMatch = (card.dataset.name || "").includes(term);
         const searchMatch = nameMatch || tagsMatch;
         
-        const catMatch = currentCategory === 'all' || card.dataset.cat === currentCategory;
+        let catMatch = true;
+        if (currentCategory !== 'all') {
+            const badgesText = card.querySelector('.card-badges').innerText.toLowerCase();
+            catMatch = badgesText.includes(currentCategory);
+        }
         
         return searchMatch && catMatch;
     });
@@ -171,4 +176,66 @@ function handleSwipe() {
     }
 }
 
+// --- 5. FAVORITES LOGIC ---
+let favorites = JSON.parse(localStorage.getItem('hub_favorites')) || [];
+
+function toggleFavorite(id, e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (favorites.includes(id)) {
+        favorites = favorites.filter(f => f !== id);
+    } else {
+        favorites.push(id);
+    }
+    localStorage.setItem('hub_favorites', JSON.stringify(favorites));
+    renderFavorites();
+    updateStarIcons();
+}
+
+function renderFavorites() {
+    const bar = document.getElementById('favorites-bar');
+    bar.innerHTML = '';
+    if (favorites.length === 0) {
+        bar.classList.add('hidden');
+        return;
+    }
+    bar.classList.remove('hidden');
+    favorites.forEach(id => {
+        const card = allCards.find(c => c.dataset.id === id);
+        if(card) {
+            const iconUrl = card.querySelector('.card-icon').style.backgroundImage;
+            const url = card.getAttribute('href');
+            const name = card.querySelector('h2').innerText;
+            const a = document.createElement('a');
+            a.href = url;
+            a.className = 'fav-shortcut hub-interactive';
+            a.innerHTML = `<div class="fav-shortcut-icon" style="background-image: ${iconUrl}"></div><span>${name}</span>`;
+            bar.appendChild(a);
+        }
+    });
+}
+
+function updateStarIcons() {
+    allCards.forEach(card => {
+        const id = card.dataset.id;
+        const star = card.querySelector('.fav-btn');
+        if(favorites.includes(id)) {
+            star.innerHTML = '★';
+            star.classList.add('is-fav');
+        } else {
+            star.innerHTML = '☆';
+            star.classList.remove('is-fav');
+        }
+    });
+}
+
+allCards.forEach(card => {
+    const star = card.querySelector('.fav-btn');
+    if (star) {
+        star.addEventListener('click', (e) => toggleFavorite(card.dataset.id, e));
+    }
+});
+
+renderFavorites();
+updateStarIcons();
 renderCarousel();

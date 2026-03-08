@@ -6,6 +6,7 @@ let myId = 1;
 let currentRoomId = null;
 let isMoving = false;
 let isHost = false;
+let chatStarted = false; // NEW: Tracks if we've loaded the chat yet
 
 SystemUI.init({
     gameName: "BATTLESHIP PRO",
@@ -14,12 +15,23 @@ SystemUI.init({
         {
             id: "sys-bs-mode",
             options: [
-                { value: "ai", label: "🤖 Play vs AI" },
+                { value: "ai", label: "🤖 vs AI" },
                 { value: "online", label: "🌐 Online" }
             ]
         }
     ]
 });
+
+// NEW AUDIO MANAGER FOR COMBAT
+const sfxHit = new Audio('../../system/audio/hit.mp3');
+const sfxSplash = new Audio('../../system/audio/splash.mp3');
+
+function playCombatSound(type) {
+    let snd = type === 'hit' ? sfxHit : sfxSplash;
+    snd.pause(); // Stops it if it's currently playing
+    snd.currentTime = 0; // Rewinds to the start so it doesn't overlap
+    snd.play().catch(e => console.log("Audio failed:", e));
+}
 
 function playBSSound(file) {
     const audio = new Audio(`../../system/audio/${file}.ogg`);
@@ -36,6 +48,8 @@ document.getElementById("sys-bs-mode").addEventListener("change", (e) => {
         document.getElementById("multiplayer-lobby").classList.remove("hidden");
     } else {
         document.getElementById("multiplayer-lobby").classList.add("hidden");
+        SystemUI.stopChat();
+        chatStarted = false;
         resetGame();
     }
 });
@@ -56,6 +70,8 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     gameMode = "ai";
     document.getElementById("sys-bs-mode").value = "ai";
     document.getElementById("multiplayer-lobby").classList.add("hidden");
+    SystemUI.stopChat();
+    chatStarted = false;
 });
 
 // ==========================================
@@ -69,6 +85,7 @@ let isHorizontal = true;
 let deleteMode = false;
 let shipsPlacedCount = 0;
 let placedShips = new Set();
+let shipCoords = {}; // NEW: Tracks exact ship locations for deleting
 let gameState = "setup";
 let turn = 1;
 
@@ -120,6 +137,7 @@ document.getElementById("clear-board-btn").addEventListener("click", () => {
     if (gameState !== "setup") return;
     playerBoard.fill(0);
     placedShips.clear();
+    shipCoords = {};
     shipsPlacedCount = 0;
     document.querySelectorAll(".ship-btn").forEach(b => b.disabled = false);
     rollBtn.disabled = true;
@@ -130,8 +148,23 @@ function placeOrDelete(index) {
     if (gameState !== "setup") return;
     if (deleteMode) {
         if(playerBoard[index] === 1) {
-            playerBoard[index] = 0; 
-            updateVisuals();
+            let targetShip = null;
+            for (let ship in shipCoords) {
+                if (shipCoords[ship].includes(index)) {
+                    targetShip = ship;
+                    break;
+                }
+            }
+            if (targetShip) {
+                shipCoords[targetShip].forEach(c => playerBoard[c] = 0);
+                delete shipCoords[targetShip];
+                placedShips.delete(targetShip);
+                shipsPlacedCount--;
+                document.querySelector(`.ship-btn[data-name="${targetShip}"]`).disabled = false;
+                rollBtn.disabled = true;
+                rollBtn.style.opacity = "0.5";
+                updateVisuals();
+            }
         }
         return;
     }
@@ -146,6 +179,7 @@ function placeOrDelete(index) {
     }
 
     coords.forEach(c => playerBoard[c] = 1);
+    shipCoords[selectedShipName] = coords;
     placedShips.add(selectedShipName);
     shipsPlacedCount++;
     document.querySelector(`.ship-btn[data-name="${selectedShipName}"]`).disabled = true;
@@ -155,7 +189,7 @@ function placeOrDelete(index) {
 }
 
 // ==========================================
-// 3. COMBAT & FIREBASE (Restored TTT Logic)
+// 3. COMBAT & FIREBASE 
 // ==========================================
 const lobbyUI = document.getElementById("multiplayer-lobby");
 
@@ -163,6 +197,8 @@ document.getElementById("btn-create-room").addEventListener("click", () => {
     SystemUI.playSound('click');
     currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
     isHost = true; myId = 1;
+    chatStarted = false; // Reset chat status
+
     window.dbSet(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), {
         player1Board: playerBoard,
         player2Board: Array(100).fill(0),
@@ -180,6 +216,13 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
     window.dbGet(window.dbChild(window.dbRef(window.db), `bs_rooms/${code}`)).then((snapshot) => {
         if (snapshot.exists()) {
             currentRoomId = code; isHost = false; myId = 2;
+            chatStarted = false; // Reset chat status
+
+            // Immediately set the room status to "playing" since 2 players are here
+            window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), {
+                status: "playing"
+            });
+
             lobbyUI.classList.add("hidden");
             listenToRoom();
         }
@@ -190,6 +233,15 @@ function listenToRoom() {
     window.dbOnValue(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
+
+        // THE FIX: Trigger chat reliably when the status flips to playing
+        if(data.status === "playing" && !chatStarted) {
+            chatStarted = true;
+            if(lobbyUI) lobbyUI.classList.add("hidden");
+            SystemUI.playSound('win'); 
+            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+        }
+
         turn = data.turn;
         playerBoard = myId === 1 ? data.player1Board : data.player2Board;
         opponentBoard = myId === 1 ? data.player2Board : data.player1Board;
@@ -208,7 +260,6 @@ async function handleAttack(index) {
     if (opponentBoard[index] > 1) return;
 
     isMoving = true;
-    playBSSound('dice-shake-1'); 
 
     const isHit = opponentBoard[index] === 1;
     const newVal = isHit ? 3 : 2;
@@ -219,9 +270,8 @@ async function handleAttack(index) {
         window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), updates);
     } else {
         opponentBoard[index] = newVal;
-        if (isHit) SystemUI.playSound('win'); else playBSSound('dice-throw-1');
+        playCombatSound(isHit ? 'hit' : 'miss');
         
-        // THE FIX: Check for the win BEFORE the AI is allowed to shoot
         checkWin(); 
         
         if (gameState === "playing") {
@@ -234,8 +284,11 @@ async function handleAttack(index) {
 }
 
 function aiAttack() {
+    if (gameState !== "playing") return;
     let idx; do { idx = Math.floor(Math.random()*100); } while(playerBoard[idx] > 1);
-    playerBoard[idx] = playerBoard[idx] === 1 ? 3 : 2;
+    const isHit = playerBoard[idx] === 1;
+    playerBoard[idx] = isHit ? 3 : 2;
+    playCombatSound(isHit ? 'hit' : 'miss');
     turn = 1; updateVisuals();
 }
 
@@ -248,7 +301,7 @@ document.getElementById("fire-btn").addEventListener("click", () => {
         rollBtn.disabled = true;
     } else {
         gameState = "playing";
-        autoPlaceShips(opponentBoard, false); // ONLY places AI ships
+        autoPlaceShips(opponentBoard, false); 
         document.getElementById("status-display").innerText = "BATTLE STATIONS!";
         document.getElementById("ship-selector").classList.add("hidden");
         updateVisuals();
@@ -257,8 +310,10 @@ document.getElementById("fire-btn").addEventListener("click", () => {
 
 function autoPlaceShips(boardArray, isPlayer) {
     boardArray.fill(0);
+    if (isPlayer) shipCoords = {};
     const sizes = [5, 4, 3, 3, 2];
-    sizes.forEach(size => {
+    const names = ["Carrier", "Battleship", "Destroyer", "Sub", "Patrol"];
+    sizes.forEach((size, idx) => {
         let placed = false;
         while (!placed) {
             let horizontal = Math.random() > 0.5;
@@ -272,6 +327,7 @@ function autoPlaceShips(boardArray, isPlayer) {
             }
             if (coords.length === size) {
                 coords.forEach(c => boardArray[c] = 1);
+                if (isPlayer) shipCoords[names[idx]] = coords;
                 placed = true;
             }
         }
@@ -307,7 +363,6 @@ function updateVisuals() {
         if (v === 3) oCells[i].classList.add("hit");
     });
     
-    // THE FIX: The "Ready to Fight" button should only be active during setup when 5 ships are placed.
     if (gameState === "setup" && shipsPlacedCount === 5) {
         rollBtn.style.opacity = "1";
         rollBtn.disabled = false;
@@ -320,7 +375,7 @@ function updateVisuals() {
 function checkWin() {
     const pRemaining = playerBoard.filter(v => v === 1).length;
     const oRemaining = opponentBoard.filter(v => v === 1).length;
-    const statusText = document.getElementById("status-display"); // Replaces the lame alert
+    const statusText = document.getElementById("status-display");
 
     if (oRemaining === 0 && gameState === "playing") {
         SystemUI.playSound('win'); 
@@ -340,6 +395,7 @@ function resetGame() {
     playerBoard.fill(0); opponentBoard.fill(0);
     gameState = "setup"; shipsPlacedCount = 0; turn = 1;
     placedShips.clear();
+    shipCoords = {};
     document.querySelectorAll(".ship-btn").forEach(b => b.disabled = false);
     document.querySelectorAll(".ship-btn").forEach(b => b.classList.remove("selected"));
     document.getElementById("ship-selector").classList.remove("hidden");

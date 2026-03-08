@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#111111">
+  <meta name="color-scheme" content="dark">
+  <title>Rummy Pro — The Game Shack</title>
+  <link rel="stylesheet" href="../../system/system_ui.css">
+  <link rel="stylesheet" href="rummy_style.css">
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, update, get, child } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
+      databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com", 
+      authDomain: "game-room-26e34.firebaseapp.com",
+      projectId: "game-room-26e34",
+      storageBucket: "game-room-26e34.firebasestorage.app",
+      messagingSenderId: "769541427914",
+      appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
+    };
+    
+    const app = initializeApp(firebaseConfig);
+    window.db = getDatabase(app);
+    window.dbRef = ref; window.dbSet = set; window.dbOnValue = onValue;
+    window.dbUpdate = update; window.dbGet = get; window.dbChild = child;
+  </script>
+</head>
+<body>
+
+  <div id="game-over-modal" class="hidden">
+    <div class="modal-box">
+      <h2 id="game-over-title">YOU WIN!</h2>
+      <p id="game-over-msg">You emptied your hand first.</p>
+      <div class="controls">
+        <button id="btn-play-again" class="sys-btn">Play Again</button>
+        <button id="btn-exit-game" class="sys-btn" style="background:#e74c3c; color:white; border: 2px solid white;">Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-container">
+    
+    <div id="opponent-area" class="player-area">
+      <h3 id="p2-label">Opponent: <span id="p2-card-count">0</span> cards</h3>
+      <div id="opponent-hand" class="hand"></div>
+      <div id="opponent-melds" class="meld-area"></div>
+    </div>
+
+    <div id="center-table">
+      <div id="turn-banner" class="hidden">Waiting for players...</div>
+      <div id="phase-banner" class="hidden">DRAW PHASE</div>
+
+      <div class="center-piles">
+        <div id="stock-pile" class="card-slot">
+            <div class="card-back hidden" id="stock-back"></div>
+            <div id="stock-count" class="count-bubble hidden">0</div>
+        </div>
+        <div id="discard-pile" class="card-slot"></div>
+      </div>
+      
+      <div id="move-log-container" class="hidden">
+        <div id="move-log"></div>
+      </div>
+    </div>
+
+    <div id="player-area" class="player-area">
+      <div id="player-melds" class="meld-area"></div>
+      
+      <div class="hand-controls">
+        <h3 id="p1-label">You</h3>
+        <button id="sort-btn" class="sys-btn small-btn hidden">Sort Hand</button>
+      </div>
+      
+      <div id="player-hand" class="hand"></div>
+    </div>
+
+    <div class="controls">
+      <button id="start-game-btn" class="sys-btn">Start Game</button>
+      <button id="meld-btn" class="sys-btn hidden" style="background:#2ecc71; color:black;">Play Meld</button>
+      <button id="discard-btn" class="sys-btn hidden" style="background:#e74c3c; color:white; border: 2px solid white;">Discard</button>
+    </div>
+
+  </div>
+
+  <script src="../../system/system_ui.js"></script>
+  <script src="rummy_app.js"></script>
+</body>
+</html>

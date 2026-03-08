@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#111111">
+  <meta name="color-scheme" content="dark">
+  <title>UNO Pro — The Game Shack</title>
+  <link rel="stylesheet" href="../../system/system_ui.css">
+  <link rel="stylesheet" href="uno_style.css">
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, update, get, child } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
+      databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com", 
+      authDomain: "game-room-26e34.firebaseapp.com",
+      projectId: "game-room-26e34",
+      storageBucket: "game-room-26e34.firebasestorage.app",
+      messagingSenderId: "769541427914",
+      appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
+    };
+    
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+    
+    window.db = database;
+    window.dbRef = ref;
+    window.dbSet = set;
+    window.dbOnValue = onValue;
+    window.dbUpdate = update;
+    window.dbGet = get;
+    window.dbChild = child;
+  </script>
+</head>
+<body>
+
+  <div id="color-picker-modal" class="hidden">
+    <div class="color-picker-box">
+      <h3>CHOOSE A COLOR</h3>
+      <div class="color-options">
+        <div class="color-btn" style="background: #e74c3c;" data-color="red"></div>
+        <div class="color-btn" style="background: #3498db;" data-color="blue"></div>
+        <div class="color-btn" style="background: #2ecc71;" data-color="green"></div>
+        <div class="color-btn" style="background: #f1c40f;" data-color="yellow"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="uno-shout-display" class="hidden">UNO!</div>
+
+  <div id="game-container">
+    
+    <div id="opponent-area" class="player-area">
+      <h3 id="p2-label">Opponent: <span id="p2-card-count">0</span> cards</h3>
+      <div id="opponent-hand" class="hand"></div>
+    </div>
+
+    <div id="center-table">
+      <div id="turn-banner" class="hidden">Waiting for players...</div>
+      
+      <div class="piles-wrapper">
+        <div id="draw-pile" class="pile">
+          <div class="card-back"></div>
+          <div id="deck-count" class="count-bubble hidden">0</div>
+        </div>
+        <div id="discard-pile" class="pile"></div>
+      </div>
+
+      <div id="color-indicator" class="hidden">CURRENT COLOR: RED</div>
+      <button id="uno-btn" class="sys-btn hidden">YELL UNO!</button>
+      
+      <div id="move-log" class="hidden"></div>
+    </div>
+
+    <div id="player-area" class="player-area">
+      <h3 id="p1-label">You</h3>
+      <div id="player-hand" class="hand"></div>
+    </div>
+
+    <div class="controls">
+      <button id="start-game-btn" class="sys-btn">Start Game</button>
+    </div>
+
+  </div>
+
+  <script src="../../system/system_ui.js"></script>
+  <script src="uno_app.js"></script>
+</body>
+</html>

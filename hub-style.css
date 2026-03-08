@@ -204,6 +204,7 @@ header {
 }
 
 .game-card {
+  position: relative; /* Added for absolute positioning of favorite button */
   background-color: var(--card-bg);
   border: 2px solid var(--card-border);
   border-radius: 12px;
@@ -395,3 +396,89 @@ header {
   transform: none;
 }
 
+/*======================================================
+  FAVORITES & DROPDOWN ADDITIONS
+========================================================*/
+
+#theme-dropdown {
+  background: rgba(0,0,0,0.6);
+  color: var(--accent-color);
+  border: 1px solid var(--accent-color);
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.75rem;
+  margin-left: 10px;
+  cursor: pointer;
+  outline: none;
+}
+
+.favorites-bar {
+  display: flex;
+  gap: 10px;
+  padding: 10px 20px;
+  background: rgba(0,0,0,0.4);
+  border-bottom: 1px solid var(--accent-color);
+  overflow-x: auto;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.favorites-bar::-webkit-scrollbar {
+  height: 4px;
+}
+.favorites-bar::-webkit-scrollbar-thumb {
+  background: var(--accent-color);
+  border-radius: 2px;
+}
+
+.fav-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  padding: 5px 12px;
+  border-radius: 20px;
+  text-decoration: none;
+  color: white;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.75rem;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.fav-shortcut:hover {
+  transform: scale(1.05);
+  background: var(--card-hover);
+}
+
+.fav-shortcut-icon {
+  width: 15px;
+  height: 15px;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.fav-btn {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  font-size: 1.5rem;
+  color: #555;
+  z-index: 10;
+  transition: 0.2s;
+}
+
+.fav-btn:hover {
+  transform: scale(1.2);
+}
+
+.fav-btn.is-fav {
+  color: #f1c40f;
+  text-shadow: 0 0 10px rgba(241, 196, 15, 0.8);
+}
+.hidden { display: none !important; }

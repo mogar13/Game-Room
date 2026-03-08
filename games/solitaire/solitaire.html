@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#111111">
+  <meta name="color-scheme" content="dark">
+  <title>Solitaire Pro — The Game Shack</title>
+  <link rel="stylesheet" href="../../system/system_ui.css">
+  <link rel="stylesheet" href="solitaire_style.css">
+</head>
+<body>
+
+  <div id="game-container">
+    
+    <div id="stats-bar">
+      <div>TIME: <span id="timer-display" style="color:white;">0:00</span></div>
+      <div>MOVES: <span id="moves-display" style="color:white;">0</span></div>
+    </div>
+
+    <div id="top-board">
+      <div id="draw-area">
+        <div id="stock" class="card-slot">
+            <div class="card-back hidden" id="stock-back"></div>
+        </div>
+        <div id="waste" class="card-slot"></div>
+      </div>
+      
+      <div id="foundation-area">
+        <div class="card-slot foundation" data-pile="f0"></div>
+        <div class="card-slot foundation" data-pile="f1"></div>
+        <div class="card-slot foundation" data-pile="f2"></div>
+        <div class="card-slot foundation" data-pile="f3"></div>
+      </div>
+    </div>
+
+    <div id="tableau-area">
+      <div class="card-slot tableau-col empty-king-target" data-col="0"></div>
+      <div class="card-slot tableau-col empty-king-target" data-col="1"></div>
+      <div class="card-slot tableau-col empty-king-target" data-col="2"></div>
+      <div class="card-slot tableau-col empty-king-target" data-col="3"></div>
+      <div class="card-slot tableau-col empty-king-target" data-col="4"></div>
+      <div class="card-slot tableau-col empty-king-target" data-col="5"></div>
+      <div class="card-slot tableau-col empty-king-target" data-col="6"></div>
+    </div>
+
+    <div class="controls">
+      <button id="deal-btn" class="sys-btn">Deal Cards</button>
+      <button id="restart-btn" class="sys-btn hidden" style="background:#e74c3c; color:white; border: 2px solid white;">Restart Game</button>
+    </div>
+
+  </div>
+
+  <script src="../../system/system_ui.js"></script>
+  <script src="solitaire_app.js"></script>
+</body>
+</html>

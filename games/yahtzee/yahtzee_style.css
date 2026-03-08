@@ -188,14 +188,14 @@ body {
 
 #scorecard-panel {
   position: fixed; bottom: 0; left: 0; right: 0;
-  height: 68vh;
+  height: 52vh;
   background: #0e1f14;
   border-top: 2px solid #f1c40f;
-  border-radius: 16px 16px 0 0;
+  border-radius: 14px 14px 0 0;
   z-index: 200;
   display: flex; flex-direction: column;
   transform: translateY(100%);
-  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 #scorecard-panel.open {
   transform: translateY(0);
@@ -203,17 +203,17 @@ body {
 
 #scorecard-handle {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px 10px;
+  padding: 8px 14px 7px;
   border-bottom: 1px solid rgba(241,196,15,0.3);
   flex-shrink: 0;
 }
 #scorecard-title {
   font-family: 'Playfair Display', serif;
-  font-size: 1rem; color: #f1c40f; letter-spacing: 2px;
+  font-size: 0.85rem; color: #f1c40f; letter-spacing: 2px;
 }
 #scorecard-close-btn {
   background: none; border: none; color: #f1c40f;
-  font-size: 1.2rem; cursor: pointer; padding: 4px 8px;
+  font-size: 1rem; cursor: pointer; padding: 2px 6px;
 }
 
 #scorecard-inner {
@@ -230,19 +230,19 @@ body {
 
 .scorecard-table th {
   background: rgba(0,0,0,0.4); color: #f1c40f;
-  padding: 6px 10px; text-align: left;
-  font-size: 0.7rem; letter-spacing: 1px; text-transform: uppercase;
+  padding: 4px 8px; text-align: left;
+  font-size: 0.65rem; letter-spacing: 1px; text-transform: uppercase;
   position: sticky; top: 0; z-index: 1;
 }
 .scorecard-table th.score-col {
-  text-align: center; min-width: 48px;
+  text-align: center; min-width: 40px;
 }
 
 .scorecard-section-header td {
   background: rgba(241,196,15,0.08);
   color: #f1c40f; font-weight: bold;
-  font-size: 0.7rem; letter-spacing: 1.5px; text-transform: uppercase;
-  padding: 5px 10px;
+  font-size: 0.62rem; letter-spacing: 1.5px; text-transform: uppercase;
+  padding: 3px 8px;
   border-top: 1px solid rgba(241,196,15,0.2);
 }
 
@@ -250,11 +250,11 @@ body {
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 .scorecard-row td {
-  padding: 7px 10px; color: #ddd;
+  padding: 4px 8px; color: #ddd; font-size: 0.78rem;
 }
 .scorecard-row .score-col {
   text-align: center; font-weight: bold; color: #f1c40f;
-  min-width: 48px;
+  min-width: 40px;
 }
 .scorecard-row .score-col.zero { color: #666; }
 .scorecard-row .score-col.available {
@@ -272,7 +272,7 @@ body {
 .scorecard-total-row td {
   background: rgba(0,0,0,0.4);
   color: #f1c40f; font-weight: bold;
-  padding: 6px 10px; font-size: 0.85rem;
+  padding: 4px 8px; font-size: 0.75rem;
   border-top: 1px solid rgba(241,196,15,0.3);
 }
 .scorecard-total-row .score-col {
