@@ -1,18 +1,25 @@
 // =============================================
 // FAMILY FEUD — feud_app.js
-// The Game Shack | Casino OS
+// The Game Shack | Casino OS (V2 Engine)
 // Modes: vs AI | Hotseat | Online
 // =============================================
 
 // ── 1. OS INIT ────────────────────────────────
-let gameMode = localStorage.getItem("feud_mode") || "ai";
+// Force AI mode on boot to prevent ghost online deadlocks
+let gameMode = "ai";
+localStorage.setItem("feud_mode", "ai"); 
+
 let totalRounds = parseInt(localStorage.getItem("feud_rounds") || "3");
+let aiDifficulty = localStorage.getItem("feud_diff") || "normal";
+
 let chatStarted = false;
 let currentRoomId = null;
 let myId = 1;
-let isHost = false;
+let isHost = true; 
+let seats = [];
+let roomListener = null;
 
-let p1Name = SystemUI.getPlayerName();
+let p1Name = (typeof SystemUI.getPlayerName === 'function') ? SystemUI.getPlayerName() : "Player";
 let p2Name = "AI";
 
 SystemUI.init({
@@ -28,6 +35,14 @@ SystemUI.init({
             ]
         },
         {
+            id: "sys-feud-diff",
+            options: [
+                { value: "easy",   label: "Easy AI" },
+                { value: "normal", label: "Normal AI" },
+                { value: "hard",   label: "Hard AI" }
+            ]
+        },
+        {
             id: "sys-feud-rounds",
             options: [
                 { value: "3", label: "3 Rounds" },
@@ -39,31 +54,236 @@ SystemUI.init({
 });
 
 setTimeout(() => {
-    gameMode = document.getElementById("sys-feud-mode").value;
-    totalRounds = parseInt(document.getElementById("sys-feud-rounds").value);
+    const modeEl = document.getElementById("sys-feud-mode");
+    const diffEl = document.getElementById("sys-feud-diff");
+    const roundEl = document.getElementById("sys-feud-rounds");
+
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", e => {
+            gameMode = e.target.value;
+            localStorage.setItem("feud_mode", gameMode);
+            document.getElementById("sys-modal")?.classList.add("sys-hidden");
+            syncDiffVisibility();
+            if (gameMode === "online") {
+                SystemUI.v2Lobby.show();
+            } else {
+                SystemUI.v2Lobby.hide();
+                SystemUI.stopChat();
+                chatStarted = false;
+                myId = 1; isHost = true;
+                if(roomListener) { roomListener(); roomListener = null; }
+                updateNames();
+                resetGame();
+            }
+        });
+    }
+
+    if (diffEl) {
+        diffEl.value = aiDifficulty;
+        diffEl.addEventListener("change", e => {
+            aiDifficulty = e.target.value;
+            localStorage.setItem("feud_diff", aiDifficulty);
+            updateNames();
+        });
+    }
+
+    if (roundEl) {
+        roundEl.value = totalRounds.toString();
+        roundEl.addEventListener("change", e => {
+            totalRounds = parseInt(e.target.value);
+            localStorage.setItem("feud_rounds", e.target.value);
+        });
+    }
+
+    syncDiffVisibility();
     updateNames();
     resetGame();
-}, 10);
+}, 100);
 
-document.getElementById("sys-feud-mode").addEventListener("change", e => {
-    gameMode = e.target.value;
-    localStorage.setItem("feud_mode", gameMode);
-    document.getElementById("sys-modal").classList.add("sys-hidden");
-    if (gameMode === "online") {
-        document.getElementById("multiplayer-lobby").classList.remove("hidden");
-    } else {
-        document.getElementById("multiplayer-lobby").classList.add("hidden");
-        SystemUI.stopChat();
-        chatStarted = false;
-        updateNames();
-        resetGame();
+function syncDiffVisibility() {
+    const wrap = document.getElementById("sys-feud-diff")?.closest(".hud-dropdown-wrap") ||
+                 document.getElementById("sys-feud-diff")?.parentElement;
+    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
+}
+
+// ==========================================
+// 1.5 V2 MULTIPLAYER LOBBY
+// ==========================================
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        if(!window.db) { alert("Server connection error."); return; }
+        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        isHost = true; myId = 1; chatStarted = false;
+        
+        seats = [
+            { type: "human", name: SystemUI.getPlayerName() },
+            { type: "ai", name: "AI (" + aiDifficulty + ")" }
+        ];
+
+        window.dbSet(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
+            status: "waiting", players: 1, p1Name: p1Name, phase: "idle", buzzedBy: 0, seats: seats
+        }).then(() => {
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+            listenToRoom();
+        });
+    },
+    onJoin: (code) => {
+        if(!window.db) { alert("Server connection error."); return; }
+        window.dbGet(window.dbChild(window.dbRef(window.db), `feud_rooms/${code}`)).then(snapshot => {
+            if (snapshot.exists()) {
+                let data = snapshot.val();
+                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
+                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+                    let updatedSeats = data.seats;
+                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
+                    window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
+                        players: 2, p2Name: p1Name, status: "playing", seats: updatedSeats
+                    });
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    listenToRoom();
+                } else {
+                    SystemUI.v2Lobby.showError("ROOM FULL");
+                }
+            } else {
+                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
+            }
+        });
+    },
+    onLeave: () => {
+        gameMode = "ai"; p2Name = "AI";
+        const modeEl = document.getElementById("sys-feud-mode");
+        if(modeEl) modeEl.value = "ai";
+        localStorage.setItem("feud_mode", "ai");
+        SystemUI.stopChat(); chatStarted = false;
+        myId = 1; isHost = true;
+        if(roomListener) { roomListener(); roomListener = null; }
+        updateNames(); resetGame();
+    },
+    onStart: () => {
+        if(window.db) window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), { status: "playing" });
     }
 });
 
-document.getElementById("sys-feud-rounds").addEventListener("change", e => {
-    totalRounds = parseInt(e.target.value);
-    localStorage.setItem("feud_rounds", e.target.value);
-});
+function listenToRoom() {
+    let onlineGameStarted = false;
+    if(roomListener) roomListener();
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), snapshot => {
+        const data = snapshot.val();
+        if (!data) return;
+
+        seats = data.seats || [];
+        SystemUI.v2Lobby.renderSeats(seats);
+
+        if (data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true;
+            SystemUI.v2Lobby.hide();
+            if (!chatStarted) {
+                chatStarted = true;
+                SystemUI.playSound('win');
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
+            p2Name = (myId === 1) ? (seats[1]?.name || "Opponent") : (seats[0]?.name || "Opponent");
+            updateNames();
+            if (isHost) { hideStartBtn(); startGame(); }
+            else        { hideStartBtn(); }
+        }
+
+        if (data.status === "playing" && onlineGameStarted) syncFromFirebase(data);
+    });
+}
+
+function onlineBuzz(playerId = myId) {
+    if (buzzLocked || gamePhase !== "faceoff" || !window.db) return;
+    window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
+        buzzedBy: playerId, buzzTime: Date.now()
+    });
+}
+
+function pushGameState() {
+    if (gameMode !== "online" || !window.db) return;
+    window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
+        phase:               gamePhase,
+        currentRound:        currentRound,
+        questionIndex:       currentQuestionIndex,
+        activePlayer:        activePlayer,
+        faceoffWinner:       faceoffWinner,
+        strikes:             strikes,
+        boardPoints:         boardPoints,
+        revealedAnswers:     roundAnswers.map(a => a.revealed),
+        scores:              scores,
+        buzzedBy:            0, 
+        status:              gamePhase === "gameover" ? "finished" : "playing",
+        seats:               seats
+    });
+}
+
+function syncFromFirebase(data) {
+    if (!data) return;
+
+    if (data.buzzedBy && data.buzzedBy !== 0 && gamePhase === "faceoff" && !buzzProcessed) {
+        buzzProcessed = true;
+        handleBuzz(data.buzzedBy);
+        return;
+    }
+
+    if (data.questionIndex !== undefined && data.questionIndex !== currentQuestionIndex) {
+        currentQuestionIndex = data.questionIndex;
+        const q = QUESTIONS[currentQuestionIndex];
+        roundAnswers = q.answers.map(a => ({ ...a, revealed: false }));
+        setQuestion(q.q);
+    }
+
+    if (data.revealedAnswers && roundAnswers.length > 0) {
+        data.revealedAnswers.forEach((rev, i) => { if (roundAnswers[i]) roundAnswers[i].revealed = rev; });
+    }
+
+    if (data.currentRound !== undefined && data.currentRound !== currentRound) {
+        currentRound = data.currentRound;
+        setRoundLabel(currentRound);
+    }
+    if (data.strikes    !== undefined) { strikes = data.strikes;       renderStrikes(); }
+    if (data.boardPoints!== undefined) { boardPoints = data.boardPoints; setBoardPts(boardPoints); }
+    if (data.scores)                   { scores = data.scores;          renderScores(); }
+    if (data.activePlayer  !== undefined) activePlayer  = data.activePlayer;
+    if (data.faceoffWinner !== undefined) faceoffWinner = data.faceoffWinner;
+
+    renderBoard();
+
+    if (data.phase && data.phase !== gamePhase) {
+        const prevPhase = gamePhase;
+        gamePhase = data.phase;
+
+        switch (gamePhase) {
+            case "faceoff":
+                buzzLocked = false; buzzProcessed = false;
+                startFaceoff();
+                break;
+            case "faceoff-answering":
+                hideBuzzZone();
+                showFaceoffInput(activePlayer);
+                break;
+            case "play-or-pass":
+                hideBuzzZone();
+                goToPlayOrPass();
+                break;
+            case "playing":
+                hideBuzzZone();
+                startPlaying();
+                break;
+            case "steal":
+                startSteal();
+                break;
+            case "roundover":
+                hideGuessZone();
+                setPhaseTag(`${getPlayerName(activePlayer).toUpperCase()} WINS THE ROUND!`);
+                break;
+            case "gameover":
+                endGame();
+                break;
+        }
+    }
+}
 
 // ── 2. QUESTION BANK ─────────────────────────
 // Points per question sum to ~100
@@ -281,10 +501,10 @@ let faceoffWinner = 0;   // who won the buzz-in
 let strikes = 0;
 let boardPoints = 0;
 let scores = { p1: 0, p2: 0 };
-let roundAnswers = [];   // current question's answers with .revealed status
+let roundAnswers = [];   
 let aiTimer = null;
 let buzzLocked = false;
-let buzzProcessed = false; // online only: prevent double-processing buzz
+let buzzProcessed = false; 
 
 // ── 4. HELPERS ───────────────────────────────
 function isMyTurn() {
@@ -294,9 +514,20 @@ function isMyTurn() {
 }
 
 function canIBuzz() {
-    if (gameMode === "online")  return true; // both can buzz in online
-    if (gameMode === "hotseat") return false; // hotseat uses separate buttons
-    return true; // AI mode: player 1 buzzes
+    if (gameMode === "online")  return true; 
+    if (gameMode === "hotseat") return false; 
+    return true; 
+}
+
+function isBotTurn(playerNum) {
+    return (gameMode === "ai" && playerNum === 2) || 
+           (gameMode === "online" && isHost && seats[playerNum - 1]?.type === "ai");
+}
+
+function getAiStats() {
+    if (aiDifficulty === "hard") return { buzzMin: 600, buzzMax: 1500, faceoffAcc: 0.95, guessAcc: 0.90, guessMin: 800, guessMax: 1500, stealAcc: 0.85 };
+    if (aiDifficulty === "easy") return { buzzMin: 2000, buzzMax: 3500, faceoffAcc: 0.50, guessAcc: 0.45, guessMin: 2000, guessMax: 3500, stealAcc: 0.35 };
+    return { buzzMin: 1200, buzzMax: 3200, faceoffAcc: 0.80, guessAcc: 0.72, guessMin: 1400, guessMax: 2400, stealAcc: 0.65 };
 }
 
 function getPlayerName(id) { return id === 1 ? p1Name : p2Name; }
@@ -305,18 +536,15 @@ function otherPlayer(id)   { return id === 1 ? 2 : 1; }
 function updateNames() {
     if (gameMode === "ai")      p2Name = "AI";
     if (gameMode === "hotseat") p2Name = "PLAYER 2";
-    document.getElementById("t1-name").textContent = p1Name.toUpperCase();
-    document.getElementById("t2-name").textContent = p2Name.toUpperCase();
+    if (gameMode === "online")  p2Name = (myId === 1) ? (seats[1]?.name || "Opponent") : (seats[0]?.name || "Opponent");
+    
+    const t1 = document.getElementById("t1-name");
+    const t2 = document.getElementById("t2-name");
+    if(t1) t1.textContent = p1Name.toUpperCase();
+    if(t2) t2.textContent = p2Name.toUpperCase();
 }
 
 // ── 5. ANSWER MATCHING ───────────────────────
-/*
- * Matching Strategy (most lenient → most strict):
- * 1. Exact match after normalization
- * 2. One string contains the other (handles "shower" → "take a shower")
- * 3. Keyword overlap (strips stopwords, checks shared meaningful words)
- * 4. Alias list per answer (hand-curated synonyms)
- */
 const STOPWORDS = new Set([
     'a','an','the','to','at','in','on','of','for','and','or','with',
     'is','are','was','my','your','their','its','some','any','all','be',
@@ -345,20 +573,16 @@ function matchAnswer(input, answers) {
         const normAns = normalizeText(answers[i].text);
         const ansKeys = getKeywords(answers[i].text);
 
-        // 1. Exact match
         if (normInput === normAns) return i;
 
-        // 2. Contains match (only if the answer is specific enough)
         if (normAns.length > 3 && (normInput.includes(normAns) || normAns.includes(normInput))) return i;
 
-        // 3. Keyword overlap
         if (ansKeys.length > 0 && inputKeys.length > 0) {
             const overlap = inputKeys.filter(k => ansKeys.includes(k));
             if (overlap.length >= Math.min(ansKeys.length, inputKeys.length)) return i;
             if (ansKeys.length === 1 && overlap.length >= 1) return i;
         }
 
-        // 4. Aliases
         if (answers[i].aliases) {
             for (const alias of answers[i].aliases) {
                 const normAlias = normalizeText(alias);
@@ -502,7 +726,6 @@ function startNextRound() {
     setBoardPts(0);
     renderScores();
 
-    // Pick unused question
     let available = QUESTIONS.map((_, i) => i).filter(i => !usedQuestions.includes(i));
     if (available.length === 0) { usedQuestions = []; available = QUESTIONS.map((_, i) => i); }
     currentQuestionIndex = available[Math.floor(Math.random() * available.length)];
@@ -530,11 +753,14 @@ function startFaceoff() {
     setupBuzzZone();
     showBuzzZone();
 
-    // AI gets a random reaction time — player must beat it to buzz in first
-    if (gameMode === "ai") {
-        const delay = 1200 + Math.random() * 2000;
+    if (isBotTurn(2)) {
+        const stats = getAiStats();
+        const delay = stats.buzzMin + Math.random() * (stats.buzzMax - stats.buzzMin);
         aiTimer = setTimeout(() => {
-            if (gamePhase === "faceoff") handleBuzz(2);
+            if (gamePhase === "faceoff") {
+                if (gameMode === "online") onlineBuzz(2); 
+                else handleBuzz(2);
+            }
         }, delay);
     }
 }
@@ -563,7 +789,7 @@ function setupBuzzZone() {
             <div id="buzz-hint">Press <kbd>SPACE</kbd> to buzz in</div>
         `;
         document.getElementById("buzz-btn").onclick = () => {
-            if (gameMode === "online") { onlineBuzz(); return; }
+            if (gameMode === "online") { onlineBuzz(myId); return; }
             handleBuzz(1);
         };
     }
@@ -581,9 +807,9 @@ function handleBuzz(player) {
 
     SystemUI.playSound('click');
 
-    if (gameMode === "ai" && player === 2) {
+    if (isBotTurn(player)) {
         setPhaseTag("AI BUZZED IN!");
-        setTimeout(() => aiAnswerFaceoff(), 900);
+        setTimeout(() => aiAnswerFaceoff(player), 900);
     } else {
         const name = getPlayerName(player).toUpperCase();
         setPhaseTag(`${name} BUZZED IN!`);
@@ -625,18 +851,16 @@ function handleFaceoffGuess(input) {
         SystemUI.playSound('lose');
 
         if (activePlayer === faceoffWinner) {
-            // Buzz winner was wrong → give other player a shot
             const other = otherPlayer(faceoffWinner);
             activePlayer = other;
             gamePhase    = "faceoff-answering";
 
-            if (gameMode === "ai" && other === 2) {
-                setTimeout(() => aiAnswerFaceoff(), 800);
+            if (isBotTurn(other)) {
+                setTimeout(() => aiAnswerFaceoff(other), 800);
             } else {
                 showFaceoffInput(other);
             }
         } else {
-            // Both players wrong → buzz winner plays by default
             activePlayer = faceoffWinner;
             startPlaying();
         }
@@ -652,11 +876,10 @@ function goToPlayOrPass() {
     setActiveBanner(`${winnerName} — PLAY OR PASS TO OPPONENT?`);
 
     showGuessZone();
-    document.getElementById("guess-row").classList.add("hidden");     // hide the text input
+    document.getElementById("guess-row").classList.add("hidden");     
     document.getElementById("pass-btn").textContent = "PASS TO OPPONENT";
     document.getElementById("pass-btn").classList.remove("hidden");
 
-    // Repurpose steal-btn as the PLAY button during this phase
     const playBtn = document.getElementById("steal-btn");
     playBtn.textContent  = "PLAY!";
     playBtn.style.cssText = "flex:1;background:linear-gradient(180deg,#22c55e,#16a34a);box-shadow:0 4px 18px rgba(34,197,94,0.4);animation:none;";
@@ -671,9 +894,8 @@ function goToPlayOrPass() {
     document.getElementById("pass-btn").disabled  = !canChoose;
     document.getElementById("steal-btn").disabled = !canChoose;
 
-    if (!canChoose && gameMode === "ai" && faceoffWinner === 2) {
+    if (!canChoose && isBotTurn(faceoffWinner)) {
         setTimeout(() => {
-            // AI tends to play if there are many answers left
             const remaining = roundAnswers.filter(a => !a.revealed).length;
             (remaining > 2) ? choosePlay() : (Math.random() < 0.35 ? choosePass() : choosePlay());
         }, 1200);
@@ -700,7 +922,6 @@ function restoreAfterPlayOrPass() {
     document.getElementById("guess-row").classList.remove("hidden");
     document.getElementById("pass-btn").classList.add("hidden");
 
-    // Restore steal-btn to its original style
     const stealBtn = document.getElementById("steal-btn");
     stealBtn.classList.add("hidden");
     stealBtn.textContent  = "⚡ STEAL!";
@@ -727,10 +948,10 @@ function startPlaying() {
     if (!canPlay) setActiveBanner(`⏳ ${name} IS GUESSING...`);
     renderScores();
 
-    if (gameMode === "ai" && activePlayer === 2) {
+    if (isBotTurn(activePlayer)) {
         setGuessInputActive(false);
         setActiveBanner("🤖 AI IS GUESSING...");
-        scheduleAiGuess();
+        scheduleAiGuess(activePlayer);
     }
 }
 
@@ -751,7 +972,7 @@ function handleGuess(input) {
         if (allRevealed) { setTimeout(() => endRound(activePlayer), 800); return; }
 
         if (gameMode === "online") pushGameState();
-        if (gameMode === "ai" && activePlayer === 2) scheduleAiGuess();
+        if (isBotTurn(activePlayer)) scheduleAiGuess(activePlayer);
 
     } else {
         strikes++;
@@ -767,7 +988,7 @@ function handleGuess(input) {
         }
 
         if (gameMode === "online") pushGameState();
-        if (gameMode === "ai" && activePlayer === 2) scheduleAiGuess();
+        if (isBotTurn(activePlayer)) scheduleAiGuess(activePlayer);
     }
 }
 
@@ -792,17 +1013,18 @@ function startSteal() {
 
     if (gameMode === "online") pushGameState();
 
-    if (gameMode === "ai" && stealer === 2) {
+    if (isBotTurn(stealer)) {
         setGuessInputActive(false);
+        const stats = getAiStats();
         aiTimer = setTimeout(() => {
             const unrevealed = roundAnswers.filter(a => !a.revealed);
-            if (unrevealed.length > 0 && Math.random() < 0.65) {
+            if (unrevealed.length > 0 && Math.random() < stats.stealAcc) {
                 const sorted = [...unrevealed].sort((a, b) => b.pts - a.pts);
-                handleStealGuess(sorted[0].text, 2);
+                handleStealGuess(sorted[0].text, stealer);
             } else {
-                handleStealGuess("_no_match_", 2);
+                handleStealGuess("_no_match_", stealer);
             }
-        }, 1500 + Math.random() * 1000);
+        }, stats.guessMin + Math.random() * (stats.guessMax - stats.guessMin));
     }
 }
 
@@ -861,7 +1083,7 @@ function endGame() {
 
     SystemUI.playSound(winner === 1 ? 'win' : 'lose');
 
-    if (gameMode === "online") {
+    if (gameMode === "online" && isHost && window.db) {
         window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
             status: "finished", winner: wName
         });
@@ -869,34 +1091,29 @@ function endGame() {
 }
 
 // ── 8. AI BRAIN ──────────────────────────────
-/*
- * AI difficulty modeled via hit-rate probability:
- * Easy: 55% | Medium: 72% | Hard: 88%
- * Currently using a flat 72% (medium).
- * The AI never cheats — it picks the highest-value unrevealed answer,
- * but has a random chance of "missing" (submitting a non-matching guess).
- */
-function scheduleAiGuess() {
-    if (gamePhase !== "playing" || activePlayer !== 2) return;
+function scheduleAiGuess(player) {
+    if (gamePhase !== "playing" || !isBotTurn(player)) return;
     if (aiTimer) clearTimeout(aiTimer);
 
+    const stats = getAiStats();
     aiTimer = setTimeout(() => {
-        if (gamePhase !== "playing" || activePlayer !== 2) return;
+        if (gamePhase !== "playing" || !isBotTurn(player)) return;
         const unrevealed = roundAnswers.filter(a => !a.revealed);
         if (unrevealed.length === 0) return;
 
         const sorted    = [...unrevealed].sort((a, b) => b.pts - a.pts);
-        const aiSuccess = Math.random() < 0.72;
+        const aiSuccess = Math.random() < stats.guessAcc;
         handleGuess(aiSuccess ? sorted[0].text : "_no_match_");
-    }, 1400 + Math.random() * 1000);
+    }, stats.guessMin + Math.random() * (stats.guessMax - stats.guessMin));
 }
 
-function aiAnswerFaceoff() {
-    // AI answers the face-off question with 80% accuracy
+function aiAnswerFaceoff(player) {
     const unrevealed = roundAnswers.filter(a => !a.revealed);
     if (unrevealed.length === 0) return;
+    
+    const stats = getAiStats();
     const topAnswer  = unrevealed.reduce((best, cur) => cur.pts > best.pts ? cur : best, unrevealed[0]);
-    const aiSuccess  = Math.random() < 0.80;
+    const aiSuccess  = Math.random() < stats.faceoffAcc;
 
     setTimeout(() => {
         handleFaceoffGuess(aiSuccess ? topAnswer.text : "_no_match_");
@@ -935,198 +1152,19 @@ document.getElementById("btn-play-again").addEventListener("click", () => {
     }
 });
 
-// Keyboard buzz: SPACE = P1, ENTER = P2 (hotseat only)
 document.addEventListener("keydown", e => {
     if (gamePhase !== "faceoff") return;
 
     if (e.key === " " || e.key === "Spacebar") {
         e.preventDefault();
-        if (gameMode === "online")  { onlineBuzz(); return; }
+        if (gameMode === "online")  { onlineBuzz(myId); return; }
         if (gameMode === "hotseat") { handleBuzz(1); return; }
         handleBuzz(1);
     }
 
     if (e.key === "Enter" && gameMode === "hotseat") {
-        // Don't intercept Enter when focus is on a button
         if (document.activeElement.tagName === "BUTTON") return;
         e.preventDefault();
         handleBuzz(2);
     }
 });
-
-// ── 10. FIREBASE ONLINE ──────────────────────
-const lobbyUI = document.getElementById("multiplayer-lobby");
-
-function generateRoomCode() {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let code = "";
-    for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-    return code;
-}
-
-document.getElementById("btn-create-room").addEventListener("click", () => {
-    SystemUI.playSound('click');
-    currentRoomId = generateRoomCode();
-    isHost = true; myId = 1; chatStarted = false;
-
-    window.dbSet(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-        status: "waiting", players: 1, p1Name: p1Name, phase: "idle", buzzedBy: 0
-    }).then(() => {
-        document.getElementById("room-code-display").classList.remove("hidden");
-        document.getElementById("host-room-id").innerText = currentRoomId;
-        document.getElementById("btn-create-room").disabled = true;
-        listenToRoom();
-    });
-});
-
-document.getElementById("btn-join-room").addEventListener("click", () => {
-    SystemUI.playSound('click');
-    const code = document.getElementById("join-room-input").value.toUpperCase();
-
-    window.dbGet(window.dbChild(window.dbRef(window.db), `feud_rooms/${code}`)).then(snapshot => {
-        if (snapshot.exists() && snapshot.val().players === 1) {
-            currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-            window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-                players: 2, p2Name: p1Name, status: "playing"
-            });
-            lobbyUI.classList.add("hidden");
-            listenToRoom();
-        } else {
-            document.getElementById("lobby-error-msg").textContent = "Room not found or already full.";
-        }
-    });
-});
-
-function onlineBuzz() {
-    // Atomic "first write wins" — Firebase last-write-wins but for casual play this is fine
-    if (buzzLocked || gamePhase !== "faceoff") return;
-    window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-        buzzedBy: myId, buzzTime: Date.now()
-    });
-}
-
-function listenToRoom() {
-    let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), snapshot => {
-        const data = snapshot.val();
-        if (!data) return;
-
-        if (data.status === "playing" && !onlineGameStarted) {
-            onlineGameStarted = true;
-            lobbyUI.classList.add("hidden");
-            if (!chatStarted) {
-                chatStarted = true;
-                SystemUI.playSound('win');
-                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
-            }
-            p2Name = (myId === 1) ? (data.p2Name || "Opponent") : (data.p1Name || "Opponent");
-            updateNames();
-            if (isHost) { hideStartBtn(); startGame(); }
-            else          hideStartBtn();
-        }
-
-        if (data.status === "playing" && onlineGameStarted) syncFromFirebase(data);
-    });
-}
-
-function pushGameState() {
-    if (gameMode !== "online") return;
-    window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-        phase:               gamePhase,
-        currentRound:        currentRound,
-        questionIndex:       currentQuestionIndex,
-        activePlayer:        activePlayer,
-        faceoffWinner:       faceoffWinner,
-        strikes:             strikes,
-        boardPoints:         boardPoints,
-        revealedAnswers:     roundAnswers.map(a => a.revealed),
-        scores:              scores,
-        buzzedBy:            0,          // reset buzz after push
-        status:              gamePhase === "gameover" ? "finished" : "playing"
-    });
-}
-
-function syncFromFirebase(data) {
-    if (!data) return;
-
-    // Handle buzz-in: first client to write buzzedBy wins
-    if (data.buzzedBy && data.buzzedBy !== 0 && gamePhase === "faceoff" && !buzzProcessed) {
-        buzzProcessed = true;
-        handleBuzz(data.buzzedBy);
-        return;
-    }
-
-    // Sync question change (new round)
-    if (data.questionIndex !== undefined && data.questionIndex !== currentQuestionIndex) {
-        currentQuestionIndex = data.questionIndex;
-        const q = QUESTIONS[currentQuestionIndex];
-        roundAnswers = q.answers.map(a => ({ ...a, revealed: false }));
-        setQuestion(q.q);
-    }
-
-    // Apply revealed answers
-    if (data.revealedAnswers && roundAnswers.length > 0) {
-        data.revealedAnswers.forEach((rev, i) => { if (roundAnswers[i]) roundAnswers[i].revealed = rev; });
-    }
-
-    // Sync numeric state
-    if (data.currentRound !== undefined && data.currentRound !== currentRound) {
-        currentRound = data.currentRound;
-        setRoundLabel(currentRound);
-    }
-    if (data.strikes    !== undefined) { strikes = data.strikes;       renderStrikes(); }
-    if (data.boardPoints!== undefined) { boardPoints = data.boardPoints; setBoardPts(boardPoints); }
-    if (data.scores)                   { scores = data.scores;          renderScores(); }
-    if (data.activePlayer  !== undefined) activePlayer  = data.activePlayer;
-    if (data.faceoffWinner !== undefined) faceoffWinner = data.faceoffWinner;
-
-    renderBoard();
-
-    // Phase transition
-    if (data.phase && data.phase !== gamePhase) {
-        const prevPhase = gamePhase;
-        gamePhase = data.phase;
-
-        switch (gamePhase) {
-            case "faceoff":
-                buzzLocked = false; buzzProcessed = false;
-                startFaceoff();
-                break;
-            case "faceoff-answering":
-                hideBuzzZone();
-                showFaceoffInput(activePlayer);
-                break;
-            case "play-or-pass":
-                hideBuzzZone();
-                goToPlayOrPass();
-                break;
-            case "playing":
-                hideBuzzZone();
-                startPlaying();
-                break;
-            case "steal":
-                startSteal();
-                break;
-            case "roundover":
-                hideGuessZone();
-                setPhaseTag(`${getPlayerName(activePlayer).toUpperCase()} WINS THE ROUND!`);
-                break;
-            case "gameover":
-                endGame();
-                break;
-        }
-    }
-}
-
-document.getElementById("lobby-close-btn").addEventListener("click", () => lobbyUI.classList.add("hidden"));
-document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
-    gameMode = "ai"; p2Name = "AI";
-    document.getElementById("sys-feud-mode").value = "ai";
-    localStorage.setItem("feud_mode", "ai");
-    lobbyUI.classList.add("hidden");
-    SystemUI.stopChat(); chatStarted = false;
-    updateNames(); resetGame();
-});
-
-// ── BOOT ─────────────────────────────────────
-resetGame();

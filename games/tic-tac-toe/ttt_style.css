@@ -6,12 +6,20 @@ body {
   color: #fff;
   font-family: 'Orbitron', sans-serif;
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center; 
-  align-items: center;     
+  /* FIXED: Removed display:flex and justify-content from body so Casino OS renders correctly */
   height: 100vh;
   overflow: hidden;
+}
+
+#game-container {
+  /* Added padding so the game board doesn't hide underneath the OS top bar */
+  padding-top: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 #status-display {

@@ -1,20 +1,20 @@
 // ==========================================
-// 1. INITIALIZE OS & STATE
+// 1. INITIALIZE OS & STATE (Fixed V2)
 // ==========================================
+// Force AI mode on boot to prevent ghost online deadlocks
 let gameMode = "ai";
 localStorage.setItem("uno_mode", "ai"); 
 
-let aiDifficulty = localStorage.getItem("uno_diff") || "hard"; // NEW: AI Level
+let aiDifficulty = localStorage.getItem("uno_diff") || "hard";
 
 let myId = 1;
 let currentRoomId = null;
-let isHost = true; // Default to true so local play works
+let isHost = true; 
 let chatStarted = false;
 let seats = [];
 let roomListener = null;
 
-// Names
-let p1Name = SystemUI.getPlayerName();
+let p1Name = (typeof SystemUI.getPlayerName === 'function') ? SystemUI.getPlayerName() : "Player";
 let p2Name = "AI";
 
 // --- CUSTOM UNO AUDIO ---
@@ -39,21 +39,20 @@ function playCustomSound(type) {
     }
 }
 
-// --- MOVE LOGGING ---
 function logMove(player, msg, isSystem = false) {
     const logDiv = document.getElementById("move-log");
-    if(!logDiv) return;
-    const entry = document.createElement("div");
+    if (!logDiv) return;
     
-    if (isSystem) {
-        entry.innerHTML = `<span class="log-sys">SYSTEM: ${msg}</span>`;
-    } else {
-        const pClass = player === p1Name ? "log-p1" : "log-p2";
-        entry.innerHTML = `<span class="${pClass}">${player}</span> ${msg}`;
+    const entry = document.createElement("div");
+    if (isSystem) { 
+        entry.innerHTML = `<span class="log-sys">SYSTEM: ${msg}</span>`; 
+    } else { 
+        const pClass = player === p1Name ? "log-p1" : "log-p2"; 
+        entry.innerHTML = `<span class="${pClass}">${player}</span> ${msg}`; 
     }
     
     logDiv.appendChild(entry);
-    logDiv.scrollTop = logDiv.scrollHeight; // Auto-scroll to bottom
+    logDiv.scrollTop = logDiv.scrollHeight;
 }
 
 // --- UNO GAME STATE ---
@@ -62,18 +61,17 @@ let discardPile = [];
 let myHand = [];
 let oppHand = []; 
 let oppHandCount = 0;
-let currentTurn = 1; // 1 = You, 2 = Opponent/AI
+let currentTurn = 1; 
 
-// FIX: works for both AI (currentTurn===1 means you) and Online (currentTurn===myId means you)
 function isMyTurn() {
     return gameMode === "online" ? currentTurn === myId : currentTurn === 1;
 }
+
 let currentPlayColor = ""; 
 let calledUno = false; 
 let lastSeenUnoYell = "";
 let lastLogSync = "";
 
-// Animation Trackers
 let cardsToAnimateP1 = 0;
 let cardsToAnimateP2 = 0;
 let cardJustPlayed = false;
@@ -82,68 +80,84 @@ SystemUI.init({
     gameName: "UNO PRO",
     rules: "Match cards by color or number. Use Action Cards to mess with your opponent. Don't forget to yell UNO when you have one card left, or draw a penalty!",
     hudDropdowns: [
-        {
-            id: "sys-uno-mode",
-            options: [
-                { value: "ai", label: "🤖 vs AI" },
-                { value: "online", label: "🌐 Online" }
-            ]
+        { 
+            id: "sys-uno-mode", 
+            options: [ 
+                { value: "ai", label: "🤖 vs AI" }, 
+                { value: "online", label: "🌐 Online" } 
+            ] 
         },
-        {
-            id: "sys-uno-diff",
-            options: [
-                { value: "easy", label: "Easy AI" },
-                { value: "normal", label: "Normal AI" },
-                { value: "hard", label: "Hard AI" }
-            ]
+        { 
+            id: "sys-uno-diff", 
+            options: [ 
+                { value: "easy", label: "Easy AI" }, 
+                { value: "normal", label: "Normal AI" }, 
+                { value: "hard", label: "Hard AI" } 
+            ] 
         }
     ]
 });
 
-// Setup Names Visually
-document.getElementById("p1-label").innerText = p1Name;
+// Delay to safely ensure Firebase DB and SystemUI DOM elements are ready
+const checkDBReadyUno = setInterval(() => {
+    if (window.db) {
+        clearInterval(checkDBReadyUno);
+        initUno();
+    }
+}, 50);
 
-// OS Menu Listeners
-setTimeout(() => {
+function initUno() {
     const modeEl = document.getElementById("sys-uno-mode");
     const diffEl = document.getElementById("sys-uno-diff");
-
+    
     if (modeEl) {
         modeEl.value = gameMode;
         modeEl.addEventListener("change", (e) => {
             gameMode = e.target.value;
             localStorage.setItem("uno_mode", gameMode);
-            document.getElementById("sys-modal").classList.add("sys-hidden");
+            
+            const modal = document.getElementById("sys-modal");
+            if (modal) modal.classList.add("sys-hidden");
+            
             syncDiffVisibility();
             
-            if (gameMode === "online") {
-                SystemUI.v2Lobby.show();
-            } else {
-                SystemUI.v2Lobby.hide();
-                SystemUI.stopChat();
-                chatStarted = false;
-                myId = 1; isHost = true;
-                if (roomListener) { roomListener(); roomListener = null; }
-                resetGame();
+            if (gameMode === "online") { 
+                SystemUI.v2Lobby.show(); 
+            } else { 
+                SystemUI.v2Lobby.hide(); 
+                SystemUI.stopChat(); 
+                chatStarted = false; 
+                myId = 1; 
+                isHost = true; 
+                if (roomListener) { 
+                    roomListener(); 
+                    roomListener = null; 
+                } 
+                resetGame(); 
             }
         });
     }
-
+    
     if (diffEl) {
         diffEl.value = aiDifficulty;
-        diffEl.addEventListener("change", (e) => {
-            aiDifficulty = e.target.value;
-            localStorage.setItem("uno_diff", aiDifficulty);
+        diffEl.addEventListener("change", (e) => { 
+            aiDifficulty = e.target.value; 
+            localStorage.setItem("uno_diff", aiDifficulty); 
         });
     }
-
+    
     syncDiffVisibility();
-}, 10);
+    resetGame();
+}
 
 function syncDiffVisibility() {
-    const wrap = document.getElementById("sys-uno-diff")?.closest(".hud-dropdown-wrap") ||
-                 document.getElementById("sys-uno-diff")?.parentElement;
-    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
+    const diffEl = document.getElementById("sys-uno-diff");
+    if (!diffEl) return;
+    
+    const wrap = diffEl.closest(".hud-dropdown-wrap") || diffEl.parentElement;
+    if (wrap) {
+        wrap.style.display = gameMode === "ai" ? "" : "none";
+    }
 }
 
 // ==========================================
@@ -153,26 +167,26 @@ function buildDeck() {
     deck = [];
     const colors = ['red', 'blue', 'green', 'yellow'];
     const actions = ['2plus', 'block', 'inverse'];
-
+    
     colors.forEach(color => {
         deck.push({ id: generateId(), color: color, value: '0', type: 'number', img: `../../system/images/cards/uno/${color}/0_${color}.png`, name: `0 ${color}` });
-
+        
         for (let i = 1; i <= 9; i++) {
             deck.push({ id: generateId(), color: color, value: i.toString(), type: 'number', img: `../../system/images/cards/uno/${color}/${i}_${color}.png`, name: `${i} ${color}` });
             deck.push({ id: generateId(), color: color, value: i.toString(), type: 'number', img: `../../system/images/cards/uno/${color}/${i}_${color}.png`, name: `${i} ${color}` });
         }
-
+        
         actions.forEach(action => {
             deck.push({ id: generateId(), color: color, value: action, type: 'action', img: `../../system/images/cards/uno/${color}/${action}_${color}.png`, name: `${action} ${color}` });
             deck.push({ id: generateId(), color: color, value: action, type: 'action', img: `../../system/images/cards/uno/${color}/${action}_${color}.png`, name: `${action} ${color}` });
         });
     });
-
+    
     for (let i = 0; i < 4; i++) {
         deck.push({ id: generateId(), color: 'wild', value: 'wild_card', type: 'wild', img: `../../system/images/cards/uno/wild/wild_card.png`, name: "Wild Card" });
         deck.push({ id: generateId(), color: 'wild', value: '4_plus', type: 'wild', img: `../../system/images/cards/uno/wild/4_plus.png`, name: "Wild Draw 4" });
     }
-
+    
     shuffleDeck();
 }
 
@@ -183,8 +197,8 @@ function shuffleDeck() {
     }
 }
 
-function generateId() {
-    return Math.random().toString(36).substr(2, 9);
+function generateId() { 
+    return Math.random().toString(36).substr(2, 9); 
 }
 
 // ==========================================
@@ -192,50 +206,55 @@ function generateId() {
 // ==========================================
 function startGame() {
     if (gameMode === "online" && !isHost) return; 
-
+    
     playCustomSound('draw');
+    
     document.getElementById("start-game-btn").classList.add("hidden");
     document.getElementById("move-log").classList.remove("hidden");
     document.getElementById("move-log").innerHTML = ""; 
     
     buildDeck();
-    myHand = [];
-    oppHand = [];
-    oppHandCount = 7;
-    currentTurn = 1;
+    myHand = []; 
+    oppHand = []; 
+    oppHandCount = 7; 
+    currentTurn = 1; 
     calledUno = false;
+    
     document.getElementById("uno-btn").classList.add("hidden");
     
-    // Initial deal animation markers
-    cardsToAnimateP1 = 7;
-    cardsToAnimateP2 = 7;
+    cardsToAnimateP1 = 7; 
+    cardsToAnimateP2 = 7; 
     cardJustPlayed = true;
-
-    for(let i = 0; i < 7; i++) {
-        myHand.push(deck.pop());
-        oppHand.push(deck.pop());
+    
+    for (let i = 0; i < 7; i++) { 
+        myHand.push(deck.pop()); 
+        oppHand.push(deck.pop()); 
     }
-
+    
     let firstCard = deck.pop();
-    while(firstCard.type === 'wild' || firstCard.type === 'action') {
-        deck.unshift(firstCard);
-        firstCard = deck.pop();
+    while (firstCard.type === 'wild' || firstCard.type === 'action') { 
+        deck.unshift(firstCard); 
+        firstCard = deck.pop(); 
     }
-    discardPile.push(firstCard);
+    
+    discardPile.push(firstCard); 
     currentPlayColor = firstCard.color;
-
+    
     logMove("SYSTEM", "Game started!", true);
-
-    renderHand();
-    renderTable();
+    
+    renderHand(); 
+    renderTable(); 
     updateTurnBanner();
     
-    if (gameMode === "online") pushGameState();
+    if (gameMode === "online") {
+        pushGameState();
+    }
 }
 
 function renderHand() {
     const handDiv = document.getElementById("player-hand");
-    if(!handDiv) return;
+    if (!handDiv) return;
+    
     handDiv.innerHTML = "";
     
     myHand.forEach((card, index) => {
@@ -244,30 +263,32 @@ function renderHand() {
         cardEl.style.zIndex = index; 
         cardEl.style.backgroundImage = `url('${card.img}')`;
         
-        // Apply drawing animation to freshly added cards
         if (index >= myHand.length - cardsToAnimateP1) {
             cardEl.classList.add("anim-draw-player");
-            setTimeout(() => cardEl.classList.remove("anim-draw-player"), 400);
+            setTimeout(() => {
+                cardEl.classList.remove("anim-draw-player");
+            }, 400);
         }
         
         cardEl.addEventListener("click", () => attemptPlayCard(index));
         handDiv.appendChild(cardEl);
     });
-
-    cardsToAnimateP1 = 0; // Reset after animating
-
-    if (myHand.length === 2 && isMyTurn()) {
-        document.getElementById("uno-btn").classList.remove("hidden");
-        calledUno = false;
-    } else if (myHand.length !== 1) {
-        document.getElementById("uno-btn").classList.add("hidden");
-        calledUno = false;
+    
+    cardsToAnimateP1 = 0; 
+    
+    if (myHand.length === 2 && isMyTurn()) { 
+        document.getElementById("uno-btn").classList.remove("hidden"); 
+        calledUno = false; 
+    } else if (myHand.length !== 1) { 
+        document.getElementById("uno-btn").classList.add("hidden"); 
+        calledUno = false; 
     }
 }
 
 function renderTable() {
     const discardDiv = document.getElementById("discard-pile");
-    if(!discardDiv) return;
+    if (!discardDiv) return;
+    
     discardDiv.innerHTML = "";
     
     if (discardPile.length > 0) {
@@ -277,122 +298,145 @@ function renderTable() {
         cardEl.style.backgroundImage = `url('${topCard.img}')`;
         cardEl.style.marginLeft = "0"; 
         
-        // Apply play animation to the center card
-        if (cardJustPlayed) {
-            cardEl.classList.add("anim-play-card");
-            setTimeout(() => cardEl.classList.remove("anim-play-card"), 300);
-            cardJustPlayed = false;
+        if (cardJustPlayed) { 
+            cardEl.classList.add("anim-play-card"); 
+            setTimeout(() => {
+                cardEl.classList.remove("anim-play-card");
+            }, 300); 
+            cardJustPlayed = false; 
         }
-
+        
         discardDiv.appendChild(cardEl);
     }
-
+    
     const colorInd = document.getElementById("color-indicator");
-    if (!currentPlayColor) {
-        if(colorInd) colorInd.classList.add("hidden");
+    if (!currentPlayColor) { 
+        if (colorInd) colorInd.classList.add("hidden"); 
     } else {
-        if(colorInd) {
+        if (colorInd) {
             colorInd.classList.remove("hidden");
             colorInd.innerText = `CURRENT COLOR: ${currentPlayColor.toUpperCase()}`;
-            const hexColors = { red: '#e74c3c', blue: '#3498db', green: '#2ecc71', yellow: '#f1c40f' };
+            
+            const hexColors = { 
+                red: '#e74c3c', 
+                blue: '#3498db', 
+                green: '#2ecc71', 
+                yellow: '#f1c40f' 
+            };
+            
             colorInd.style.backgroundColor = hexColors[currentPlayColor];
             colorInd.style.color = currentPlayColor === 'yellow' ? '#000' : '#fff';
         }
     }
-
+    
     const deckVisual = document.querySelector("#draw-pile .card-back");
     const countBubble = document.getElementById("deck-count");
+    
     if (deckVisual && countBubble) {
-        countBubble.innerText = deck.length;
+        countBubble.innerText = deck.length; 
         countBubble.classList.remove("hidden");
+        
         let thickness = Math.floor(deck.length / 5); 
         let shadowStr = "";
-        for(let i=1; i<=thickness; i++) {
-            shadowStr += `-${i}px ${i}px 0px ${i%2===0 ? '#ecf0f1' : '#2c3e50'}${i<thickness ? ', ' : ''}`;
+        
+        for (let i = 1; i <= thickness; i++) { 
+            shadowStr += `-${i}px ${i}px 0px ${i % 2 === 0 ? '#ecf0f1' : '#2c3e50'}${i < thickness ? ', ' : ''}`; 
         }
+        
         deckVisual.style.boxShadow = shadowStr || "none";
     }
-
+    
     const oppHandDiv = document.getElementById("opponent-hand");
-    if(oppHandDiv) {
+    if (oppHandDiv) {
         oppHandDiv.innerHTML = "";
-        for(let i=0; i < oppHandCount; i++){
-            const cardEl = document.createElement("div");
-            cardEl.className = "uno-card";
+        for (let i = 0; i < oppHandCount; i++) {
+            const cardEl = document.createElement("div"); 
+            cardEl.className = "uno-card"; 
             cardEl.style.zIndex = i;
             cardEl.style.backgroundImage = `url('../../system/images/cards/uno/card-back/card_back.png')`;
             
-            // Apply drawing animation to AI
-            if (i >= oppHandCount - cardsToAnimateP2) {
-                cardEl.classList.add("anim-draw-opponent");
-                setTimeout(() => cardEl.classList.remove("anim-draw-opponent"), 400);
+            if (i >= oppHandCount - cardsToAnimateP2) { 
+                cardEl.classList.add("anim-draw-opponent"); 
+                setTimeout(() => {
+                    cardEl.classList.remove("anim-draw-opponent");
+                }, 400); 
             }
-
+            
             oppHandDiv.appendChild(cardEl);
         }
     }
     
-    cardsToAnimateP2 = 0; // Reset after animating
-
-    const p1Label = document.getElementById("p1-label");
+    cardsToAnimateP2 = 0; 
+    
+    const p1Label = document.getElementById("p1-label"); 
     const p2Label = document.getElementById("p2-label");
-    if(p1Label) p1Label.innerText = p1Name;
-    if(p2Label) p2Label.innerHTML = `${p2Name}: <span id="p2-card-count">${oppHandCount}</span> cards`;
+    
+    if (p1Label) p1Label.innerText = p1Name;
+    if (p2Label) p2Label.innerHTML = `${p2Name}: <span id="p2-card-count">${oppHandCount}</span> cards`;
 }
 
 function updateTurnBanner() {
     const banner = document.getElementById("turn-banner");
-    if(!banner) return;
+    if (!banner) return;
+    
     banner.classList.remove("hidden");
-    if (isMyTurn()) {
-        banner.innerText = "⭐ YOUR TURN";
+    
+    if (isMyTurn()) { 
+        banner.innerText = "⭐ YOUR TURN"; 
         banner.style.color = "#2ecc71"; 
-    } else {
+    } else { 
         const turnIdx = currentTurn - 1;
         const isBot = seats[turnIdx] && seats[turnIdx].type === 'ai';
-        banner.innerText = isBot ? "🤖 AI IS THINKING..." : "⏳ OPPONENT'S TURN";
+        banner.innerText = isBot ? "🤖 AI IS THINKING..." : "⏳ OPPONENT'S TURN"; 
         banner.style.color = "#e74c3c"; 
     }
 }
 
 function resetGame() {
-    myHand = [];
-    oppHand = [];
-    discardPile = [];
-    deck = [];
+    myHand = []; 
+    oppHand = []; 
+    discardPile = []; 
+    deck = []; 
     calledUno = false;
-    document.getElementById("player-hand").innerHTML = "";
+    
+    document.getElementById("player-hand").innerHTML = ""; 
     document.getElementById("opponent-hand").innerHTML = "";
-    document.getElementById("discard-pile").innerHTML = "";
+    document.getElementById("discard-pile").innerHTML = ""; 
     document.getElementById("move-log").innerHTML = "";
-    document.getElementById("move-log").classList.add("hidden");
+    
+    document.getElementById("move-log").classList.add("hidden"); 
     document.getElementById("start-game-btn").classList.remove("hidden");
-    document.getElementById("turn-banner").classList.add("hidden");
+    document.getElementById("turn-banner").classList.add("hidden"); 
     document.getElementById("color-indicator").classList.add("hidden");
-    document.getElementById("deck-count").classList.add("hidden");
+    document.getElementById("deck-count").classList.add("hidden"); 
     document.getElementById("uno-btn").classList.add("hidden");
     document.getElementById("color-picker-modal").classList.add("hidden");
     
-    if (gameMode === "online" && !isHost) {
-        document.getElementById("start-game-btn").innerText = "Waiting for Host...";
-        document.getElementById("start-game-btn").disabled = true;
-    } else {
-        document.getElementById("start-game-btn").innerText = "Start Game";
-        document.getElementById("start-game-btn").disabled = false;
+    const p1Label = document.getElementById("p1-label");
+    if (p1Label) p1Label.innerText = p1Name;
+
+    if (gameMode === "online" && !isHost) { 
+        document.getElementById("start-game-btn").innerText = "Waiting for Host..."; 
+        document.getElementById("start-game-btn").disabled = true; 
+    } else { 
+        document.getElementById("start-game-btn").innerText = "Start Game"; 
+        document.getElementById("start-game-btn").disabled = false; 
     }
 }
 
 function showUnoShout(name) {
     const shout = document.getElementById("uno-shout-display");
-    if(!shout) return;
-    shout.innerText = `${name} YELLED UNO!`;
-    shout.classList.remove("hidden");
-    shout.classList.add("animate-shout");
+    if (!shout) return;
+    
+    shout.innerText = `${name} YELLED UNO!`; 
+    shout.classList.remove("hidden"); 
+    shout.classList.add("animate-shout"); 
+    
     playCustomSound('win');
     
-    setTimeout(() => {
-        shout.classList.add("hidden");
-        shout.classList.remove("animate-shout");
+    setTimeout(() => { 
+        shout.classList.add("hidden"); 
+        shout.classList.remove("animate-shout"); 
     }, 2000);
 }
 
@@ -401,28 +445,27 @@ function showUnoShout(name) {
 // ==========================================
 function attemptPlayCard(index) {
     if (!isMyTurn()) return;
-
+    
     const selectedCard = myHand[index];
     const topCard = discardPile[discardPile.length - 1];
-
+    
     if (isValidPlay(selectedCard, topCard)) {
-        myHand.splice(index, 1);
-        discardPile.push(selectedCard);
-        cardJustPlayed = true;
+        myHand.splice(index, 1); 
+        discardPile.push(selectedCard); 
+        cardJustPlayed = true; 
+        
         playCustomSound('play');
-
         logMove(p1Name, `played ${selectedCard.name.toUpperCase()}`);
-
+        
         if (selectedCard.type === 'wild') {
             document.getElementById('color-picker-modal').classList.remove('hidden');
-            renderHand();
+            renderHand(); 
             renderTable();
-            return; 
         } else {
             currentPlayColor = selectedCard.color;
             handleActionCard(selectedCard, 1);
         }
-    } else {
+    } else { 
         playCustomSound('lose'); 
     }
 }
@@ -431,85 +474,96 @@ document.querySelectorAll('.color-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         currentPlayColor = e.target.dataset.color;
         document.getElementById('color-picker-modal').classList.add('hidden');
-        playCustomSound('play');
         
+        playCustomSound('play');
         logMove("SYSTEM", `Color changed to ${currentPlayColor.toUpperCase()}`, true);
-
+        
         const topCard = discardPile[discardPile.length - 1];
         handleActionCard(topCard, 1); 
     });
 });
 
 document.getElementById("uno-btn").addEventListener("click", () => {
-    calledUno = true;
+    calledUno = true; 
     document.getElementById("uno-btn").classList.add("hidden");
-    logMove(p1Name, `YELLED UNO!`);
+    
+    logMove(p1Name, `YELLED UNO!`); 
     showUnoShout(p1Name);
-    if(gameMode === "online") pushGameState(p1Name, `YELLED UNO!`);
+    
+    if (gameMode === "online") {
+        pushGameState(p1Name, `YELLED UNO!`);
+    }
 });
 
 function handleActionCard(card, player) {
-    renderHand();
-    renderTable();
     let skipNext = false;
-
-    // Trigger attacks
-    if (card.value === '2plus') {
-        drawCardsFor(player === 1 ? 2 : 1, 2);
-        skipNext = true;
-        logMove("SYSTEM", `${player === 1 ? p2Name : p1Name} draws 2 and is skipped!`, true);
-    } else if (card.value === '4_plus') {
-        drawCardsFor(player === 1 ? 2 : 1, 4);
-        skipNext = true;
-        logMove("SYSTEM", `${player === 1 ? p2Name : p1Name} draws 4 and is skipped!`, true);
-    } else if (card.value === 'block' || card.value === 'inverse') {
-        skipNext = true;
-        logMove("SYSTEM", `${player === 1 ? p2Name : p1Name} is skipped!`, true);
+    
+    if (card.value === '2plus') { 
+        drawCardsFor(player === 1 ? 2 : 1, 2); 
+        skipNext = true; 
+        logMove("SYSTEM", `${player === 1 ? p2Name : p1Name} draws 2 and is skipped!`, true); 
+    } else if (card.value === '4_plus') { 
+        drawCardsFor(player === 1 ? 2 : 1, 4); 
+        skipNext = true; 
+        logMove("SYSTEM", `${player === 1 ? p2Name : p1Name} draws 4 and is skipped!`, true); 
+    } else if (card.value === 'block' || card.value === 'inverse') { 
+        skipNext = true; 
+        logMove("SYSTEM", `${player === 1 ? p2Name : p1Name} is skipped!`, true); 
     }
 
-    // UNO Penalty Check
-    if (player === 1 && myHand.length === 1 && !calledUno) {
-        playCustomSound('lose');
-        logMove("SYSTEM", `${p1Name} forgot to yell UNO! +2 Penalty.`, true);
+    if (player === 1 && myHand.length === 1 && !calledUno) { 
+        playCustomSound('lose'); 
+        logMove("SYSTEM", `${p1Name} forgot to yell UNO! +2 Penalty.`, true); 
         alert("You didn't yell UNO! Draw 2 penalty."); 
         drawCardsFor(1, 2);
-        document.getElementById("uno-btn").classList.add("hidden");
     }
 
-    // Win Check
-    if (myHand.length === 0) {
-        playCustomSound('win');
-        logMove("SYSTEM", `${p1Name} WINS!`, true);
-        alert("YOU WIN THE ROUND!");
-        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" });
-        resetGame();
-        return;
-    } else if (oppHand.length === 0) {
-        playCustomSound('lose');
-        logMove("SYSTEM", `${p2Name} WINS!`, true);
-        alert(`${p2Name} WINS!`);
-        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" });
-        resetGame();
-        return;
+    if (myHand.length === 0) { 
+        playCustomSound('win'); 
+        logMove("SYSTEM", `${p1Name} WINS!`, true); 
+        alert("YOU WIN THE ROUND!"); 
+        
+        if (gameMode === 'online' && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 
+        }
+        
+        resetGame(); 
+        return; 
+    } else if (oppHand.length === 0) { 
+        playCustomSound('lose'); 
+        logMove("SYSTEM", `${p2Name} WINS!`, true); 
+        alert(`${p2Name} WINS!`); 
+        
+        if (gameMode === 'online' && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 
+        }
+        
+        resetGame(); 
+        return; 
     }
 
-    // Resolve Turn Direction
     if (skipNext) {
         if (player === 1) {
             currentTurn = (gameMode === "online") ? myId : 1;
-            updateTurnBanner();
-            renderHand();
-            renderTable();
-            if(gameMode === "online") pushGameState(null, `played ${card.name.toUpperCase()}`);
         } else {
             currentTurn = (gameMode === "online") ? (myId === 1 ? 2 : 1) : 2; 
-            updateTurnBanner();
-            renderHand();
-            renderTable();
-            if(gameMode === "online") pushGameState(null, `played ${card.name.toUpperCase()}`);
-            
-            // V2 Drop-In AI: If turn is bot, fire AI
-            if (isHost && seats[currentTurn - 1]?.type === 'ai') setTimeout(aiTurn, 1500);
+        }
+        
+        renderHand(); 
+        renderTable(); 
+        updateTurnBanner();
+        
+        if (gameMode === "online") {
+            pushGameState(null, `played ${card.name.toUpperCase()}`);
+        }
+        
+        // AI gets an extra turn if they played the skip card
+        if (player === 2) {
+            if (gameMode === "online" && isHost && seats[currentTurn - 1]?.type === 'ai') {
+                setTimeout(aiTurn, 1500);
+            } else if (gameMode === "ai" && currentTurn === 2) {
+                setTimeout(aiTurn, 1500);
+            }
         }
     } else {
         if (player === 1) {
@@ -519,7 +573,10 @@ function handleActionCard(card, player) {
             updateTurnBanner();
             renderHand();
             renderTable();
-            if(gameMode === "online") pushGameState(null, `played ${card.name.toUpperCase()}`);
+            
+            if (gameMode === "online") {
+                pushGameState(null, `played ${card.name.toUpperCase()}`);
+            }
         }
     }
 }
@@ -532,32 +589,39 @@ function isValidPlay(card, topCard) {
 }
 
 function drawCardsFor(player, num) {
-    if (player === 1) cardsToAnimateP1 += num;
-    else cardsToAnimateP2 += num;
-
-    for(let i=0; i<num; i++) {
-        if (deck.length === 0) {
-            const topCard = discardPile.pop();
-            deck = [...discardPile];
-            shuffleDeck();
-            discardPile = [topCard];
+    if (player === 1) {
+        cardsToAnimateP1 += num; 
+    } else {
+        cardsToAnimateP2 += num;
+    }
+    
+    for (let i = 0; i < num; i++) {
+        if (deck.length === 0) { 
+            const topCard = discardPile.pop(); 
+            deck = [...discardPile]; 
+            shuffleDeck(); 
+            discardPile = [topCard]; 
         }
-        if (deck.length > 0) {
-            if (player === 1) myHand.push(deck.pop());
-            else {
-                oppHand.push(deck.pop());
-                oppHandCount = oppHand.length;
-            }
+        
+        if (deck.length > 0) { 
+            if (player === 1) {
+                myHand.push(deck.pop()); 
+            } else { 
+                oppHand.push(deck.pop()); 
+                oppHandCount = oppHand.length; 
+            } 
         }
     }
 }
 
 function drawCard() {
     if (!isMyTurn()) return;
-    drawCardsFor(1, 1);
-    playCustomSound('draw');
+    
+    drawCardsFor(1, 1); 
+    playCustomSound('draw'); 
     logMove(p1Name, "drew a card.");
-    renderHand();
+    
+    renderHand(); 
     renderTable(); 
     advanceTurn("drew a card.");
 }
@@ -565,103 +629,109 @@ function drawCard() {
 function advanceTurn(logMsg) {
     currentTurn = (gameMode === "online") ? (myId === 1 ? 2 : 1) : 2;
     updateTurnBanner();
-    if(gameMode === "online") pushGameState(null, logMsg);
-
-    // V2 Drop-In AI
-    if (isHost && seats[currentTurn - 1]?.type === 'ai') setTimeout(aiTurn, 1500);
-    else if (gameMode === "ai" && currentTurn === 2) setTimeout(aiTurn, 1500);
+    
+    if (gameMode === "online") {
+        pushGameState(null, logMsg);
+    }
+    
+    if (gameMode === "online" && isHost && seats[currentTurn - 1]?.type === 'ai') {
+        setTimeout(aiTurn, 1500);
+    } else if (gameMode === "ai" && currentTurn === 2) {
+        setTimeout(aiTurn, 1500);
+    }
 }
 
 // ==========================================
-// 5. THE AI BRAIN (V2 Strategic Upgrades)
+// 5. THE AI BRAIN
 // ==========================================
 function aiTurn() {
-    if (deck.length === 0 && discardPile.length > 1) {
-        const topCard = discardPile.pop();
-        deck = [...discardPile];
-        shuffleDeck();
-        discardPile = [topCard];
+    if (deck.length === 0 && discardPile.length > 1) { 
+        const topCard = discardPile.pop(); 
+        deck = [...discardPile]; 
+        shuffleDeck(); 
+        discardPile = [topCard]; 
     }
-
+    
     const topCard = discardPile[discardPile.length - 1];
     let playableIndices = [];
     
-    for(let i=0; i<oppHand.length; i++) {
+    for (let i = 0; i < oppHand.length; i++) { 
         if (isValidPlay(oppHand[i], topCard)) {
-            playableIndices.push(i);
+            playableIndices.push(i); 
         }
     }
 
     if (playableIndices.length > 0) {
         let chosenIndex = playableIndices[0];
-
-        if (aiDifficulty === "easy") {
-            // Easy AI picks randomly
-            chosenIndex = playableIndices[Math.floor(Math.random() * playableIndices.length)];
+        
+        if (aiDifficulty === "easy") { 
+            chosenIndex = playableIndices[Math.floor(Math.random() * playableIndices.length)]; 
         } else if (aiDifficulty === "hard") {
-            // Hard AI uses strategy
             let actionCards = playableIndices.filter(idx => oppHand[idx].type === 'action');
             let colorMatch = playableIndices.filter(idx => oppHand[idx].color === currentPlayColor && oppHand[idx].type !== 'wild');
             
-            // 1. If human has few cards, aggressively use Action Cards
-            if (myHand.length <= 3 && actionCards.length > 0) {
-                chosenIndex = actionCards[0];
-            } 
-            // 2. Try to match color with the color AI has the most of
-            else if (colorMatch.length > 0) {
-                const colorCounts = { red:0, blue:0, green:0, yellow:0 };
-                oppHand.forEach(c => { if(c.color !== 'wild') colorCounts[c.color]++; });
-                colorMatch.sort((a, b) => colorCounts[oppHand[b].color] - colorCounts[oppHand[a].color]);
+            if (myHand.length <= 3 && actionCards.length > 0) { 
+                chosenIndex = actionCards[0]; 
+            } else if (colorMatch.length > 0) {
+                const counts = { red: 0, blue: 0, green: 0, yellow: 0 };
+                oppHand.forEach(c => { 
+                    if (c.color !== 'wild') counts[c.color]++; 
+                });
+                colorMatch.sort((a, b) => counts[oppHand[b].color] - counts[oppHand[a].color]);
                 chosenIndex = colorMatch[0];
-            }
-            // 3. Save Wilds for when hand is empty or desperate
-            else if (playableIndices.length > 1) {
+            } else if (playableIndices.length > 1) {
                 let nonWild = playableIndices.find(idx => oppHand[idx].type !== 'wild');
-                if (nonWild !== undefined) chosenIndex = nonWild;
+                if (nonWild !== undefined) {
+                    chosenIndex = nonWild;
+                }
             }
         }
-
-        const playedCard = oppHand.splice(chosenIndex, 1)[0];
-        oppHandCount = oppHand.length;
-        discardPile.push(playedCard);
-        cardJustPlayed = true;
         
+        const playedCard = oppHand.splice(chosenIndex, 1)[0]; 
+        oppHandCount = oppHand.length;
+        
+        discardPile.push(playedCard); 
+        cardJustPlayed = true; 
         playCustomSound('play');
+        
         logMove(p2Name, `played ${playedCard.name.toUpperCase()}`);
-
-        if (oppHand.length === 1) {
-            logMove(p2Name, "YELLED UNO!");
-            showUnoShout(p2Name);
+        
+        if (oppHand.length === 1) { 
+            logMove(p2Name, "YELLED UNO!"); 
+            showUnoShout(p2Name); 
         }
-
+        
         if (playedCard.type === 'wild') {
             const colors = ['red', 'blue', 'green', 'yellow'];
             if (aiDifficulty === "hard") {
-                // Pick the color AI has the most of
-                const counts = { red:0, blue:0, green:0, yellow:0 };
-                oppHand.forEach(c => { if(c.color !== 'wild') counts[c.color]++; });
+                const counts = { red: 0, blue: 0, green: 0, yellow: 0 };
+                oppHand.forEach(c => { 
+                    if (c.color !== 'wild') counts[c.color]++; 
+                });
                 currentPlayColor = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
-            } else {
-                currentPlayColor = colors[Math.floor(Math.random() * colors.length)];
+            } else { 
+                currentPlayColor = colors[Math.floor(Math.random() * colors.length)]; 
             }
             logMove("SYSTEM", `Color changed to ${currentPlayColor.toUpperCase()}`, true);
-        } else {
-            currentPlayColor = playedCard.color;
+        } else { 
+            currentPlayColor = playedCard.color; 
         }
-
-        handleActionCard(playedCard, 2);
-    } else {
-        // Draw card
-        drawCardsFor(2, 1);
-        playCustomSound('draw');
-        logMove(p2Name, "drew a card.");
-        renderTable();
         
-        currentTurn = 1;
+        handleActionCard(playedCard, 2);
+        
+    } else {
+        drawCardsFor(2, 1); 
+        playCustomSound('draw'); 
+        logMove(p2Name, "drew a card.");
+        
+        currentTurn = 1; 
+        renderHand(); 
+        renderTable(); 
         updateTurnBanner();
-        renderHand();
-        renderTable();
-        if(gameMode === "online") pushGameState(null, "drew a card.");
+        
+        if (gameMode === "online") {
+            pushGameState(null, "drew a card.");
+        }
     }
 }
 
@@ -669,84 +739,92 @@ document.getElementById("start-game-btn").addEventListener("click", startGame);
 document.getElementById("draw-pile").addEventListener("click", drawCard);
 
 // ==========================================
-// 6. FIREBASE MULTIPLAYER LOBBY & SYNC (V2)
+// 6. FIREBASE MULTIPLAYER LOBBY & SYNC
 // ==========================================
 SystemUI.v2Lobby.setup({
     onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
-        isHost = true; myId = 1; chatStarted = false;
+        if (!window.db) { 
+            alert("Server connection error."); 
+            return; 
+        }
+        
+        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
+        isHost = true; 
+        myId = 1; 
+        chatStarted = false;
         
         seats = [
-            { type: "human", name: SystemUI.getPlayerName() },
+            { type: "human", name: SystemUI.getPlayerName() }, 
             { type: "ai", name: "AI (" + aiDifficulty + ")" }
         ];
-
-        window.dbSet(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), {
-            status: "waiting",
-            players: 1,
-            p1Name: p1Name,
-            turn: 1,
-            seats: seats
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
+        
+        window.dbSet(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { 
+            status: "waiting", 
+            turn: 1, 
+            seats: seats 
+        }).then(() => { 
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true); 
+            listenToRoom(); 
         });
     },
     onJoin: (code) => {
+        if (!window.db) { 
+            alert("Server connection error."); 
+            return; 
+        }
+        
         window.dbGet(window.dbChild(window.dbRef(window.db), `uno_rooms/${code}`)).then((snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.val();
                 if (data.seats && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+                    currentRoomId = code; 
+                    isHost = false; 
+                    myId = 2; 
+                    chatStarted = false;
                     
-                    let updatedSeats = data.seats;
+                    let updatedSeats = data.seats; 
                     updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-
-                    window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), {
-                        players: 2,
-                        p2Name: p1Name, 
-                        status: "playing",
-                        seats: updatedSeats
+                    
+                    window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { 
+                        status: "playing", 
+                        seats: updatedSeats 
                     });
                     
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false); 
                     listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM FULL");
                 }
-            } else {
-                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
             }
         });
     },
-    onLeave: () => {
-        gameMode = "ai"; myId = 1; isHost = true;
-        SystemUI.stopChat(); chatStarted = false;
-        if (roomListener) { roomListener(); roomListener = null; }
-        resetGame();
+    onLeave: () => { 
+        gameMode = "ai"; 
+        myId = 1; 
+        isHost = true; 
+        resetGame(); 
     },
-    onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "playing" });
+    onStart: () => { 
+        window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "playing" }); 
     }
 });
 
 function listenToRoom() {
     let onlineGameStarted = false;
-    if (roomListener) roomListener();
-
+    
     roomListener = window.dbOnValue(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if(!data) return;
-
+        if (!data) return;
+        
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
-
-        if(data.status === "playing" && !onlineGameStarted) {
-            onlineGameStarted = true; SystemUI.v2Lobby.hide();
-            if(!chatStarted) {
-                chatStarted = true;
-                playCustomSound('win');
-                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+        
+        if (data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true; 
+            SystemUI.v2Lobby.hide();
+            
+            if (!chatStarted) { 
+                chatStarted = true; 
+                playCustomSound('win'); 
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); 
             }
         }
         syncFromFirebase(data);
@@ -756,23 +834,30 @@ function listenToRoom() {
 function pushGameState(unoYelledBy = null, moveLogMsg = null) {
     if (gameMode !== "online") return;
     
-    let payload = {
-        deck: deck,
-        discardPile: discardPile,
-        turn: currentTurn,
-        currentColor: currentPlayColor,
-        status: "playing",
-        seats: seats
+    let payload = { 
+        deck: deck, 
+        discardPile: discardPile, 
+        turn: currentTurn, 
+        currentColor: currentPlayColor, 
+        status: "playing", 
+        seats: seats 
     };
     
-    if (myId === 1) {
-        payload.p1Hand = myHand; payload.p2Hand = oppHand;
-    } else {
-        payload.p2Hand = myHand; payload.p1Hand = oppHand;
+    if (myId === 1) { 
+        payload.p1Hand = myHand; 
+        payload.p2Hand = oppHand; 
+    } else { 
+        payload.p2Hand = myHand; 
+        payload.p1Hand = oppHand; 
     }
-
-    if (unoYelledBy) payload.lastUnoYell = Date.now() + "_" + unoYelledBy;
-    if (moveLogMsg) payload.lastLogSync = Date.now() + "_" + p1Name + "_" + moveLogMsg;
+    
+    if (unoYelledBy) {
+        payload.lastUnoYell = Date.now() + "_" + unoYelledBy;
+    }
+    
+    if (moveLogMsg) {
+        payload.lastLogSync = Date.now() + "_" + p1Name + "_" + moveLogMsg;
+    }
     
     window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), payload);
 }
@@ -782,44 +867,47 @@ function syncFromFirebase(data) {
         document.getElementById("start-game-btn").classList.add("hidden");
         document.getElementById("move-log").classList.remove("hidden");
         
-        deck = data.deck || [];
-        discardPile = data.discardPile || [];
-        currentTurn = data.turn || 1;
-        currentPlayColor = data.currentColor || "";
+        deck = data.deck; 
+        discardPile = data.discardPile; 
+        currentTurn = data.turn; 
+        currentPlayColor = data.currentColor;
         
-        if (myId === 1) {
-            myHand = data.p1Hand || []; oppHand = data.p2Hand || []; p2Name = seats[1].name;
-        } else {
-            myHand = data.p2Hand || []; oppHand = data.p1Hand || []; p2Name = seats[0].name;
+        if (myId === 1) { 
+            myHand = data.p1Hand || []; 
+            oppHand = data.p2Hand || []; 
+            p2Name = seats[1].name; 
+        } else { 
+            myHand = data.p2Hand || []; 
+            oppHand = data.p1Hand || []; 
+            p2Name = seats[0].name; 
         }
+        
         oppHandCount = oppHand.length;
-
-        // Shout if someone yelled UNO
-        if (data.lastUnoYell && data.lastUnoYell !== lastSeenUnoYell) {
-            lastSeenUnoYell = data.lastUnoYell;
-            const yeller = data.lastUnoYell.split("_")[1];
-            if(yeller !== p1Name) showUnoShout(yeller);
+        
+        if (data.lastUnoYell && data.lastUnoYell !== lastSeenUnoYell) { 
+            lastSeenUnoYell = data.lastUnoYell; 
+            const yeller = data.lastUnoYell.split("_")[1]; 
+            if (yeller !== p1Name) {
+                showUnoShout(yeller); 
+            }
         }
-
-        // Log Sync
-        if (data.lastLogSync && data.lastLogSync !== lastLogSync) {
-            lastLogSync = data.lastLogSync;
-            const parts = data.lastLogSync.split("_");
-            const player = parts[1];
-            const msg = parts.slice(2).join("_");
-            if (player !== p1Name) logMove(player, msg);
+        
+        if (data.lastLogSync && data.lastLogSync !== lastLogSync) { 
+            lastLogSync = data.lastLogSync; 
+            const parts = data.lastLogSync.split("_"); 
+            if (parts[1] !== p1Name) {
+                logMove(parts[1], parts.slice(2).join("_")); 
+            }
         }
-
-        renderHand();
-        renderTable();
+        
+        renderHand(); 
+        renderTable(); 
         updateTurnBanner();
-
-        // V2 Drop-In AI Logic
-        if (isHost && seats[currentTurn - 1]?.type === 'ai') setTimeout(aiTurn, 1500);
-
-    } else if (data.status === "finished") {
-        resetGame();
+        
+        if (isHost && seats[currentTurn - 1]?.type === 'ai') {
+            setTimeout(aiTurn, 1500);
+        }
+    } else if (data.status === "finished") { 
+        resetGame(); 
     }
 }
-
-resetGame();

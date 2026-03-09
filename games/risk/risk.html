@@ -16,7 +16,9 @@
 
     <!-- ── MAP AREA ──────────────────────────── -->
     <div id="map-area">
-        <!-- SVG injected here by JS via fetch() -->
+        <!-- Layer 1: BlankMap-World.svg background (styled dark, no pointer events) -->
+        <div id="world-map-bg"></div>
+        <!-- Layer 2: Territory overlay SVG (coloured rects, handles all clicks) -->
         <div id="svg-container"></div>
 
         <!-- Troop counters layered over SVG (absolutely positioned) -->
@@ -87,9 +89,23 @@
             <div id="dice-outcome"></div>
         </div>
 
+        <!-- Event log -->
+        <div id="event-log">
+            <!-- Entries injected by JS -->
+        </div>
+
+        <!-- Activity log -->
+        <div id="activity-log">
+            <div class="log-title">ACTIVITY</div>
+            <div id="log-entries"></div>
+        </div>
+
     </div><!-- /#side-panel -->
 
 </div><!-- /#game-wrap -->
+
+<!-- Turn announcement toast -->
+<div id="turn-toast" class="hidden"></div>
 
 <!-- ═══════════════════════════════════════════
      ATTACK MODAL

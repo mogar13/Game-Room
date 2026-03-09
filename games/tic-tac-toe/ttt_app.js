@@ -1,7 +1,10 @@
 // ==========================================
 // 1. INITIALIZE CASINO OS & MULTIPLAYER STATE
 // ==========================================
-let gameMode = localStorage.getItem("ttt_mode") || "ai"; 
+// FIX: Force AI mode on boot so it never deadlocks in a ghost online state
+let gameMode = "ai"; 
+localStorage.setItem("ttt_mode", "ai");
+
 let aiDifficulty = localStorage.getItem("ttt_diff") || "hard";
 let mySymbol = "X"; 
 let currentRoomId = null; 
@@ -9,6 +12,7 @@ let isHost = true;
 let chatStarted = false; 
 let seats = [];
 let roomListener = null;
+let isThinking = false;
 
 SystemUI.init({
     gameName: "TIC-TAC-TOE",
@@ -35,15 +39,8 @@ SystemUI.init({
     ]
 });
 
-// CRITICAL FIX: Wait for Firebase module to finish attaching window.db to window
-const checkDBReady = setInterval(() => {
-    if (window.db) {
-        clearInterval(checkDBReady);
-        initTTT();
-    }
-}, 50);
-
-function initTTT() {
+// Setup dropdown listeners securely
+setTimeout(() => {
     const modeSelect = document.getElementById("sys-ttt-mode");
     const diffSelect = document.getElementById("sys-ttt-diff");
 
@@ -52,7 +49,7 @@ function initTTT() {
         modeSelect.addEventListener("change", (e) => {
             gameMode = e.target.value;
             localStorage.setItem("ttt_mode", gameMode);
-            document.getElementById("sys-modal").classList.add("sys-hidden"); 
+            document.getElementById("sys-modal")?.classList.add("sys-hidden"); 
             syncDiffVisibility();
             
             if (gameMode === "online") {
@@ -77,9 +74,16 @@ function initTTT() {
         });
     }
 
+    document.getElementById("sys-reset-game-btn")?.addEventListener("click", () => {
+        if(confirm("Wipe the board and restart the game?")) {
+            restartGame();
+            document.getElementById("sys-modal")?.classList.add("sys-hidden");
+        }
+    });
+
     syncDiffVisibility();
     restartGame();
-}
+}, 100);
 
 function syncDiffVisibility() {
     const wrap = document.getElementById("sys-ttt-diff")?.closest(".hud-dropdown-wrap") ||
@@ -87,25 +91,19 @@ function syncDiffVisibility() {
     if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
 }
 
-document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
-    if(confirm("Wipe the board and restart the game?")) {
-        restartGame();
-        document.getElementById("sys-modal").classList.add("sys-hidden");
-    }
-});
-
 // ==========================================
 // 2. V2 MULTIPLAYER LOBBY LOGIC
 // ==========================================
 SystemUI.v2Lobby.setup({
     onHost: () => {
+        if(!window.db) { alert("Server connection error."); return; }
         currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
         isHost = true;
         mySymbol = "X";
         chatStarted = false;
         
         seats = [
-            { type: "human", name: SystemUI.getPlayerName() },
+            { type: "human", name: (typeof SystemUI.getPlayerName === 'function' ? SystemUI.getPlayerName() : "Player") },
             { type: "ai", name: "AI (" + aiDifficulty + ")" }
         ];
 
@@ -120,6 +118,7 @@ SystemUI.v2Lobby.setup({
         });
     },
     onJoin: (code) => {
+        if(!window.db) { alert("Server connection error."); return; }
         window.dbGet(window.dbChild(window.dbRef(window.db), `rooms/${code}`)).then((snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.val();
@@ -130,7 +129,7 @@ SystemUI.v2Lobby.setup({
                     chatStarted = false;
                     
                     let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
+                    updatedSeats[1] = { type: "human", name: (typeof SystemUI.getPlayerName === 'function' ? SystemUI.getPlayerName() : "Player") };
 
                     window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
                         seats: updatedSeats,
@@ -149,13 +148,14 @@ SystemUI.v2Lobby.setup({
     },
     onLeave: () => {
         gameMode = "local";
-        document.getElementById("sys-ttt-mode").value = "local";
+        const modeEl = document.getElementById("sys-ttt-mode");
+        if(modeEl) modeEl.value = "local";
         SystemUI.stopChat(); chatStarted = false;
         if (roomListener) { roomListener(); roomListener = null; }
         restartGame();
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), { status: "playing" });
+        if(window.db) window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), { status: "playing" });
     }
 });
 
@@ -176,7 +176,7 @@ function listenToRoom() {
             if (!chatStarted) {
                 chatStarted = true;
                 SystemUI.playSound('win');
-                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+                SystemUI.startChat(currentRoomId, (typeof SystemUI.getPlayerName === 'function' ? SystemUI.getPlayerName() : "Player"));
             }
         }
 
@@ -192,6 +192,7 @@ function listenToRoom() {
         if (gameActive) {
             statusDisplay.innerText = currentPlayer === mySymbol ? "YOUR TURN!" : "Opponent is thinking...";
             
+            // V2 Drop-In AI
             if (isHost) {
                 const turnIdx = currentPlayer === "X" ? 0 : 1;
                 if (seats[turnIdx] && seats[turnIdx].type === "ai") {
@@ -220,7 +221,7 @@ const winningConditions = [
 function handleCellClick(clickedCellEvent) {
     const clickedCellIndex = parseInt(clickedCellEvent.target.getAttribute('data-index'));
 
-    if (board[clickedCellIndex] !== "" || !gameActive) return;
+    if (board[clickedCellIndex] !== "" || !gameActive || isThinking) return;
 
     if (gameMode === "online") {
         if (currentPlayer !== mySymbol) {
@@ -233,10 +234,12 @@ function handleCellClick(clickedCellEvent) {
         newBoard[clickedCellIndex] = mySymbol;
         let nextTurn = mySymbol === "X" ? "O" : "X";
         
-        window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
-            board: newBoard,
-            turn: nextTurn
-        });
+        if(window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+                board: newBoard,
+                turn: nextTurn
+            });
+        }
         return; 
     }
 
@@ -245,6 +248,7 @@ function handleCellClick(clickedCellEvent) {
     checkResult(false);
 
     if (gameMode === "ai" && gameActive && currentPlayer === "O") {
+        isThinking = true;
         statusDisplay.innerText = "Computer is thinking...";
         setTimeout(computerMove, 600); 
     }
@@ -254,6 +258,7 @@ function updateCell(cell, index) {
     board[index] = currentPlayer;
     if (cell) {
         cell.innerText = currentPlayer;
+        cell.className = "cell"; 
         cell.classList.add(currentPlayer.toLowerCase());
     }
 }
@@ -272,7 +277,7 @@ function updateVisualBoard() {
 // 5. UPGRADED AI BRAIN (Minimax)
 // ==========================================
 function computerMove() {
-    if (!gameActive) return;
+    if (!gameActive) { isThinking = false; return; }
     
     let moveIndex = -1;
 
@@ -303,16 +308,19 @@ function computerMove() {
         let newBoard = [...board];
         newBoard[moveIndex] = currentPlayer;
         let nextTurn = currentPlayer === "X" ? "O" : "X";
-        window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
-            board: newBoard,
-            turn: nextTurn
-        });
+        if(window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+                board: newBoard,
+                turn: nextTurn
+            });
+        }
     } else {
         const targetCell = document.querySelector(`.cell[data-index="${moveIndex}"]`);
         SystemUI.playSound('chipTable');
         updateCell(targetCell, moveIndex);
         checkResult(false);
     }
+    isThinking = false;
 }
 
 function findBestMoveLogic(playerSymbol) {
@@ -423,10 +431,11 @@ function checkResult(isFromNetwork) {
     }
 }
 
-document.getElementById("restart-btn").addEventListener("click", restartGame);
+document.getElementById("restart-btn")?.addEventListener("click", restartGame);
 
 function restartGame() {
     SystemUI.playSound('shuffle'); 
+    isThinking = false;
 
     if (gameMode === "online") {
         if (isHost && window.db) {
@@ -441,7 +450,7 @@ function restartGame() {
     board = ["", "", "", "", "", "", "", "", ""];
     currentPlayer = "X";
     gameActive = true;
-    statusDisplay.innerText = `It's ${currentPlayer}'s turn`;
+    if(statusDisplay) statusDisplay.innerText = `It's ${currentPlayer}'s turn`;
     document.querySelectorAll('.cell').forEach(cell => {
         cell.innerText = "";
         cell.className = "cell";
@@ -450,12 +459,13 @@ function restartGame() {
 
 document.querySelectorAll('.cell').forEach(cell => cell.addEventListener('click', handleCellClick));
 
-document.getElementById("lobby-close-btn").addEventListener("click", () => {
-    document.getElementById("multiplayer-lobby").classList.add("hidden");
+// SAFE DOM CHECKS
+document.getElementById("lobby-close-btn")?.addEventListener("click", () => {
+    document.getElementById("multiplayer-lobby")?.classList.add("hidden");
 });
 
-document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
-    document.getElementById("multiplayer-lobby").classList.add("hidden");
+document.getElementById("btn-cancel-lobby")?.addEventListener("click", () => {
+    document.getElementById("multiplayer-lobby")?.classList.add("hidden");
     SystemUI.stopChat();
     chatStarted = false;
     const modeSelect = document.getElementById("sys-ttt-mode");
