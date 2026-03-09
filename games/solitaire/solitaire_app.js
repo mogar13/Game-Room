@@ -11,25 +11,50 @@ SystemUI.init({
                 { value: "1", label: "Draw 1 Card" },
                 { value: "3", label: "Draw 3 Cards" }
             ]
+        },
+        {
+            id: "sys-difficulty",
+            options: [
+                { value: "random", label: "Standard (Random)" },
+                { value: "winnable", label: "Easy (Winnable)" }
+            ]
         }
     ]
 });
 
 let drawMode = parseInt(localStorage.getItem("solitaire_draw_mode")) || 1;
+let difficulty = localStorage.getItem("solitaire_diff") || "random";
+
 if(document.getElementById("sys-draw-mode")) {
     document.getElementById("sys-draw-mode").value = drawMode;
     document.getElementById("sys-draw-mode").addEventListener("change", (e) => {
         drawMode = parseInt(e.target.value);
         localStorage.setItem("solitaire_draw_mode", drawMode);
-        document.getElementById("sys-modal").classList.add("sys-hidden");
-        // Changing modes mid-game forces a restart
         if(moves > 0) resetGame(); 
     });
 }
 
-function playSound(type) {
-    const audio = new Audio(`../../system/audio/${type}.ogg`);
-    audio.play().catch(e => console.log("Audio failed:", e));
+if(document.getElementById("sys-difficulty")) {
+    document.getElementById("sys-difficulty").value = difficulty;
+    document.getElementById("sys-difficulty").addEventListener("change", (e) => {
+        difficulty = e.target.value;
+        localStorage.setItem("solitaire_diff", difficulty);
+        if(moves > 0) resetGame(); 
+    });
+}
+
+// --- SPECIFIC AUDIO MAPPING ---
+const sfxClick = new Audio('../../system/audio/click1.mp3');
+const sfxSlide = new Audio('../../system/audio/card-slide-6.ogg');
+const sfxDraw = new Audio('../../system/audio/card-draw.ogg');
+const sfxShuffle = new Audio('../../system/audio/shuffle.mp3');
+const sfxWin = new Audio('../../system/audio/win.ogg');
+
+function playSFX(audioObj) {
+    if (SystemUI.isMuted) return;
+    audioObj.pause();
+    audioObj.currentTime = 0;
+    audioObj.play().catch(e => console.log("Audio failed:", e));
 }
 
 // --- GAME STATE ---
@@ -44,12 +69,44 @@ let timeElapsed = 0;
 let timerInterval = null;
 let isPlaying = false;
 
+// --- UNDO HISTORY ---
+let historyStack = [];
+
+function saveState() {
+    historyStack.push({
+        stock: JSON.parse(JSON.stringify(stock)),
+        waste: JSON.parse(JSON.stringify(waste)),
+        foundations: JSON.parse(JSON.stringify(foundations)),
+        tableau: JSON.parse(JSON.stringify(tableau)),
+        moves: moves
+    });
+    document.getElementById("undo-btn").disabled = false;
+}
+
+document.getElementById("undo-btn").addEventListener("click", () => {
+    if (historyStack.length === 0) return;
+    let prevState = historyStack.pop();
+    
+    stock = prevState.stock;
+    waste = prevState.waste;
+    foundations = prevState.foundations;
+    tableau = prevState.tableau;
+    moves = prevState.moves;
+    
+    document.getElementById("moves-display").innerText = moves;
+    if (historyStack.length === 0) document.getElementById("undo-btn").disabled = true;
+    
+    playSFX(sfxSlide);
+    renderBoard();
+});
+
 // --- PHYSICS ENGINE STATE ---
 let dragStack = []; 
 let dragData = [];  
 let dragOrigin = null; 
 let startX = 0, startY = 0;
-let lastTap = 0; // For double-tap detection
+let lastTap = 0; 
+let isDrawingAnim = false; // Flag for drawing animation
 
 // ==========================================
 // 2. TIMERS & DECK LOGIC
@@ -81,13 +138,9 @@ function buildDeck() {
     suits.forEach(suit => {
         values.forEach((value, index) => {
             deck.push({
-                id: `${value}_${suit}`,
-                suit: suit,
-                value: value,
-                rank: index + 1, 
+                id: `${value}_${suit}`, suit: suit, value: value, rank: index + 1, 
                 color: (suit === 'Hearts' || suit === 'Diamonds') ? 'red' : 'black',
-                isFaceUp: false,
-                img: `../../system/images/cards/standard/card${suit}${value}.png`
+                isFaceUp: false, img: `../../system/images/cards/standard/card${suit}${value}.png`
             });
         });
     });
@@ -101,10 +154,13 @@ function buildDeck() {
 function resetGame() {
     if(timerInterval) clearInterval(timerInterval);
     timeElapsed = 0; moves = 0; isPlaying = false;
+    historyStack = [];
     document.getElementById("timer-display").innerText = "0:00";
     document.getElementById("moves-display").innerText = "0";
     document.getElementById("restart-btn").classList.add("hidden");
+    document.getElementById("undo-btn").classList.add("hidden");
     document.getElementById("deal-btn").classList.remove("hidden");
+    document.getElementById("undo-btn").disabled = true;
     
     stock = []; waste = []; foundations = [[], [], [], []]; tableau = [[], [], [], [], [], [], []];
     renderBoard();
@@ -113,13 +169,15 @@ function resetGame() {
 document.getElementById("restart-btn").addEventListener("click", resetGame);
 
 document.getElementById("deal-btn").addEventListener("click", () => {
-    playSound('shuffle');
+    playSFX(sfxShuffle);
     buildDeck();
     document.getElementById("deal-btn").classList.add("hidden");
     document.getElementById("restart-btn").classList.remove("hidden");
+    document.getElementById("undo-btn").classList.remove("hidden");
     
     stock = [...deck];
     
+    // DEALING ANIMATION
     let delay = 0;
     for (let col = 0; col < 7; col++) {
         for (let row = 0; row <= col; row++) {
@@ -127,25 +185,51 @@ document.getElementById("deal-btn").addEventListener("click", () => {
                 let card = stock.pop();
                 if (row === col) card.isFaceUp = true;
                 tableau[col].push(card);
-                playSound('card-draw'); 
+                playSFX(sfxDraw); 
                 renderBoard();
             }, delay);
-            delay += 60; 
+            delay += 50; 
         }
     }
     
+    // THE "WINNABLE" DECK MANIPULATOR
     setTimeout(() => {
+        if (difficulty === "winnable") {
+            // Find the 4 Aces hidden in the stock or tableau
+            let aces = [];
+            stock = stock.filter(c => { if(c.rank===1){aces.push(c); return false;} return true; });
+            tableau.forEach(col => {
+                for(let i=0; i<col.length; i++) {
+                    if(col[i].rank === 1 && !col[i].isFaceUp) { aces.push(col.splice(i, 1)[0]); i--; }
+                }
+            });
+            
+            // Force the Aces to be the face-up cards on the first 4 columns
+            for(let i=0; i<4 && aces.length>0; i++) {
+                if(tableau[i].length > 0 && tableau[i][tableau[i].length-1].isFaceUp) {
+                    let oldFaceUp = tableau[i].pop();
+                    oldFaceUp.isFaceUp = false;
+                    stock.unshift(oldFaceUp); // throw it back in the stock
+                }
+                let a = aces.pop();
+                a.isFaceUp = true;
+                tableau[i].push(a);
+            }
+        }
         document.getElementById("stock-back").classList.remove("hidden");
         renderBoard();
-    }, delay);
+    }, delay + 100);
 });
 
 // ==========================================
-// 3. STOCK & WASTE LOGIC
+// 3. STOCK & WASTE LOGIC (WITH ANIMATIONS)
 // ==========================================
 document.getElementById("stock").addEventListener("click", () => {
     if (!isPlaying && moves === 0) { isPlaying = true; startTimer(); }
+    saveState();
     
+    const stockBack = document.getElementById("stock-back");
+
     if (stock.length > 0) {
         let pullCount = Math.min(drawMode, stock.length);
         for(let i=0; i<pullCount; i++){
@@ -153,16 +237,27 @@ document.getElementById("stock").addEventListener("click", () => {
             card.isFaceUp = true;
             waste.push(card);
         }
-        playSound('card-draw');
+        playSFX(sfxDraw);
         updateMoves();
+        isDrawingAnim = true; // Trigger CSS Animation
+        renderBoard();
+        
+        // Remove animation class after it plays so it doesn't repeat randomly
+        setTimeout(() => { isDrawingAnim = false; renderBoard(); }, 250);
+        
     } else if (waste.length > 0) {
         stock = waste.reverse();
         stock.forEach(c => c.isFaceUp = false);
         waste = [];
-        playSound('shuffle');
+        playSFX(sfxShuffle);
         updateMoves();
+        
+        // Refill Animation
+        stockBack.classList.remove("hidden");
+        stockBack.classList.add("refill-anim");
+        setTimeout(() => stockBack.classList.remove("refill-anim"), 300);
+        renderBoard();
     }
-    renderBoard();
 });
 
 // ==========================================
@@ -173,11 +268,11 @@ function bindPointerEvents(cardEl, cardData, origin, isTopCard) {
     
     cardEl.addEventListener("pointerdown", (e) => {
         if (e.button === 2) return;
+        playSFX(sfxClick); // Play the exact mp3 requested on click
         
         let currentTime = new Date().getTime();
         let tapLength = currentTime - lastTap;
         
-        // Double Tap Detection (Only valid on the top card of a stack)
         if (tapLength < 300 && tapLength > 0 && isTopCard) {
             e.preventDefault();
             attemptAutoPlay(cardData, origin);
@@ -204,18 +299,15 @@ function attemptAutoPlay(card, origin) {
     }
 
     if (validFoundationIndex !== -1) {
-        // Remove from origin
+        saveState();
         if (origin.pile === 'tableau') {
             tableau[origin.col].pop();
             autoFlipTopCard(origin.col);
-        } else if (origin.pile === 'waste') {
-            waste.pop();
-        } else if (origin.pile === 'foundation') {
-            return; // Can't autoplay from foundation to foundation
-        }
+        } else if (origin.pile === 'waste') waste.pop();
+        else if (origin.pile === 'foundation') return; 
         
         foundations[validFoundationIndex].push(card);
-        playSound('card-shove-2');
+        playSFX(sfxSlide); // Auto-play success sound
         updateMoves();
         renderBoard();
         checkWinCondition();
@@ -224,26 +316,34 @@ function attemptAutoPlay(card, origin) {
 
 function renderBoard() {
     const stockBack = document.getElementById("stock-back");
-    if (stock.length > 0 && deck.length > 0) stockBack.classList.remove("hidden");
-    else stockBack.classList.add("hidden");
+    
+    // VISUAL DECK THICKNESS
+    if (stock.length > 0 && deck.length > 0) {
+        stockBack.classList.remove("hidden");
+        let thickness = Math.floor(stock.length / 4); // 0 to 6 pixels
+        let shadows = [];
+        for(let i=1; i<=thickness; i++) { shadows.push(`-${i}px ${i}px 0 #fff`); }
+        stockBack.style.boxShadow = shadows.length > 0 ? shadows.join(', ') : 'none';
+        stockBack.style.transform = `translate(${thickness}px, -${thickness}px)`;
+    } else {
+        stockBack.classList.add("hidden");
+        stockBack.style.boxShadow = 'none';
+    }
 
-    // Render Waste Pile (Fanned out if Draw 3)
     const wasteDiv = document.getElementById("waste");
     wasteDiv.innerHTML = "";
     if (waste.length > 0) {
-        // Only show up to the top 3 cards
         let startIdx = Math.max(0, waste.length - (drawMode === 3 ? 3 : 1));
         let visibleWaste = waste.slice(startIdx);
         
         visibleWaste.forEach((card, index) => {
             const cardEl = document.createElement("div");
             cardEl.className = "playing-card";
+            if (isDrawingAnim) cardEl.classList.add("draw-anim"); // Fire animation!
             cardEl.style.backgroundImage = `url('${card.img}')`;
             
-            // Fanning visual
             if(drawMode === 3) cardEl.style.left = `${index * (window.innerWidth > 600 ? 20 : 12)}px`;
             
-            // Only the very top card is draggable
             if (index === visibleWaste.length - 1) {
                 bindPointerEvents(cardEl, card, {pile: 'waste', index: waste.length - 1}, true);
             }
@@ -251,7 +351,6 @@ function renderBoard() {
         });
     }
 
-    // Render Foundations (Now Draggable!)
     for (let i = 0; i < 4; i++) {
         const fDiv = document.querySelector(`.foundation[data-pile="f${i}"]`);
         fDiv.innerHTML = "";
@@ -265,7 +364,6 @@ function renderBoard() {
         }
     }
 
-    // Render Tableau
     for (let col = 0; col < 7; col++) {
         const colDiv = document.querySelector(`.tableau-col[data-col="${col}"]`);
         colDiv.innerHTML = ""; 
@@ -346,7 +444,6 @@ function onDragEnd(e) {
     let validMove = false;
     const bottomDragCard = dragData[0]; 
 
-    // --- CHECK DROP ON FOUNDATION ---
     if (targetFoundation && dragData.length === 1) { 
         const fIndex = parseInt(targetFoundation.dataset.pile.replace('f', ''));
         const fArray = foundations[fIndex];
@@ -359,18 +456,18 @@ function onDragEnd(e) {
         }
 
         if (validMove && dragOrigin.pile !== 'foundation') {
+            saveState();
             if (dragOrigin.pile === 'tableau') {
                 tableau[dragOrigin.col].pop();
                 autoFlipTopCard(dragOrigin.col);
             } else if (dragOrigin.pile === 'waste') waste.pop();
             
             foundations[fIndex].push(bottomDragCard);
-            playSound('card-shove-2');
+            playSFX(sfxSlide);
             updateMoves();
             checkWinCondition();
         } else validMove = false;
     } 
-    // --- CHECK DROP ON TABLEAU ---
     else if (targetCol) {
         const targetColIndex = parseInt(targetCol.dataset.col);
         const colArray = tableau[targetColIndex];
@@ -385,22 +482,22 @@ function onDragEnd(e) {
         }
 
         if (validMove && (dragOrigin.pile !== 'tableau' || targetColIndex !== dragOrigin.col)) {
+            saveState();
             if (dragOrigin.pile === 'tableau') {
                 tableau[dragOrigin.col].splice(dragOrigin.index, dragData.length);
                 autoFlipTopCard(dragOrigin.col); 
-            } else if (dragOrigin.pile === 'waste') {
-                waste.pop();
-            } else if (dragOrigin.pile === 'foundation') {
-                foundations[dragOrigin.pileIndex].pop();
-            }
+            } else if (dragOrigin.pile === 'waste') waste.pop();
+            else if (dragOrigin.pile === 'foundation') foundations[dragOrigin.pileIndex].pop();
             
             tableau[targetColIndex].push(...dragData);
-            playSound('card-shove-2');
+            playSFX(sfxSlide);
             updateMoves();
         } else validMove = false;
     }
 
-    if (!validMove) playSound('lose'); 
+    if (!validMove) {
+        // If they drop it in invalid spot, don't play slide sound, let it snap back
+    } 
 
     dragStack.forEach(cardEl => {
         cardEl.classList.remove("dragging");
@@ -417,7 +514,7 @@ function autoFlipTopCard(colIndex) {
         const topCard = colArray[colArray.length - 1];
         if (!topCard.isFaceUp) {
             topCard.isFaceUp = true;
-            playSound('card-draw'); 
+            playSFX(sfxDraw); 
         }
     }
 }
@@ -426,7 +523,7 @@ function checkWinCondition() {
     if (foundations.every(f => f.length === 13)) {
         if(timerInterval) clearInterval(timerInterval);
         setTimeout(() => {
-            playSound('win');
+            playSFX(sfxWin);
             alert(`YOU WIN! Time: ${document.getElementById("timer-display").innerText} | Moves: ${moves}`);
             document.getElementById("restart-btn").innerText = "Play Again";
         }, 500);

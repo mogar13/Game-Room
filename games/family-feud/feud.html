@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Family Feud</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Rajdhani:wght@500;600;700&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../system/system_ui.css">
+    <link rel="stylesheet" href="feud_style.css">
+</head>
+<body>
+
+<div id="game-container">
+
+    <!-- ── SCOREBOARD ─────────────────────── -->
+    <div id="scoreboard">
+        <div class="team-block" id="team1-block">
+            <div class="team-name" id="t1-name">PLAYER</div>
+            <div class="team-pts" id="t1-pts">0</div>
+        </div>
+        <div id="board-meta">
+            <div id="round-label">ROUND 1</div>
+            <div id="board-pts-display">—</div>
+        </div>
+        <div class="team-block" id="team2-block">
+            <div class="team-name" id="t2-name">AI</div>
+            <div class="team-pts" id="t2-pts">0</div>
+        </div>
+    </div>
+
+    <!-- ── STATUS ROW: strikes + phase tag ── -->
+    <div id="status-row">
+        <div id="strikes-zone">
+            <div class="strike-box" id="s1"></div>
+            <div class="strike-box" id="s2"></div>
+            <div class="strike-box" id="s3"></div>
+        </div>
+        <div id="phase-tag">FACE-OFF</div>
+    </div>
+
+    <!-- ── QUESTION BANNER ────────────────── -->
+    <div id="question-wrap">
+        <div id="question-label">SURVEY SAYS...</div>
+        <div id="question-text">Ready to play? Press Start Game!</div>
+    </div>
+
+    <!-- ── ANSWER BOARD ───────────────────── -->
+    <div id="answer-board">
+        <div id="board-frame">
+            <div id="tiles-grid">
+                <!-- 8 tiles — JS populates answer text, hides unused tiles -->
+                <div class="answer-tile" id="tile-0">
+                    <div class="tile-inner">
+                        <div class="tile-front"><span class="t-num">1</span></div>
+                        <div class="tile-back"><span class="t-ans">—</span><span class="t-pts">0</span></div>
+                    </div>
+                </div>
+                <div class="answer-tile" id="tile-1">
+                    <div class="tile-inner">
+                        <div class="tile-front"><span class="t-num">2</span></div>
+                        <div class="tile-back"><span class="t-ans">—</span><span class="t-pts">0</span></div>
+                    </div>
+                </div>
+                <div class="answer-tile" id="tile-2">
+                    <div class="tile-inner">
+                        <div class="tile-front"><span class="t-num">3</span></div>
+                        <div class="tile-back"><span class="t-ans">—</span><span class="t-pts">0</span></div>
+                    </div>
+                </div>
+                <div class="answer-tile" id="tile-3">
+                    <div class="tile-inner">
+                        <div class="tile-front"><span class="t-num">4</span></div>
+                        <div class="tile-back"><span class="t-ans">—</span><span class="t-pts">0</span></div>
+                    </div>
+                </div>
+                <div class="answer-tile" id="tile-4">
+                    <div class="tile-inner">
+                        <div class="tile-front"><span class="t-num">5</span></div>
+                        <div class="tile-back"><span class="t-ans">—</span><span class="t-pts">0</span></div>
+                    </div>
+                </div>
+                <div class="answer-tile" id="tile-5">
+                    <div class="tile-inner">
+                        <div class="tile-front"><span class="t-num">6</span></div>
+                        <div class="tile-back"><span class="t-ans">—</span><span class="t-pts">0</span></div>
+                    </div>
+                </div>
+                <div class="answer-tile" id="tile-6">
+                    <div class="tile-inner">
+                        <div class="tile-front"><span class="t-num">7</span></div>
+                        <div class="tile-back"><span class="t-ans">—</span><span class="t-pts">0</span></div>
+                    </div>
+                </div>
+                <div class="answer-tile" id="tile-7">
+                    <div class="tile-inner">
+                        <div class="tile-front"><span class="t-num">8</span></div>
+                        <div class="tile-back"><span class="t-ans">—</span><span class="t-pts">0</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── BUZZ ZONE ──────────────────────── -->
+    <div id="buzz-zone" class="hidden">
+        <button id="buzz-btn">
+            <span class="buzz-icon">🔔</span>
+            <span class="buzz-label">BUZZ IN</span>
+        </button>
+        <div id="buzz-hint">Press <kbd>SPACE</kbd> to buzz in</div>
+    </div>
+
+    <!-- ── GUESS ZONE ─────────────────────── -->
+    <div id="guess-zone" class="hidden">
+        <div id="active-team-banner">TEAM 1 IS PLAYING</div>
+        <div id="guess-row">
+            <input type="text" id="guess-input" placeholder="Type your answer..." autocomplete="off" spellcheck="false">
+            <button id="guess-btn">ANSWER</button>
+        </div>
+        <div id="action-btns">
+            <button id="pass-btn" class="hidden">PASS TURN</button>
+            <button id="steal-btn" class="steal-btn hidden">⚡ STEAL!</button>
+        </div>
+    </div>
+
+    <!-- ── START BUTTON ───────────────────── -->
+    <button id="start-btn">START GAME</button>
+
+    <!-- ── FULL-SCREEN STRIKE FLASH ────────── -->
+    <div id="strike-flash">✗</div>
+
+    <!-- ── WRONG ANSWER FLASH ─────────────── -->
+    <div id="wrong-flash">WRONG!</div>
+
+    <!-- ── CORRECT ANSWER FLASH ───────────── -->
+    <div id="correct-flash">✓</div>
+
+    <!-- ── GAME OVER MODAL ─────────────────── -->
+    <div id="game-over-modal" class="hidden">
+        <div class="game-over-box">
+            <div id="game-over-emoji">🏆</div>
+            <div id="game-over-title">PLAYER WINS!</div>
+            <div id="game-over-msg">Final Score: 847 – 612</div>
+            <button id="btn-play-again">PLAY AGAIN</button>
+            <button id="btn-exit-game" onclick="window.location.reload()">EXIT</button>
+        </div>
+    </div>
+
+</div><!-- /#game-container -->
+
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+<script src="../../system/player_name.js"></script>
+<script src="../../system/system_ui.js"></script>
+<script src="feud_app.js"></script>
+</body>
+</html>

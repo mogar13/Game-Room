@@ -1,5 +1,5 @@
 // =============================================
-// CHECKERS — checkers_app.js
+// CHECKERS — checkers_app.js (V2 Engine + Upgraded AI)
 // =============================================
 
 const BUY_IN  = 150;
@@ -7,19 +7,30 @@ const WIN_PAY = 300;
 
 // --- Game State ---
 let gameActive = false;
-let board      = []; // board[r][c] = null | { color:'red'|'black', king:bool }
-let currentTurn   = 'red';   // red = player / p1, black = ai / p2
-let selectedCell  = null;    // { r, c }
-let highlightMoves = [];     // [{ r, c, jumped:[{r,c}] }]
-let forcedJumpers  = [];     // [{ r, c }] — pieces that must jump this turn
-let multiJumpPiece = null;   // { r, c } when mid-multi-jump
+let board      = []; 
+let currentTurn   = 'red';   
+let selectedCell  = null;    
+let highlightMoves = [];     
+let forcedJumpers  = [];     
+let multiJumpPiece = null;   
 
-// --- Online ---
+// --- Animation / Drag State ---
+let animating    = false;
+let dragSrc      = null;
+let isDragging   = false;
+let lastMoveFrom = null;
+let lastMoveTo   = null;
+let jumpWarnTimer = null;
+
+// --- Online (V2 Drop-In) ---
 let isOnline      = false;
 let myColor       = null;
 let currentRoomId = null;
 let roomListener  = null;
 let chatStarted   = false;
+let seats         = []; 
+let myId          = 1; 
+let isHost        = true; 
 
 // =============================================
 // SYSTEM UI INIT
@@ -60,11 +71,13 @@ document.getElementById('sys-chk-mode').addEventListener('change', function () {
         if (gameActive) resetGame();
         SystemUI.stopChat();
         chatStarted = false;
-        showLobby();
+        SystemUI.v2Lobby.show();
     } else {
         SystemUI.stopChat();
         chatStarted = false;
-        hideLobby();
+        SystemUI.v2Lobby.hide();
+        myId = 1;
+        isHost = true;
         resetGame();
     }
 });
@@ -78,11 +91,9 @@ document.getElementById('sys-chk-diff').addEventListener('change', function () {
 // =============================================
 function initBoard() {
     board = Array.from({ length: 8 }, () => Array(8).fill(null));
-    // Black: rows 0-2, dark squares (top)
     for (let r = 0; r < 3; r++)
         for (let c = 0; c < 8; c++)
             if ((r + c) % 2 === 1) board[r][c] = { color: 'black', king: false };
-    // Red: rows 5-7, dark squares (bottom)
     for (let r = 5; r < 8; r++)
         for (let c = 0; c < 8; c++)
             if ((r + c) % 2 === 1) board[r][c] = { color: 'red', king: false };
@@ -95,22 +106,40 @@ function renderBoard() {
     const boardEl = document.getElementById('checkers-board');
     boardEl.innerHTML = '';
 
+    const mode = document.getElementById('sys-chk-mode').value;
+    const isMyTurn = !animating && gameActive && (
+        (mode === 'ai'      && currentTurn === 'red') ||
+        (mode === 'hotseat') ||
+        (mode === 'online'  && currentTurn === myColor)
+    );
+
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
             const isDark = (r + c) % 2 === 1;
             const sq = document.createElement('div');
             sq.className = `sq ${isDark ? 'dark' : 'light'}`;
+            sq.dataset.r = r;
+            sq.dataset.c = c;
 
             if (isDark) {
-                const isSelected    = selectedCell && selectedCell.r === r && selectedCell.c === c;
-                const isMoveTarget  = highlightMoves.find(m => m.r === r && m.c === c);
+                sq.addEventListener('dragstart', e => e.preventDefault());
+
+                const isSelected     = selectedCell && selectedCell.r === r && selectedCell.c === c;
+                const moveTarget     = highlightMoves.find(m => m.r === r && m.c === c);
+                const isMoveTarget   = !!moveTarget;
+                const isCapTarget    = isMoveTarget && moveTarget.jumped && moveTarget.jumped.length > 0;
                 const isForcedJumper = !selectedCell && forcedJumpers.some(p => p.r === r && p.c === c);
+                const isLastFrom     = lastMoveFrom && lastMoveFrom.r === r && lastMoveFrom.c === c;
+                const isLastTo       = lastMoveTo   && lastMoveTo.r   === r && lastMoveTo.c   === c;
 
-                if (isSelected)     sq.classList.add('selected');
-                if (isMoveTarget)   sq.classList.add('can-move');
+                if (isSelected)   sq.classList.add('selected');
+                if (isCapTarget)  sq.classList.add('cap-ring');
+                if (isMoveTarget && !isSelected) sq.classList.add('can-move');
                 if (isForcedJumper) sq.classList.add('must-jump');
+                if (isLastFrom && !isSelected && !isMoveTarget) sq.classList.add('last-from');
+                if (isLastTo   && !isSelected && !isMoveTarget) sq.classList.add('last-to');
 
-                if (isMoveTarget) {
+                if (isMoveTarget && !board[r][c]) {
                     const dot = document.createElement('div');
                     dot.className = 'move-dot';
                     sq.appendChild(dot);
@@ -122,14 +151,34 @@ function renderBoard() {
                 if (piece) {
                     const pieceEl = document.createElement('div');
                     pieceEl.className = `piece${piece.king ? ' king' : ''}`;
+
                     const img = document.createElement('img');
-                    const col = piece.color;
-                    img.src = col === 'red'
-                        ? '../../system/images/pieces/red/pieceRed_border12.png'
-                        : '../../system/images/pieces/black/pieceBlack_border12.png';
-                    img.alt = col;
+                    img.src = piece.color === 'red'
+                        ? '../../system/images/pieces/red/token_circle_3d_red.png'
+                        : '../../system/images/pieces/black/token_circle_3d_black.png';
+                    img.alt = piece.color;
+                    img.draggable = false;
                     pieceEl.appendChild(img);
                     sq.appendChild(pieceEl);
+
+                    if (isMyTurn && piece.color === currentTurn) {
+                        sq.classList.add('draggable');
+                        sq.addEventListener('mousedown', e => {
+                            if (e.button !== 0 || animating) return;
+                            onSquareClick(r, c);
+                            if (selectedCell && selectedCell.r === r && selectedCell.c === c) {
+                                dragSrc = { r, c };
+                            }
+                        });
+                        sq.addEventListener('touchstart', e => {
+                            if (animating) return;
+                            e.preventDefault();
+                            onSquareClick(r, c);
+                            if (selectedCell && selectedCell.r === r && selectedCell.c === c) {
+                                dragSrc = { r, c };
+                            }
+                        }, { passive: false });
+                    }
                 }
             }
 
@@ -164,7 +213,25 @@ function updateStats() {
         msg = currentTurn === 'red' ? '✅ Your Turn' : '🤖 AI Thinking...';
     }
     banner.textContent = msg;
+    banner.style.color = '';
     banner.classList.remove('hidden');
+}
+
+// =============================================
+// JUMP WARNING
+// =============================================
+function showJumpWarning() {
+    const banner = document.getElementById('turn-banner');
+    banner.textContent = '⚠ A JUMP IS AVAILABLE — MUST JUMP!';
+    banner.style.color = '#e87070';
+    banner.classList.remove('hidden');
+    clearTimeout(jumpWarnTimer);
+    jumpWarnTimer = setTimeout(() => {
+        banner.style.color = '';
+        updateStats();
+    }, 1800);
+    renderBoard();
+    SystemUI.playSound('click');
 }
 
 // =============================================
@@ -175,13 +242,13 @@ function getMovesForPiece(r, c, b) {
     if (!piece) return { moves: [], jumps: [] };
 
     const dirs = [];
-    if (piece.color === 'red'   || piece.king) dirs.push([-1, -1], [-1, 1]); // red moves up
-    if (piece.color === 'black' || piece.king) dirs.push([ 1, -1], [ 1, 1]); // black moves down
+    if (piece.color === 'red'   || piece.king) dirs.push([-1, -1], [-1, 1]); 
+    if (piece.color === 'black' || piece.king) dirs.push([ 1, -1], [ 1, 1]); 
 
     const moves = [], jumps = [];
     for (const [dr, dc] of dirs) {
         const nr = r + dr, nc = c + dc;
-        if (nr < 0 || nr > 7 || nc < 0 || nc > 7) continue;
+        if (nr < 0 || nr > 7 || nc < 0 || nr > 7 || nc > 7) continue;
 
         if (!b[nr][nc]) {
             moves.push({ r: nr, c: nc, jumped: [] });
@@ -222,7 +289,7 @@ function getForcedJumpers(color, b) {
 // CLICK HANDLER
 // =============================================
 function onSquareClick(r, c) {
-    if (!gameActive) return;
+    if (!gameActive || animating) return;
 
     const mode = document.getElementById('sys-chk-mode').value;
     if (mode === 'online'  && currentTurn !== myColor)  return;
@@ -230,23 +297,22 @@ function onSquareClick(r, c) {
 
     const piece = board[r][c];
 
-    // Mid multi-jump: only the jumping piece's valid targets are clickable
     if (multiJumpPiece) {
         const target = highlightMoves.find(m => m.r === r && m.c === c);
-        if (target) executeMove(multiJumpPiece.r, multiJumpPiece.c, target);
+        if (target) doMove(multiJumpPiece.r, multiJumpPiece.c, target);
         return;
     }
 
-    // Clicking a highlighted move target
     if (selectedCell) {
         const target = highlightMoves.find(m => m.r === r && m.c === c);
-        if (target) { executeMove(selectedCell.r, selectedCell.c, target); return; }
+        if (target) { doMove(selectedCell.r, selectedCell.c, target); return; }
     }
 
-    // Selecting a piece
     if (piece && piece.color === currentTurn) {
-        // Forced jump? Can only select forced jumpers
-        if (forcedJumpers.length > 0 && !forcedJumpers.some(p => p.r === r && p.c === c)) return;
+        if (forcedJumpers.length > 0 && !forcedJumpers.some(p => p.r === r && p.c === c)) {
+            showJumpWarning();
+            return;
+        }
 
         selectedCell = { r, c };
         const { moves, jumps } = getMovesForPiece(r, c, board);
@@ -255,10 +321,76 @@ function onSquareClick(r, c) {
         return;
     }
 
-    // Clicking empty / wrong piece — deselect
     selectedCell = null;
     highlightMoves = [];
     renderBoard();
+}
+
+// =============================================
+// ANIMATION + MOVE WRAPPER
+// =============================================
+function doMove(fromR, fromC, move) {
+    const piece = board[fromR][fromC];
+    if (!piece) { executeMove(fromR, fromC, move); return; }
+
+    const imgSrc = piece.color === 'red'
+        ? '../../system/images/pieces/red/pieceRed_border12.png'
+        : '../../system/images/pieces/black/pieceBlack_border12.png';
+
+    selectedCell   = null;
+    highlightMoves = [];
+    dragSrc        = null;
+    renderBoard();
+
+    animatePiece(fromR, fromC, move.r, move.c, imgSrc, piece.king, () => {
+        animating = false;
+        executeMove(fromR, fromC, move);
+    });
+}
+
+function animatePiece(fromR, fromC, toR, toC, imgSrc, isKing, callback) {
+    animating = true;
+    const boardEl = document.getElementById('checkers-board');
+    const fromEl  = boardEl.children[fromR * 8 + fromC];
+    const toEl    = boardEl.children[toR   * 8 + toC];
+
+    if (!fromEl || !toEl) { animating = false; callback(); return; }
+
+    const fr = fromEl.getBoundingClientRect();
+    const tr = toEl.getBoundingClientRect();
+    const pieceW = fr.width * 0.82;
+    const pieceH = fr.height * 0.82;
+    const offX   = (fr.width  - pieceW) / 2;
+    const offY   = (fr.height - pieceH) / 2;
+
+    const srcPiece = fromEl.querySelector('.piece');
+    if (srcPiece) srcPiece.style.opacity = '0';
+
+    const ghost = document.createElement('div');
+    ghost.className = 'piece-ghost' + (isKing ? ' king' : '');
+    const img = document.createElement('img');
+    img.src = imgSrc;
+    ghost.appendChild(img);
+    ghost.style.cssText = `
+        left: ${fr.left + offX}px;
+        top:  ${fr.top  + offY}px;
+        width:  ${pieceW}px;
+        height: ${pieceH}px;
+    `;
+    document.body.appendChild(ghost);
+
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        const destOffX = (tr.width  - pieceW) / 2;
+        const destOffY = (tr.height - pieceH) / 2;
+        ghost.style.left = (tr.left + destOffX) + 'px';
+        ghost.style.top  = (tr.top  + destOffY) + 'px';
+    }));
+
+    setTimeout(() => {
+        ghost.remove();
+        if (srcPiece) srcPiece.style.opacity = '';
+        callback();
+    }, 210);
 }
 
 // =============================================
@@ -272,7 +404,9 @@ function executeMove(fromR, fromC, move) {
     for (const j of move.jumped) board[j.r][j.c] = null;
     SystemUI.playSound('click');
 
-    // King promotion
+    lastMoveFrom = { r: fromR, c: fromC };
+    lastMoveTo   = { r: move.r, c: move.c };
+
     const becameKing = !piece.king && (
         (piece.color === 'red'   && move.r === 0) ||
         (piece.color === 'black' && move.r === 7)
@@ -282,7 +416,6 @@ function executeMove(fromR, fromC, move) {
         SystemUI.playSound('chipTable');
     }
 
-    // Check multi-jump (only if captured and not just kinged)
     if (move.jumped.length > 0 && !becameKing) {
         const { jumps: further } = getMovesForPiece(move.r, move.c, board);
         if (further.length > 0) {
@@ -295,6 +428,7 @@ function executeMove(fromR, fromC, move) {
             if (mode === 'ai' && currentTurn === 'black') {
                 setTimeout(() => doAIMultiJump(move.r, move.c, further), 600);
             }
+            if (mode === 'online') pushToFirebase();
             return;
         }
     }
@@ -307,13 +441,13 @@ function endTurn() {
     selectedCell   = null;
     highlightMoves = [];
 
-    // Check if opponent has any moves left
     const opponent = currentTurn === 'red' ? 'black' : 'red';
     const { allMoves: oppM, allJumps: oppJ } = getAllMoves(opponent, board);
 
     if (oppM.length === 0 && oppJ.length === 0) {
         renderBoard();
         endGame(currentTurn);
+        if (document.getElementById('sys-chk-mode').value === 'online') pushToFirebase();
         return;
     }
 
@@ -323,6 +457,13 @@ function endTurn() {
     const mode = document.getElementById('sys-chk-mode').value;
     if (mode === 'online') {
         pushToFirebase();
+        
+        if (isHost && gameActive) {
+            const currentSeatIdx = currentTurn === 'red' ? 0 : 1;
+            if (seats[currentSeatIdx] && seats[currentSeatIdx].type === 'ai') {
+                setTimeout(doAITurn, 750);
+            }
+        }
     } else {
         renderBoard();
         if (mode === 'ai' && currentTurn === 'black') setTimeout(doAITurn, 750);
@@ -330,7 +471,7 @@ function endTurn() {
 }
 
 // =============================================
-// AI
+// AI (Upgraded Brain: Minimax with Alpha-Beta)
 // =============================================
 function doAITurn() {
     if (!gameActive || currentTurn !== 'black') return;
@@ -343,52 +484,77 @@ function doAITurn() {
     let chosen;
     if (diff === 'easy') {
         chosen = pool[Math.floor(Math.random() * pool.length)];
-
     } else if (diff === 'normal') {
-        if (allJumps.length > 0) {
-            chosen = allJumps[Math.floor(Math.random() * allJumps.length)];
-        } else {
-            const scored = allMoves.map(m => ({
-                m,
-                score: (board[m.fromR][m.fromC].king ? 1 : 0)
-                     + (m.c > 1 && m.c < 6 ? 0.5 : 0)
-                     + Math.random() * 1.5
-            }));
-            scored.sort((a, b) => b.score - a.score);
-            chosen = scored[0].m;
-        }
-    } else { // hard
-        chosen = getBestMove('black', board);
+        // Normal uses Depth 3
+        chosen = minimaxSearch(board, 3, 'black');
+    } else { 
+        // Hard uses Depth 6
+        chosen = minimaxSearch(board, 6, 'black');
     }
 
-    // Brief visual selection before moving
     selectedCell   = { r: chosen.fromR, c: chosen.fromC };
     highlightMoves = [];
     renderBoard();
 
     setTimeout(() => {
-        selectedCell = null;
-        executeMove(chosen.fromR, chosen.fromC, chosen);
+        doMove(chosen.fromR, chosen.fromC, chosen);
     }, 420);
+}
+
+function minimaxSearch(currentBoard, depth, color) {
+    const { allMoves, allJumps } = getAllMoves(color, currentBoard);
+    const pool = allJumps.length > 0 ? allJumps : allMoves;
+    if (pool.length === 1) return pool[0];
+
+    let bestMove = pool[0];
+    let bestValue = -Infinity;
+
+    for (const move of pool) {
+        const nextBoard = simulateMove(currentBoard, move.fromR, move.fromC, move);
+        const val = minimax(nextBoard, depth - 1, -Infinity, Infinity, false, 'red');
+        if (val > bestValue) {
+            bestValue = val;
+            bestMove = move;
+        }
+    }
+    return bestMove;
+}
+
+function minimax(b, depth, alpha, beta, isMaximizing, turnColor) {
+    const { allMoves, allJumps } = getAllMoves(turnColor, b);
+    const pool = allJumps.length > 0 ? allJumps : allMoves;
+
+    if (depth === 0 || pool.length === 0) {
+        return evalBoard(b, 'black'); // Evaluate from AI perspective
+    }
+
+    if (isMaximizing) {
+        let maxEval = -Infinity;
+        for (const m of pool) {
+            const nextB = simulateMove(b, m.fromR, m.fromC, m);
+            const ev = minimax(nextB, depth - 1, alpha, beta, false, 'red');
+            maxEval = Math.max(maxEval, ev);
+            alpha = Math.max(alpha, ev);
+            if (beta <= alpha) break;
+        }
+        return maxEval;
+    } else {
+        let minEval = Infinity;
+        for (const m of pool) {
+            const nextB = simulateMove(b, m.fromR, m.fromC, m);
+            const ev = minimax(nextB, depth - 1, alpha, beta, true, 'black');
+            minEval = Math.min(minEval, ev);
+            beta = Math.min(beta, ev);
+            if (beta <= alpha) break;
+        }
+        return minEval;
+    }
 }
 
 function doAIMultiJump(r, c, jumps) {
     if (!gameActive) return;
     const chosen = jumps[Math.floor(Math.random() * jumps.length)];
-    setTimeout(() => executeMove(r, c, chosen), 500);
-}
-
-function getBestMove(color, b) {
-    const { allMoves, allJumps } = getAllMoves(color, b);
-    const pool = allJumps.length > 0 ? allJumps : allMoves;
-
-    let best = pool[0], bestScore = -Infinity;
-    for (const move of pool) {
-        const sim   = simulateMove(b, move.fromR, move.fromC, move);
-        const score = evalBoard(sim, color) + Math.random() * 0.1; // tiny noise avoids repetition
-        if (score > bestScore) { bestScore = score; best = move; }
-    }
-    return best;
+    setTimeout(() => doMove(r, c, chosen), 500);
 }
 
 function simulateMove(b, fromR, fromC, move) {
@@ -401,17 +567,80 @@ function simulateMove(b, fromR, fromC, move) {
     return nb;
 }
 
-function evalBoard(b, myColor) {
+function evalBoard(b, aiColor) {
     let score = 0;
-    for (let r = 0; r < 8; r++)
+    const oppColor = aiColor === 'black' ? 'red' : 'black';
+
+    for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
             const p = b[r][c];
             if (!p) continue;
-            const val = p.king ? 3 : 1;
-            score += p.color === myColor ? val : -val;
+
+            let val = p.king ? 50 : 10;
+            
+            // Positional bonus (encourage center control)
+            if (r > 1 && r < 6 && c > 1 && c < 6) val += 2;
+
+            if (p.color === aiColor) score += val;
+            else score -= val;
         }
-    return score;
+    }
+    return score + Math.random(); // Add tiny jitter
 }
+
+// =============================================
+// GLOBAL DRAG LISTENERS
+// =============================================
+document.addEventListener('mousemove', () => {
+    if (dragSrc) isDragging = true;
+});
+
+document.addEventListener('mouseup', e => {
+    if (!dragSrc) return;
+    const wasDragging = isDragging;
+    isDragging = false;
+    if (!wasDragging) { dragSrc = null; return; }
+
+    const dropEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-r]');
+    if (dropEl) {
+        const dr = parseInt(dropEl.dataset.r);
+        const dc = parseInt(dropEl.dataset.c);
+        if (!isNaN(dr) && !isNaN(dc)) {
+            const src = multiJumpPiece || selectedCell;
+            if (src) {
+                const target = highlightMoves.find(m => m.r === dr && m.c === dc);
+                if (target) { doMove(src.r, src.c, target); dragSrc = null; return; }
+            }
+        }
+    }
+    dragSrc = null;
+});
+
+document.addEventListener('touchmove', () => {
+    if (dragSrc) isDragging = true;
+}, { passive: true });
+
+document.addEventListener('touchend', e => {
+    if (!dragSrc) return;
+    const wasDragging = isDragging;
+    isDragging = false;
+    if (!wasDragging) { dragSrc = null; return; }
+
+    const touch  = e.changedTouches[0];
+    const dropEl = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-r]');
+    if (dropEl) {
+        const dr = parseInt(dropEl.dataset.r);
+        const dc = parseInt(dropEl.dataset.c);
+        if (!isNaN(dr) && !isNaN(dc)) {
+            const src = multiJumpPiece || selectedCell;
+            if (src) {
+                const target = highlightMoves.find(m => m.r === dr && m.c === dc);
+                if (target) { doMove(src.r, src.c, target); dragSrc = null; return; }
+            }
+        }
+    }
+    dragSrc = null;
+});
 
 // =============================================
 // GAME LIFECYCLE
@@ -434,6 +663,8 @@ function startGame() {
     multiJumpPiece = null;
     selectedCell   = null;
     highlightMoves = [];
+    lastMoveFrom   = null;
+    lastMoveTo     = null;
 
     initBoard();
     forcedJumpers = getForcedJumpers(currentTurn, board);
@@ -444,7 +675,7 @@ function startGame() {
     const p1Lbl = document.getElementById('p1-label');
     const p2Lbl = document.getElementById('p2-label');
     if (mode === 'hotseat') { p1Lbl.textContent = 'Red'; p2Lbl.textContent = 'Black'; }
-    else if (mode === 'online') { p1Lbl.textContent = myColor === 'red' ? 'You' : 'Them'; p2Lbl.textContent = myColor === 'black' ? 'You' : 'Them'; }
+    else if (mode === 'online') { p1Lbl.textContent = seats[0] ? seats[0].name : 'Red'; p2Lbl.textContent = seats[1] ? seats[1].name : 'Black'; }
     else { p1Lbl.textContent = 'You'; p2Lbl.textContent = 'AI'; }
 
     updateStats();
@@ -452,11 +683,16 @@ function startGame() {
 
 function resetGame() {
     gameActive     = false;
+    animating      = false;
     multiJumpPiece = null;
     selectedCell   = null;
     highlightMoves = [];
     forcedJumpers  = [];
     currentTurn    = 'red';
+    lastMoveFrom   = null;
+    lastMoveTo     = null;
+    dragSrc        = null;
+    isDragging     = false;
 
     initBoard();
     renderBoard();
@@ -487,8 +723,6 @@ function endGame(winner) {
         msg   = playerWon ? `You win $${WIN_PAY}!` : 'Better luck next time.';
         if (playerWon) { SystemUI.money += WIN_PAY; SystemUI.updateMoneyDisplay(); }
         SystemUI.playSound(playerWon ? 'win' : 'lose');
-        SystemUI.stopChat();
-        chatStarted = false;
     } else {
         title = playerWon ? '🏆 You Win!' : '💀 You Lose';
         msg   = playerWon ? `You win $${WIN_PAY}!` : 'The AI won this round.';
@@ -497,123 +731,126 @@ function endGame(winner) {
     }
 
     showToast(title, msg);
-    document.getElementById('start-game-btn').textContent = 'PLAY AGAIN ($150)';
-}
-
-// =============================================
-// ONLINE MULTIPLAYER
-// =============================================
-function showLobby() {
-    document.getElementById('multiplayer-lobby').classList.remove('hidden');
-    wireLobbyButtons();
-}
-
-function hideLobby() {
-    document.getElementById('multiplayer-lobby').classList.add('hidden');
-}
-
-function wireLobbyButtons() {
-    // Clone to remove stale listeners
-    ['btn-create-room','btn-join-room','btn-cancel-lobby','lobby-close-btn'].forEach(id => {
-        const el = document.getElementById(id);
-        const clone = el.cloneNode(true);
-        el.replaceWith(clone);
-    });
-
-    document.getElementById('btn-create-room').addEventListener('click', createRoom);
-    document.getElementById('btn-join-room').addEventListener('click', joinRoom);
-
-    function cancelOnline() {
-        hideLobby();
-        if (roomListener) { roomListener(); roomListener = null; }
-        SystemUI.stopChat();
-        chatStarted = false;
-        document.getElementById('sys-chk-mode').value = 'ai';
-        document.getElementById('sys-chk-diff').parentElement.style.display = '';
-        resetGame();
+    
+    if (mode === 'online' && myId === 2) {
+        document.getElementById('start-game-btn').textContent = 'WAITING FOR HOST';
+    } else {
+        document.getElementById('start-game-btn').textContent = 'PLAY AGAIN ($150)';
     }
-    document.getElementById('btn-cancel-lobby').addEventListener('click', cancelOnline);
-    document.getElementById('lobby-close-btn').addEventListener('click', cancelOnline);
 }
 
-function createRoom() {
-    const roomId   = Math.floor(1000 + Math.random() * 9000).toString();
-    currentRoomId  = roomId;
-    myColor        = 'red';
-    isOnline       = true;
-    chatStarted    = false;
+// =============================================
+// ONLINE MULTIPLAYER (V2)
+// =============================================
 
-    window.dbSet(window.dbRef(window.db, `checkers_rooms/${roomId}`), {
-        status: 'waiting',
-        p1Name: SystemUI.getPlayerName(),
-        p2Name: null,
-        currentTurn: 'red',
-        board: null
-    });
-
-    document.getElementById('room-code-display').classList.remove('hidden');
-    document.getElementById('host-room-id').textContent = roomId;
-    document.getElementById('btn-create-room').disabled = true;
-
-    window.dbOnValue(window.dbRef(window.db, `checkers_rooms/${roomId}/status`), snap => {
-        if (snap.val() === 'playing') {
-            hideLobby();
-            onOnlineStart();
-        }
-    });
-}
-
-function joinRoom() {
-    const code  = document.getElementById('join-room-input').value.trim();
-    const errEl = document.getElementById('lobby-error-msg');
-    errEl.textContent = '';
-
-    if (code.length !== 4) { errEl.textContent = 'Enter a valid 4-digit code.'; return; }
-
-    window.dbGet(window.dbChild(window.dbRef(window.db), `checkers_rooms/${code}`)).then(snap => {
-        if (!snap.exists() || snap.val().status !== 'waiting') {
-            errEl.textContent = 'Room not found or already full.';
-            return;
-        }
-        currentRoomId = code;
-        myColor       = 'black';
-        isOnline      = true;
-        chatStarted   = false;
-
-        window.dbUpdate(window.dbRef(window.db, `checkers_rooms/${code}`), {
-            status: 'playing',
-            p2Name: SystemUI.getPlayerName()
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        isHost = true; myId = 1; myColor = "red"; chatStarted = false;
+        
+        const diff = document.getElementById('sys-chk-diff').value;
+        seats = [
+            { type: "human", name: SystemUI.getPlayerName() },
+            { type: "ai", name: "AI (" + diff + ")" }
+        ];
+        
+        window.dbSet(window.dbRef(window.db,'checkers_rooms/'+currentRoomId),{
+            status: "waiting",
+            currentTurn: "red",
+            board: null,
+            seats: seats
+        }).then(()=>{
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+            listenToRoom();
         });
-
-        hideLobby();
-        onOnlineStart();
-    }).catch(() => { errEl.textContent = 'Error joining room.'; });
-}
-
-function onOnlineStart() {
-    if (myColor === 'red') {
-        // Host sets up the initial board
+    },
+    onJoin: (code) => {
+        window.dbGet(window.dbChild(window.dbRef(window.db),`checkers_rooms/${code}`)).then(snap=>{
+            if(snap.exists()){
+                let data = snap.val();
+                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
+                    currentRoomId = code; isHost = false; myId = 2; myColor = "black"; chatStarted = false;
+                    
+                    let updatedSeats = data.seats;
+                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
+                    
+                    window.dbUpdate(window.dbRef(window.db,'checkers_rooms/'+currentRoomId),{
+                        seats: updatedSeats
+                    });
+                    
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    listenToRoom();
+                } else {
+                    SystemUI.v2Lobby.showError("ROOM FULL OR NO AI TO REPLACE");
+                }
+            } else {
+                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
+            }
+        });
+    },
+    onLeave: () => {
+        gameMode="ai";
+        document.getElementById("sys-chk-mode").value="ai";
+        document.getElementById('sys-chk-diff').parentElement.style.display = '';
+        localStorage.setItem("chess_mode","ai");
+        myId = 1;
+        isHost = true;
+        SystemUI.stopChat(); chatStarted=false;
+        if (roomListener) { roomListener(); roomListener = null; }
+        resetGame();
+    },
+    onStart: () => {
         initBoard();
         currentTurn   = 'red';
         gameActive    = true;
         forcedJumpers = getForcedJumpers(currentTurn, board);
-        pushToFirebase();
+        
+        window.dbUpdate(window.dbRef(window.db,'checkers_rooms/'+currentRoomId),{
+            status: "playing",
+            board: board,
+            currentTurn: currentTurn
+        });
+    },
+    onClose: () => {
+        if (gameMode === "online" && !gameActive) {
+            gameMode="ai";
+            document.getElementById("sys-chk-mode").value="ai";
+            document.getElementById('sys-chk-diff').parentElement.style.display = '';
+            myId = 1;
+            isHost = true;
+            if (roomListener) { roomListener(); roomListener = null; }
+            resetGame();
+        }
     }
+});
 
-    document.getElementById('start-game-btn').textContent = 'RESET';
-
+function listenToRoom() {
+    let onlineGameStarted = false;
+    
     if (roomListener) roomListener();
     roomListener = window.dbOnValue(window.dbRef(window.db, `checkers_rooms/${currentRoomId}`), snap => {
         const data = snap.val();
         if (!data) return;
 
-        if (data.board) {
-            // Firebase returns plain objects, not arrays — must convert back
+        seats = data.seats || [];
+        SystemUI.v2Lobby.renderSeats(seats);
+
+        if (data.status === 'playing' && !onlineGameStarted) {
+            onlineGameStarted = true;
+            SystemUI.v2Lobby.hide();
+            if (!chatStarted) {
+                chatStarted = true;
+                SystemUI.playSound('win');
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
+        }
+        
+        if (data.status === 'playing' && data.board) {
             board = Array.from({ length: 8 }, (_, r) =>
                 Array.from({ length: 8 }, (_, c) => (data.board[r] && data.board[r][c]) ? data.board[r][c] : null)
             );
             currentTurn   = data.currentTurn;
-            gameActive    = data.status === 'playing';
+            gameActive    = true;
             forcedJumpers = getForcedJumpers(currentTurn, board);
             multiJumpPiece = null;
             selectedCell   = null;
@@ -625,25 +862,24 @@ function onOnlineStart() {
                 return;
             }
 
+            const p1L = document.getElementById('p1-label');
+            const p2L = document.getElementById('p2-label');
+            p1L.textContent = myColor === 'red'   ? 'You' : (seats[0] ? seats[0].name : 'Red');
+            p2L.textContent = myColor === 'black' ? 'You' : (seats[1] ? seats[1].name : 'Black');
+
             renderBoard();
+            
+            if (isHost) {
+                const currentSeatIdx = currentTurn === 'red' ? 0 : 1;
+                if (seats[currentSeatIdx] && seats[currentSeatIdx].type === "ai" && !animating) {
+                    setTimeout(doAITurn, 750);
+                }
+            }
         }
-
-        // Start chat once both players are in
-        if (data.p1Name && data.p2Name && !chatStarted) {
-            chatStarted = true;
-            SystemUI.playSound('win');
-            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
-        }
-
-        const p1L = document.getElementById('p1-label');
-        const p2L = document.getElementById('p2-label');
-        p1L.textContent = myColor === 'red'   ? 'You' : (data.p1Name || 'Red');
-        p2L.textContent = myColor === 'black' ? 'You' : (data.p2Name || 'Black');
     });
 }
 
 function pushToFirebase() {
-    // Check for win before pushing
     const opponent = currentTurn === 'red' ? 'black' : 'red';
     const { allMoves: m, allJumps: j } = getAllMoves(currentTurn, board);
     const prevPlayerWon = (m.length === 0 && j.length === 0);
@@ -651,12 +887,12 @@ function pushToFirebase() {
     const payload = {
         board:       board,
         currentTurn: currentTurn,
-        status:      'playing'
+        status:      'playing',
+        seats:       seats
     };
 
     if (prevPlayerWon) {
-        // The player who just moved won
-        payload.winner = opponent === 'red' ? 'black' : 'red'; // flipped — endTurn already switched
+        payload.winner = opponent === 'red' ? 'black' : 'red'; 
     }
 
     window.dbUpdate(window.dbRef(window.db, `checkers_rooms/${currentRoomId}`), payload);
@@ -677,7 +913,18 @@ function showToast(title, msg) {
 // =============================================
 document.getElementById('start-game-btn').addEventListener('click', () => {
     const mode = document.getElementById('sys-chk-mode').value;
-    if (mode === 'online') { showLobby(); return; }
+    
+    if (mode === 'online') { 
+        if (myId === 2) return; 
+        
+        initBoard();
+        currentTurn   = 'red';
+        gameActive    = true;
+        forcedJumpers = getForcedJumpers(currentTurn, board);
+        pushToFirebase();
+        return; 
+    }
+    
     if (gameActive) resetGame();
     else startGame();
 });
@@ -694,9 +941,5 @@ document.getElementById('sys-reset-game-btn').addEventListener('click', () => {
     document.getElementById('sys-modal').classList.add('sys-hidden');
 });
 
-// Hide AI diff dropdown when not in AI mode
-document.getElementById('sys-chk-diff').parentElement.style.display = '';
-
-// Initial board render (pre-game)
 initBoard();
 renderBoard();

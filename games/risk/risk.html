@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Risk</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../system/system_ui.css">
+    <link rel="stylesheet" href="risk_style.css">
+</head>
+<body>
+
+<div id="game-wrap">
+
+    <!-- ── MAP AREA ──────────────────────────── -->
+    <div id="map-area">
+        <!-- SVG injected here by JS via fetch() -->
+        <div id="svg-container"></div>
+
+        <!-- Troop counters layered over SVG (absolutely positioned) -->
+        <div id="troop-layer"></div>
+
+        <!-- Territory name tooltip -->
+        <div id="territory-tooltip" class="hidden"></div>
+    </div>
+
+    <!-- ── SIDE PANEL ────────────────────────── -->
+    <div id="side-panel">
+
+        <!-- Phase indicator -->
+        <div id="phase-block">
+            <div id="phase-label">DRAFT</div>
+            <div id="phase-sub">Place troops</div>
+        </div>
+
+        <!-- Current player -->
+        <div id="current-player-block">
+            <div class="cp-dot" id="cp-dot"></div>
+            <div id="cp-name">—</div>
+        </div>
+
+        <!-- Troops to place (draft phase) -->
+        <div id="draft-block" class="hidden">
+            <div id="draft-count">0</div>
+            <div id="draft-label">TROOPS TO PLACE</div>
+        </div>
+
+        <!-- Attack info -->
+        <div id="attack-block" class="hidden">
+            <div id="atk-from-label">FROM</div>
+            <div id="atk-from-name">—</div>
+            <div id="atk-arrow">→</div>
+            <div id="atk-to-label">TO</div>
+            <div id="atk-to-name">—</div>
+            <button id="atk-cancel-btn">✕ Cancel</button>
+        </div>
+
+        <!-- Fortify info -->
+        <div id="fortify-block" class="hidden">
+            <div id="fort-from-label">MOVE FROM</div>
+            <div id="fort-from-name">—</div>
+            <div id="fort-arrow">→</div>
+            <div id="fort-to-label">MOVE TO</div>
+            <div id="fort-to-name">—</div>
+            <button id="fort-cancel-btn">✕ Cancel</button>
+        </div>
+
+        <!-- Phase action buttons -->
+        <div id="phase-actions">
+            <button id="btn-end-attack"  class="hidden">END ATTACK</button>
+            <button id="btn-end-turn"    class="hidden">END TURN →</button>
+            <button id="btn-trade-cards" class="hidden">🃏 TRADE CARDS</button>
+        </div>
+
+        <!-- Player list -->
+        <div id="player-roster">
+            <!-- Injected by JS -->
+        </div>
+
+        <!-- Dice result display -->
+        <div id="dice-result" class="hidden">
+            <div id="dice-atk-row"></div>
+            <div id="dice-sep">vs</div>
+            <div id="dice-def-row"></div>
+            <div id="dice-outcome"></div>
+        </div>
+
+    </div><!-- /#side-panel -->
+
+</div><!-- /#game-wrap -->
+
+<!-- ═══════════════════════════════════════════
+     ATTACK MODAL
+     ═══════════════════════════════════════════ -->
+<div id="attack-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <div class="modal-title">⚔️ ATTACK</div>
+        <div id="atk-summary" class="modal-subtitle"></div>
+
+        <div class="modal-row">
+            <div class="modal-col">
+                <div class="modal-section-label">ATTACKER DICE</div>
+                <div id="atk-dice-picker" class="dice-picker">
+                    <button class="dice-opt" data-dice="1">1</button>
+                    <button class="dice-opt" data-dice="2">2</button>
+                    <button class="dice-opt active" data-dice="3">3</button>
+                </div>
+            </div>
+            <div class="modal-col">
+                <div class="modal-section-label">DEFENDER DICE</div>
+                <div id="def-dice-picker" class="dice-picker">
+                    <button class="dice-opt" data-dice="1">1</button>
+                    <button class="dice-opt active" data-dice="2">2</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-actions">
+            <button class="modal-btn-cancel" id="atk-modal-cancel">RETREAT</button>
+            <button class="modal-btn-confirm" id="atk-modal-roll">🎲 ROLL</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     BLITZ RESULT MODAL (after combat)
+     ═══════════════════════════════════════════ -->
+<div id="battle-result-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <div class="modal-title" id="battle-result-title">Battle Result</div>
+        <div id="battle-dice-display"></div>
+        <div id="battle-losses"></div>
+        <div id="battle-territory-won" class="hidden">
+            <div id="battle-territory-msg"></div>
+            <div class="modal-section-label" style="margin-top:12px">MOVE HOW MANY TROOPS?</div>
+            <div id="troop-move-row">
+                <button id="troop-move-minus">−</button>
+                <span id="troop-move-count">3</span>
+                <button id="troop-move-plus">+</button>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn-confirm" id="battle-result-ok">CONTINUE</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     CARD TRADE MODAL
+     ═══════════════════════════════════════════ -->
+<div id="card-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <div class="modal-title">🃏 TRADE CARDS</div>
+        <div class="modal-subtitle" id="card-modal-sub">Select 3 cards to trade for troops</div>
+
+        <div id="card-hand-display">
+            <!-- Cards injected by JS -->
+        </div>
+
+        <div id="card-trade-sets">
+            <div class="modal-section-label">VALID TRADE SETS</div>
+            <div id="card-sets-list">
+                <!-- Valid sets injected by JS -->
+            </div>
+        </div>
+
+        <div id="card-trade-bonus" class="hidden">
+            <div id="card-bonus-label">+<span id="card-bonus-val">0</span> TROOPS</div>
+        </div>
+
+        <div class="modal-actions">
+            <button class="modal-btn-cancel" id="card-modal-cancel">CANCEL</button>
+            <button class="modal-btn-confirm" id="card-modal-trade" disabled>TRADE SET</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     FORTIFY MODAL (how many troops to move)
+     ═══════════════════════════════════════════ -->
+<div id="fortify-modal" class="modal-overlay hidden">
+    <div class="modal-box">
+        <div class="modal-title">🛡️ FORTIFY</div>
+        <div class="modal-subtitle" id="fortify-summary"></div>
+        <div class="modal-section-label">TROOPS TO MOVE</div>
+        <div id="fortify-picker">
+            <button id="fort-minus">−</button>
+            <span id="fort-count">1</span>
+            <button id="fort-plus">+</button>
+        </div>
+        <div class="modal-actions">
+            <button class="modal-btn-cancel" id="fortify-cancel">CANCEL</button>
+            <button class="modal-btn-confirm" id="fortify-confirm">MOVE TROOPS</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     GAME OVER
+     ═══════════════════════════════════════════ -->
+<div id="game-over-modal" class="hidden">
+    <div class="game-over-box">
+        <div id="game-over-emoji">🌍</div>
+        <div id="game-over-title">WORLD DOMINATION!</div>
+        <div id="game-over-msg"></div>
+        <button id="btn-play-again">PLAY AGAIN</button>
+        <button id="btn-exit-game" onclick="window.location.reload()">EXIT</button>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     START SCREEN
+     ═══════════════════════════════════════════ -->
+<div id="start-screen">
+    <div id="start-logo">
+        <div id="start-icon">🌍</div>
+        <div id="start-title">RISK</div>
+        <div id="start-sub">GLOBAL DOMINATION</div>
+    </div>
+
+    <div id="setup-panel">
+        <div class="setup-row">
+            <div class="setup-label">PLAYERS</div>
+            <div id="player-count-row">
+                <button class="count-btn" data-count="2">2</button>
+                <button class="count-btn" data-count="3">3</button>
+                <button class="count-btn active" data-count="4">4</button>
+                <button class="count-btn" data-count="5">5</button>
+                <button class="count-btn" data-count="6">6</button>
+            </div>
+        </div>
+        <div class="setup-row">
+            <div class="setup-label">SETUP</div>
+            <div id="setup-mode-row">
+                <button class="mode-btn active" data-setup="random">⚡ RANDOM</button>
+                <button class="mode-btn" data-setup="manual">✋ MANUAL</button>
+            </div>
+        </div>
+    </div>
+
+    <button id="start-btn">DEPLOY FORCES</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+<script src="../../system/player_name.js"></script>
+<script src="../../system/system_ui.js"></script>
+<script src="risk_app.js"></script>
+</body>
+</html>

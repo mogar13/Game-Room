@@ -1,260 +1,315 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap');
 
-* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+
+:root {
+    --bs: min(calc(100vw - 24px), calc(100dvh - 230px), 500px);
+    --sq: calc(var(--bs) / 8);
+    --light: #f0d9b5;
+    --dark:  #b58863;
+    --gold:  #e8b84b;
+    --text:  #c8b89a;
+}
 
 body {
-  background: radial-gradient(ellipse at 50% 20%, #0d3320 0%, #041208 100%);
-  color: white;
-  font-family: 'Segoe UI', sans-serif;
-  height: 100dvh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  touch-action: manipulation;
+    background: radial-gradient(ellipse at 50% 25%, #2e1208 0%, #0a0401 100%);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    touch-action: manipulation;
 }
 
-/* =============================================
-   GAME CONTAINER
-   ============================================= */
+/* ── LAYOUT ──────────────────────────────── */
 #game-container {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px 4px;
-  position: relative;
-  overflow: hidden;
-  gap: 4px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 58px 8px 16px;
+    gap: 8px;
+    width: 100%;
+    min-height: 100dvh;
 }
 
-/* =============================================
-   STATS BAR
-   ============================================= */
+/* ── STATS BAR ───────────────────────────── */
 #stats-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  max-width: 480px;
-  gap: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: var(--bs);
+    max-width: 500px;
+    gap: 8px;
 }
 
 .stat-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: rgba(0,0,0,0.5);
-  border: 1px solid #444;
-  border-radius: 10px;
-  padding: 5px 14px;
-  min-width: 70px;
-  transition: border-color 0.3s, box-shadow 0.3s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 6px 14px;
+    min-width: 72px;
+    transition: border-color 0.3s, box-shadow 0.3s;
 }
 .stat-box.active-turn {
-  border-color: #f1c40f;
-  box-shadow: 0 0 12px rgba(241,196,15,0.4);
+    border-color: var(--gold);
+    box-shadow: 0 0 12px rgba(232,184,75,0.35);
 }
-.stat-label { font-size: 0.65rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+.stat-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    color: var(--gold);
+}
 .stat-score {
-  font-size: 1.5rem; font-weight: bold; color: #f1c40f;
-  line-height: 1.2; font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: white;
+    line-height: 1.2;
+    font-family: 'Bebas Neue', sans-serif;
 }
-.stat-sub { font-size: 0.6rem; color: #777; letter-spacing: 0.5px; }
+.stat-sub { font-size: 0.6rem; color: #666; letter-spacing: 0.5px; }
 
 #center-badge {
-  background: rgba(0,0,0,0.6);
-  border: 1px solid #f1c40f;
-  border-radius: 10px;
-  padding: 6px 12px;
-  color: #f1c40f;
-  font-size: 0.75rem;
-  font-weight: bold;
-  text-align: center;
-  letter-spacing: 0.5px;
-  min-width: 80px;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid rgba(232,184,75,0.4);
+    border-radius: 10px;
+    padding: 6px 12px;
+    color: var(--gold);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-align: center;
+    min-width: 90px;
+    letter-spacing: 0.5px;
 }
 
-/* =============================================
-   TURN BANNER
-   ============================================= */
+/* ── TURN BANNER ─────────────────────────── */
 #turn-banner {
-  font-size: 0.9rem;
-  font-weight: bold;
-  letter-spacing: 1px;
-  color: #f1c40f;
-  min-height: 1.2em;
-  text-align: center;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.95rem;
+    letter-spacing: 2.5px;
+    color: var(--gold);
+    min-height: 1.4em;
+    text-align: center;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 24px;
+    padding: 6px 18px;
+    transition: color 0.2s;
 }
+#turn-banner.hidden { display: none; }
 
-/* =============================================
-   3D BOARD WRAPPER
-   ============================================= */
+/* ── BOARD WRAPPER — flat, no 3D ─────────── */
 #board-3d-wrapper {
-  perspective: 800px;
-  perspective-origin: 50% 35%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-shrink: 0;
-  /* Compensate for tilt so board appears centered vertically */
-  margin-top: -6px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
-/* =============================================
-   CHECKERS BOARD
-   ============================================= */
+/* ── THE BOARD ───────────────────────────── */
 #checkers-board {
-  --sq: clamp(28px, calc(min(86vw, 40vh) / 8), 60px);
-  display: grid;
-  grid-template-columns: repeat(8, var(--sq));
-  grid-template-rows: repeat(8, var(--sq));
-  /* 3D tilt — tabletop feel */
-  transform: rotateX(18deg);
-  transform-origin: center center;
-  /* Board frame — thick bottom simulates isometric front face */
-  border-top: 10px solid #4a2010;
-  border-left: 14px solid #3d1a08;
-  border-right: 14px solid #3d1a08;
-  border-bottom: 36px solid #1a0800;
-  outline: 3px solid #7a3510;
-  box-shadow:
-    0 30px 60px rgba(0,0,0,0.95),
-    0 10px 25px rgba(0,0,0,0.7),
-    inset 0 0 30px rgba(0,0,0,0.25);
+    display: grid;
+    grid-template-columns: repeat(8, var(--sq));
+    grid-template-rows: repeat(8, var(--sq));
+    border: 3px solid #3d1e0a;
+    outline: 1px solid #6a3518;
+    box-shadow:
+        0 0 0 1px #1a0802,
+        0 14px 55px rgba(0,0,0,0.9),
+        inset 0 0 0 1px rgba(255,200,100,0.05);
+    border-radius: 1px;
 }
 
-/* =============================================
-   SQUARES
-   ============================================= */
+/* ── SQUARES ─────────────────────────────── */
 .sq {
-  width: var(--sq);
-  height: var(--sq);
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    width: var(--sq);
+    height: var(--sq);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-user-drag: none;
+    user-drag: none;
 }
 
-/* Classic Staunton palette */
-.sq.light { background: #f0d9b5; }
-.sq.dark  { background: #b58863; cursor: pointer; }
+.sq.light { background-color: var(--light); }
+.sq.dark  { background-color: var(--dark); cursor: pointer; transition: background-color 0.06s; }
 
-/* Interaction states — only on dark squares */
-.sq.dark:hover            { background: #c49a72; }
-.sq.dark.selected         { background: #f6f338; }
-.sq.dark.can-move         { background: #9bc45a; }
-.sq.dark.must-jump        { background: #c0392b; }
-.sq.dark.must-jump:hover  { background: #e74c3c; }
+/* Selection / highlights */
+.sq.dark.selected  { background-color: rgba(80, 200, 80, 0.80) !important; }
+.sq.dark.can-move  { background-color: var(--dark); }
+.sq.dark.last-from { background-color: rgba(235, 200, 30, 0.40); }
+.sq.dark.last-to   { background-color: rgba(235, 200, 30, 0.55); }
 
-/* Move indicator dot */
+/* Forced jumper — red inner glow */
+.sq.dark.must-jump {
+    background-color: var(--dark);
+    box-shadow: inset 0 0 0 3px rgba(210, 30, 30, 0.70);
+}
+.sq.dark.must-jump:hover { box-shadow: inset 0 0 0 3px rgba(230, 60, 60, 0.90); }
+
+/* Capture destination ring */
+.sq.dark.cap-ring::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: calc(var(--sq) * 0.10) solid rgba(180, 40, 40, 0.60);
+    pointer-events: none;
+    z-index: 4;
+}
+
+/* Draggable cursor */
+.sq.draggable { cursor: grab; }
+.sq.draggable:active { cursor: grabbing; }
+
+/* ── MOVE DOT ────────────────────────────── */
 .move-dot {
-  width: 35%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.3);
-  position: absolute;
-  pointer-events: none;
-  z-index: 1;
+    width: 30%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: rgba(15, 10, 5, 0.24);
+    position: absolute;
+    pointer-events: none;
+    z-index: 3;
 }
 
-/* =============================================
-   PIECES
-   ============================================= */
+/* ── PIECES ──────────────────────────────── */
 .piece {
-  width: 82%;
-  aspect-ratio: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  transition: transform 0.1s;
-  cursor: pointer;
+    width: 82%;
+    aspect-ratio: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    pointer-events: none;
+    -webkit-user-drag: none;
+    user-drag: none;
+    transition: transform 0.1s;
 }
-.piece:active { transform: scale(0.9); }
+
+.sq.selected .piece { transform: translateY(-3px) scale(1.06); }
 
 .piece img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  filter: drop-shadow(0 3px 5px rgba(0,0,0,0.75));
-  pointer-events: none;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.80));
+    pointer-events: none;
+    -webkit-user-drag: none;
+    user-drag: none;
 }
 
 /* King crown */
 .piece.king::after {
-  content: '♛';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: calc(var(--sq) * 0.28);
-  color: #ffd700;
-  text-shadow: 0 0 4px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,1);
-  pointer-events: none;
-  line-height: 1;
+    content: '♛';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: calc(var(--sq) * 0.28);
+    color: #ffd700;
+    text-shadow: 0 0 4px rgba(0,0,0,1), 0 1px 3px rgba(0,0,0,1);
+    pointer-events: none;
+    line-height: 1;
 }
 
-/* =============================================
-   CONTROLS
-   ============================================= */
-#controls {
-  display: flex;
-  justify-content: center;
+/* ── DRAG GHOST ──────────────────────────── */
+.piece-ghost {
+    position: fixed;
+    pointer-events: none;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: left 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                top  0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    filter: drop-shadow(0 6px 18px rgba(0,0,0,0.85));
+    transform: scale(1.12);
+    transform-origin: center center;
 }
+.piece-ghost img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+.piece-ghost.king::after {
+    content: '♛';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: calc(var(--sq) * 0.28);
+    color: #ffd700;
+    text-shadow: 0 0 4px rgba(0,0,0,1);
+    pointer-events: none;
+    line-height: 1;
+}
+
+/* ── CONTROLS ────────────────────────────── */
+#controls { display: flex; justify-content: center; }
 
 #start-game-btn {
-  padding: 12px 32px;
-  border-radius: 25px;
-  background: linear-gradient(to bottom, #2ecc71, #27ae60);
-  color: white;
-  border: none;
-  font-weight: bold;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  font-size: 1rem;
-  letter-spacing: 0.5px;
-  transition: transform 0.1s, box-shadow 0.1s;
+    font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 2px;
+    font-size: 1rem;
+    padding: 12px 32px;
+    border-radius: 25px;
+    background: linear-gradient(180deg, #2ecc71 0%, #1a9950 100%);
+    color: white;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    transition: transform 0.1s, box-shadow 0.1s;
 }
-#start-game-btn:active {
-  transform: scale(0.95);
-  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-}
+#start-game-btn:active { transform: scale(0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
 
-/* =============================================
-   TOAST / RESULT MODAL
-   ============================================= */
+/* ── TOAST / RESULT MODAL ────────────────── */
 .modal-overlay {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.82);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 2000;
-  cursor: pointer;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.88);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2000;
+    cursor: pointer;
+    backdrop-filter: blur(5px);
 }
 .toast-box {
-  background: #1a252f;
-  padding: 28px 24px;
-  border-radius: 12px;
-  border: 2px solid #f1c40f;
-  color: white;
-  width: 88%;
-  max-width: 380px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.9);
-  text-align: center;
-  pointer-events: none;
+    background: linear-gradient(155deg, #2e1208 0%, #120601 100%);
+    padding: 28px 24px;
+    border-radius: 14px;
+    border: 2px solid #5a2a0e;
+    color: white;
+    width: 88%;
+    max-width: 360px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.85);
+    text-align: center;
+    pointer-events: none;
 }
 .toast-box h2 {
-  color: #f1c40f;
-  margin-bottom: 10px;
-  font-family: 'Playfair Display', serif;
-  font-size: 1.6rem;
-  border-bottom: 1px solid rgba(255,255,255,0.15);
-  padding-bottom: 10px;
+    font-family: 'Bebas Neue', sans-serif;
+    color: var(--gold);
+    margin-bottom: 10px;
+    font-size: 1.8rem;
+    letter-spacing: 3px;
+    border-bottom: 1px solid rgba(255,255,255,0.10);
+    padding-bottom: 10px;
 }
 .toast-box p {
-  color: #ccc;
-  font-size: 0.95rem;
-  margin-top: 8px;
+    color: #aaa;
+    font-size: 0.9rem;
+    margin-top: 8px;
+    line-height: 1.5;
+}
+
+/* ── MOBILE ──────────────────────────────── */
+@media (max-width: 480px) {
+    :root { --bs: min(calc(100vw - 14px), calc(100dvh - 215px)); }
+    #game-container { padding-top: 52px; gap: 6px; }
 }

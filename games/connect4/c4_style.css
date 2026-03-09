@@ -146,12 +146,12 @@ body::after {
 }
 
 .player1 {
-  background-image: url("../../system/images/pieces/yellow/pieceYellow_border10.png");
+  background-image: url("../../system/images/pieces/yellow/token_circle_flat_yellow.png");
   animation: dropIn 0.38s cubic-bezier(0.2, 0.8, 0.4, 1.2) forwards;
 }
 
 .player2 {
-  background-image: url("../../system/images/pieces/purple/piecePurple_border11.png");
+  background-image: url("../../system/images/pieces/red/token_circle_flat_red.png");
   animation: dropIn 0.38s cubic-bezier(0.2, 0.8, 0.4, 1.2) forwards;
 }
 

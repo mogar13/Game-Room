@@ -4,10 +4,14 @@
 let gameMode = "ai";
 localStorage.setItem("uno_mode", "ai"); 
 
+let aiDifficulty = localStorage.getItem("uno_diff") || "hard"; // NEW: AI Level
+
 let myId = 1;
 let currentRoomId = null;
-let isHost = false;
+let isHost = true; // Default to true so local play works
 let chatStarted = false;
+let seats = [];
+let roomListener = null;
 
 // Names
 let p1Name = SystemUI.getPlayerName();
@@ -38,6 +42,7 @@ function playCustomSound(type) {
 // --- MOVE LOGGING ---
 function logMove(player, msg, isSystem = false) {
     const logDiv = document.getElementById("move-log");
+    if(!logDiv) return;
     const entry = document.createElement("div");
     
     if (isSystem) {
@@ -58,6 +63,11 @@ let myHand = [];
 let oppHand = []; 
 let oppHandCount = 0;
 let currentTurn = 1; // 1 = You, 2 = Opponent/AI
+
+// FIX: works for both AI (currentTurn===1 means you) and Online (currentTurn===myId means you)
+function isMyTurn() {
+    return gameMode === "online" ? currentTurn === myId : currentTurn === 1;
+}
 let currentPlayColor = ""; 
 let calledUno = false; 
 let lastSeenUnoYell = "";
@@ -78,6 +88,14 @@ SystemUI.init({
                 { value: "ai", label: "🤖 vs AI" },
                 { value: "online", label: "🌐 Online" }
             ]
+        },
+        {
+            id: "sys-uno-diff",
+            options: [
+                { value: "easy", label: "Easy AI" },
+                { value: "normal", label: "Normal AI" },
+                { value: "hard", label: "Hard AI" }
+            ]
         }
     ]
 });
@@ -86,21 +104,47 @@ SystemUI.init({
 document.getElementById("p1-label").innerText = p1Name;
 
 // OS Menu Listeners
-document.getElementById("sys-uno-mode").value = gameMode;
-document.getElementById("sys-uno-mode").addEventListener("change", (e) => {
-    gameMode = e.target.value;
-    localStorage.setItem("uno_mode", gameMode);
-    document.getElementById("sys-modal").classList.add("sys-hidden");
-    
-    if (gameMode === "online") {
-        document.getElementById("multiplayer-lobby").classList.remove("hidden");
-    } else {
-        document.getElementById("multiplayer-lobby").classList.add("hidden");
-        SystemUI.stopChat();
-        chatStarted = false;
-        resetGame();
+setTimeout(() => {
+    const modeEl = document.getElementById("sys-uno-mode");
+    const diffEl = document.getElementById("sys-uno-diff");
+
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", (e) => {
+            gameMode = e.target.value;
+            localStorage.setItem("uno_mode", gameMode);
+            document.getElementById("sys-modal").classList.add("sys-hidden");
+            syncDiffVisibility();
+            
+            if (gameMode === "online") {
+                SystemUI.v2Lobby.show();
+            } else {
+                SystemUI.v2Lobby.hide();
+                SystemUI.stopChat();
+                chatStarted = false;
+                myId = 1; isHost = true;
+                if (roomListener) { roomListener(); roomListener = null; }
+                resetGame();
+            }
+        });
     }
-});
+
+    if (diffEl) {
+        diffEl.value = aiDifficulty;
+        diffEl.addEventListener("change", (e) => {
+            aiDifficulty = e.target.value;
+            localStorage.setItem("uno_diff", aiDifficulty);
+        });
+    }
+
+    syncDiffVisibility();
+}, 10);
+
+function syncDiffVisibility() {
+    const wrap = document.getElementById("sys-uno-diff")?.closest(".hud-dropdown-wrap") ||
+                 document.getElementById("sys-uno-diff")?.parentElement;
+    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
+}
 
 // ==========================================
 // 2. UNO DECK LOGIC
@@ -191,6 +235,7 @@ function startGame() {
 
 function renderHand() {
     const handDiv = document.getElementById("player-hand");
+    if(!handDiv) return;
     handDiv.innerHTML = "";
     
     myHand.forEach((card, index) => {
@@ -211,7 +256,7 @@ function renderHand() {
 
     cardsToAnimateP1 = 0; // Reset after animating
 
-    if (myHand.length === 2 && currentTurn === 1) {
+    if (myHand.length === 2 && isMyTurn()) {
         document.getElementById("uno-btn").classList.remove("hidden");
         calledUno = false;
     } else if (myHand.length !== 1) {
@@ -222,6 +267,7 @@ function renderHand() {
 
 function renderTable() {
     const discardDiv = document.getElementById("discard-pile");
+    if(!discardDiv) return;
     discardDiv.innerHTML = "";
     
     if (discardPile.length > 0) {
@@ -243,13 +289,15 @@ function renderTable() {
 
     const colorInd = document.getElementById("color-indicator");
     if (!currentPlayColor) {
-        colorInd.classList.add("hidden");
+        if(colorInd) colorInd.classList.add("hidden");
     } else {
-        colorInd.classList.remove("hidden");
-        colorInd.innerText = `CURRENT COLOR: ${currentPlayColor.toUpperCase()}`;
-        const hexColors = { red: '#e74c3c', blue: '#3498db', green: '#2ecc71', yellow: '#f1c40f' };
-        colorInd.style.backgroundColor = hexColors[currentPlayColor];
-        colorInd.style.color = currentPlayColor === 'yellow' ? '#000' : '#fff';
+        if(colorInd) {
+            colorInd.classList.remove("hidden");
+            colorInd.innerText = `CURRENT COLOR: ${currentPlayColor.toUpperCase()}`;
+            const hexColors = { red: '#e74c3c', blue: '#3498db', green: '#2ecc71', yellow: '#f1c40f' };
+            colorInd.style.backgroundColor = hexColors[currentPlayColor];
+            colorInd.style.color = currentPlayColor === 'yellow' ? '#000' : '#fff';
+        }
     }
 
     const deckVisual = document.querySelector("#draw-pile .card-back");
@@ -266,36 +314,43 @@ function renderTable() {
     }
 
     const oppHandDiv = document.getElementById("opponent-hand");
-    oppHandDiv.innerHTML = "";
-    for(let i=0; i < oppHandCount; i++){
-        const cardEl = document.createElement("div");
-        cardEl.className = "uno-card";
-        cardEl.style.zIndex = i;
-        cardEl.style.backgroundImage = `url('../../system/images/cards/uno/card-back/card_back.png')`;
-        
-        // Apply drawing animation to AI
-        if (i >= oppHandCount - cardsToAnimateP2) {
-            cardEl.classList.add("anim-draw-opponent");
-            setTimeout(() => cardEl.classList.remove("anim-draw-opponent"), 400);
-        }
+    if(oppHandDiv) {
+        oppHandDiv.innerHTML = "";
+        for(let i=0; i < oppHandCount; i++){
+            const cardEl = document.createElement("div");
+            cardEl.className = "uno-card";
+            cardEl.style.zIndex = i;
+            cardEl.style.backgroundImage = `url('../../system/images/cards/uno/card-back/card_back.png')`;
+            
+            // Apply drawing animation to AI
+            if (i >= oppHandCount - cardsToAnimateP2) {
+                cardEl.classList.add("anim-draw-opponent");
+                setTimeout(() => cardEl.classList.remove("anim-draw-opponent"), 400);
+            }
 
-        oppHandDiv.appendChild(cardEl);
+            oppHandDiv.appendChild(cardEl);
+        }
     }
     
     cardsToAnimateP2 = 0; // Reset after animating
 
-    document.getElementById("p1-label").innerText = p1Name;
-    document.getElementById("p2-label").innerHTML = `${p2Name}: <span id="p2-card-count">${oppHandCount}</span> cards`;
+    const p1Label = document.getElementById("p1-label");
+    const p2Label = document.getElementById("p2-label");
+    if(p1Label) p1Label.innerText = p1Name;
+    if(p2Label) p2Label.innerHTML = `${p2Name}: <span id="p2-card-count">${oppHandCount}</span> cards`;
 }
 
 function updateTurnBanner() {
     const banner = document.getElementById("turn-banner");
+    if(!banner) return;
     banner.classList.remove("hidden");
-    if (currentTurn === 1) {
+    if (isMyTurn()) {
         banner.innerText = "⭐ YOUR TURN";
         banner.style.color = "#2ecc71"; 
     } else {
-        banner.innerText = gameMode === "ai" ? "🤖 AI IS THINKING..." : "⏳ OPPONENT'S TURN";
+        const turnIdx = currentTurn - 1;
+        const isBot = seats[turnIdx] && seats[turnIdx].type === 'ai';
+        banner.innerText = isBot ? "🤖 AI IS THINKING..." : "⏳ OPPONENT'S TURN";
         banner.style.color = "#e74c3c"; 
     }
 }
@@ -329,6 +384,7 @@ function resetGame() {
 
 function showUnoShout(name) {
     const shout = document.getElementById("uno-shout-display");
+    if(!shout) return;
     shout.innerText = `${name} YELLED UNO!`;
     shout.classList.remove("hidden");
     shout.classList.add("animate-shout");
@@ -344,7 +400,7 @@ function showUnoShout(name) {
 // 4. CORE RULES: PLAYING & DRAWING CARDS
 // ==========================================
 function attemptPlayCard(index) {
-    if (currentTurn !== 1) return;
+    if (!isMyTurn()) return;
 
     const selectedCard = myHand[index];
     const topCard = discardPile[discardPile.length - 1];
@@ -361,7 +417,7 @@ function attemptPlayCard(index) {
             document.getElementById('color-picker-modal').classList.remove('hidden');
             renderHand();
             renderTable();
-            return; // Game pauses here until you click a color
+            return; 
         } else {
             currentPlayColor = selectedCard.color;
             handleActionCard(selectedCard, 1);
@@ -440,18 +496,20 @@ function handleActionCard(card, player) {
     // Resolve Turn Direction
     if (skipNext) {
         if (player === 1) {
-            currentTurn = 1; 
+            currentTurn = (gameMode === "online") ? myId : 1;
             updateTurnBanner();
             renderHand();
             renderTable();
-            if(gameMode === "online") pushGameState(`played ${card.name.toUpperCase()}`);
+            if(gameMode === "online") pushGameState(null, `played ${card.name.toUpperCase()}`);
         } else {
-            currentTurn = 2; 
+            currentTurn = (gameMode === "online") ? (myId === 1 ? 2 : 1) : 2; 
             updateTurnBanner();
             renderHand();
             renderTable();
-            if(gameMode === "online") pushGameState(`played ${card.name.toUpperCase()}`);
-            if(gameMode === "ai") setTimeout(aiTurn, 1500);
+            if(gameMode === "online") pushGameState(null, `played ${card.name.toUpperCase()}`);
+            
+            // V2 Drop-In AI: If turn is bot, fire AI
+            if (isHost && seats[currentTurn - 1]?.type === 'ai') setTimeout(aiTurn, 1500);
         }
     } else {
         if (player === 1) {
@@ -461,7 +519,7 @@ function handleActionCard(card, player) {
             updateTurnBanner();
             renderHand();
             renderTable();
-            if(gameMode === "online") pushGameState(`played ${card.name.toUpperCase()}`);
+            if(gameMode === "online") pushGameState(null, `played ${card.name.toUpperCase()}`);
         }
     }
 }
@@ -480,7 +538,7 @@ function drawCardsFor(player, num) {
     for(let i=0; i<num; i++) {
         if (deck.length === 0) {
             const topCard = discardPile.pop();
-            deck = discardPile;
+            deck = [...discardPile];
             shuffleDeck();
             discardPile = [topCard];
         }
@@ -495,7 +553,7 @@ function drawCardsFor(player, num) {
 }
 
 function drawCard() {
-    if (currentTurn !== 1) return;
+    if (!isMyTurn()) return;
     drawCardsFor(1, 1);
     playCustomSound('draw');
     logMove(p1Name, "drew a card.");
@@ -505,33 +563,65 @@ function drawCard() {
 }
 
 function advanceTurn(logMsg) {
-    currentTurn = 2;
+    currentTurn = (gameMode === "online") ? (myId === 1 ? 2 : 1) : 2;
     updateTurnBanner();
     if(gameMode === "online") pushGameState(null, logMsg);
-    if(gameMode === "ai") setTimeout(aiTurn, 1500);
+
+    // V2 Drop-In AI
+    if (isHost && seats[currentTurn - 1]?.type === 'ai') setTimeout(aiTurn, 1500);
+    else if (gameMode === "ai" && currentTurn === 2) setTimeout(aiTurn, 1500);
 }
 
-// Smarter AI
+// ==========================================
+// 5. THE AI BRAIN (V2 Strategic Upgrades)
+// ==========================================
 function aiTurn() {
-    if (deck.length === 0) {
+    if (deck.length === 0 && discardPile.length > 1) {
         const topCard = discardPile.pop();
-        deck = discardPile;
+        deck = [...discardPile];
         shuffleDeck();
         discardPile = [topCard];
     }
 
     const topCard = discardPile[discardPile.length - 1];
-    let playableIndex = -1;
+    let playableIndices = [];
     
     for(let i=0; i<oppHand.length; i++) {
         if (isValidPlay(oppHand[i], topCard)) {
-            playableIndex = i;
-            if (oppHand[i].type !== 'wild') break; 
+            playableIndices.push(i);
         }
     }
 
-    if (playableIndex !== -1) {
-        const playedCard = oppHand.splice(playableIndex, 1)[0];
+    if (playableIndices.length > 0) {
+        let chosenIndex = playableIndices[0];
+
+        if (aiDifficulty === "easy") {
+            // Easy AI picks randomly
+            chosenIndex = playableIndices[Math.floor(Math.random() * playableIndices.length)];
+        } else if (aiDifficulty === "hard") {
+            // Hard AI uses strategy
+            let actionCards = playableIndices.filter(idx => oppHand[idx].type === 'action');
+            let colorMatch = playableIndices.filter(idx => oppHand[idx].color === currentPlayColor && oppHand[idx].type !== 'wild');
+            
+            // 1. If human has few cards, aggressively use Action Cards
+            if (myHand.length <= 3 && actionCards.length > 0) {
+                chosenIndex = actionCards[0];
+            } 
+            // 2. Try to match color with the color AI has the most of
+            else if (colorMatch.length > 0) {
+                const colorCounts = { red:0, blue:0, green:0, yellow:0 };
+                oppHand.forEach(c => { if(c.color !== 'wild') colorCounts[c.color]++; });
+                colorMatch.sort((a, b) => colorCounts[oppHand[b].color] - colorCounts[oppHand[a].color]);
+                chosenIndex = colorMatch[0];
+            }
+            // 3. Save Wilds for when hand is empty or desperate
+            else if (playableIndices.length > 1) {
+                let nonWild = playableIndices.find(idx => oppHand[idx].type !== 'wild');
+                if (nonWild !== undefined) chosenIndex = nonWild;
+            }
+        }
+
+        const playedCard = oppHand.splice(chosenIndex, 1)[0];
         oppHandCount = oppHand.length;
         discardPile.push(playedCard);
         cardJustPlayed = true;
@@ -546,7 +636,14 @@ function aiTurn() {
 
         if (playedCard.type === 'wild') {
             const colors = ['red', 'blue', 'green', 'yellow'];
-            currentPlayColor = colors[Math.floor(Math.random() * colors.length)];
+            if (aiDifficulty === "hard") {
+                // Pick the color AI has the most of
+                const counts = { red:0, blue:0, green:0, yellow:0 };
+                oppHand.forEach(c => { if(c.color !== 'wild') counts[c.color]++; });
+                currentPlayColor = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+            } else {
+                currentPlayColor = colors[Math.floor(Math.random() * colors.length)];
+            }
             logMove("SYSTEM", `Color changed to ${currentPlayColor.toUpperCase()}`, true);
         } else {
             currentPlayColor = playedCard.color;
@@ -554,6 +651,7 @@ function aiTurn() {
 
         handleActionCard(playedCard, 2);
     } else {
+        // Draw card
         drawCardsFor(2, 1);
         playCustomSound('draw');
         logMove(p2Name, "drew a card.");
@@ -563,6 +661,7 @@ function aiTurn() {
         updateTurnBanner();
         renderHand();
         renderTable();
+        if(gameMode === "online") pushGameState(null, "drew a card.");
     }
 }
 
@@ -570,75 +669,86 @@ document.getElementById("start-game-btn").addEventListener("click", startGame);
 document.getElementById("draw-pile").addEventListener("click", drawCard);
 
 // ==========================================
-// 5. FIREBASE MULTIPLAYER LOBBY & SYNC
+// 6. FIREBASE MULTIPLAYER LOBBY & SYNC (V2)
 // ==========================================
-const lobbyUI = document.getElementById("multiplayer-lobby");
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        isHost = true; myId = 1; chatStarted = false;
+        
+        seats = [
+            { type: "human", name: SystemUI.getPlayerName() },
+            { type: "ai", name: "AI (" + aiDifficulty + ")" }
+        ];
 
-function generateRoomCode() {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let code = "";
-    for(let i=0; i<4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-    return code;
-}
-
-document.getElementById("btn-create-room").addEventListener("click", () => {
-    playCustomSound('win');
-    currentRoomId = generateRoomCode();
-    isHost = true;
-    myId = 1;
-    chatStarted = false;
-    
-    window.dbSet(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), {
-        status: "waiting",
-        players: 1,
-        p1Name: p1Name,
-        turn: 1
-    }).then(() => {
-        document.getElementById("room-code-display").classList.remove("hidden");
-        document.getElementById("host-room-id").innerText = currentRoomId;
-        document.getElementById("btn-create-room").disabled = true;
-        listenToRoom();
-    });
-});
-
-document.getElementById("btn-join-room").addEventListener("click", () => {
-    playCustomSound('win');
-    const code = document.getElementById("join-room-input").value.toUpperCase();
-    
-    window.dbGet(window.dbChild(window.dbRef(window.db), `uno_rooms/${code}`)).then((snapshot) => {
-        if (snapshot.exists() && snapshot.val().players === 1) {
-            currentRoomId = code;
-            isHost = false;
-            myId = 2;
-            chatStarted = false;
-            
-            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), {
-                players: 2,
-                p2Name: p1Name, 
-                status: "playing"
-            });
-            
-            lobbyUI.classList.add("hidden");
-            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
-            document.getElementById("start-game-btn").innerText = "Waiting for Host...";
-            document.getElementById("start-game-btn").disabled = true;
+        window.dbSet(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), {
+            status: "waiting",
+            players: 1,
+            p1Name: p1Name,
+            turn: 1,
+            seats: seats
+        }).then(() => {
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToRoom();
-        }
-    });
+        });
+    },
+    onJoin: (code) => {
+        window.dbGet(window.dbChild(window.dbRef(window.db), `uno_rooms/${code}`)).then((snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                if (data.seats && data.seats[1].type === "ai") {
+                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+                    
+                    let updatedSeats = data.seats;
+                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
+
+                    window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), {
+                        players: 2,
+                        p2Name: p1Name, 
+                        status: "playing",
+                        seats: updatedSeats
+                    });
+                    
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    listenToRoom();
+                } else {
+                    SystemUI.v2Lobby.showError("ROOM FULL");
+                }
+            } else {
+                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
+            }
+        });
+    },
+    onLeave: () => {
+        gameMode = "ai"; myId = 1; isHost = true;
+        SystemUI.stopChat(); chatStarted = false;
+        if (roomListener) { roomListener(); roomListener = null; }
+        resetGame();
+    },
+    onStart: () => {
+        window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "playing" });
+    }
 });
 
 function listenToRoom() {
-    window.dbOnValue(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), (snapshot) => {
+    let onlineGameStarted = false;
+    if (roomListener) roomListener();
+
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if(!data) return;
 
-        if(data.status === "playing" && !chatStarted) {
-            chatStarted = true;
-            if(lobbyUI) lobbyUI.classList.add("hidden");
-            playCustomSound('win');
-            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
-        }
+        seats = data.seats || [];
+        SystemUI.v2Lobby.renderSeats(seats);
 
+        if(data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true; SystemUI.v2Lobby.hide();
+            if(!chatStarted) {
+                chatStarted = true;
+                playCustomSound('win');
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
+        }
         syncFromFirebase(data);
     });
 }
@@ -651,24 +761,18 @@ function pushGameState(unoYelledBy = null, moveLogMsg = null) {
         discardPile: discardPile,
         turn: currentTurn,
         currentColor: currentPlayColor,
-        status: "playing"
+        status: "playing",
+        seats: seats
     };
     
     if (myId === 1) {
-        payload.p1Hand = myHand;
-        payload.p2Hand = oppHand;
+        payload.p1Hand = myHand; payload.p2Hand = oppHand;
     } else {
-        payload.p2Hand = myHand;
-        payload.p1Hand = oppHand;
+        payload.p2Hand = myHand; payload.p1Hand = oppHand;
     }
 
-    if (unoYelledBy) {
-        payload.lastUnoYell = Date.now() + "_" + unoYelledBy;
-    }
-
-    if (moveLogMsg) {
-        payload.lastLogSync = Date.now() + "_" + p1Name + "_" + moveLogMsg;
-    }
+    if (unoYelledBy) payload.lastUnoYell = Date.now() + "_" + unoYelledBy;
+    if (moveLogMsg) payload.lastLogSync = Date.now() + "_" + p1Name + "_" + moveLogMsg;
     
     window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), payload);
 }
@@ -684,24 +788,20 @@ function syncFromFirebase(data) {
         currentPlayColor = data.currentColor || "";
         
         if (myId === 1) {
-            myHand = data.p1Hand || [];
-            oppHand = data.p2Hand || [];
-            p2Name = data.p2Name || "Opponent";
+            myHand = data.p1Hand || []; oppHand = data.p2Hand || []; p2Name = seats[1].name;
         } else {
-            myHand = data.p2Hand || [];
-            oppHand = data.p1Hand || [];
-            p2Name = data.p1Name || "Opponent";
+            myHand = data.p2Hand || []; oppHand = data.p1Hand || []; p2Name = seats[0].name;
         }
         oppHandCount = oppHand.length;
 
-        // Trigger shout if opponent yelled UNO
+        // Shout if someone yelled UNO
         if (data.lastUnoYell && data.lastUnoYell !== lastSeenUnoYell) {
             lastSeenUnoYell = data.lastUnoYell;
             const yeller = data.lastUnoYell.split("_")[1];
             if(yeller !== p1Name) showUnoShout(yeller);
         }
 
-        // Print Opponent's Move Log
+        // Log Sync
         if (data.lastLogSync && data.lastLogSync !== lastLogSync) {
             lastLogSync = data.lastLogSync;
             const parts = data.lastLogSync.split("_");
@@ -713,24 +813,13 @@ function syncFromFirebase(data) {
         renderHand();
         renderTable();
         updateTurnBanner();
+
+        // V2 Drop-In AI Logic
+        if (isHost && seats[currentTurn - 1]?.type === 'ai') setTimeout(aiTurn, 1500);
+
     } else if (data.status === "finished") {
         resetGame();
     }
 }
-
-// OS Lobby Escapes
-document.getElementById("lobby-close-btn").addEventListener("click", () => {
-    lobbyUI.classList.add("hidden");
-});
-document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
-    gameMode = "ai";
-    p2Name = "AI";
-    document.getElementById("sys-uno-mode").value = "ai";
-    localStorage.setItem("uno_mode", "ai");
-    lobbyUI.classList.add("hidden");
-    SystemUI.stopChat();
-    chatStarted = false;
-    resetGame();
-});
 
 resetGame();

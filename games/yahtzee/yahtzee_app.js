@@ -1,11 +1,13 @@
 // ==========================================
 // 1. INITIALIZE OS & STATE
 // ==========================================
-let gameMode = localStorage.getItem("ytz_mode") || "ai";
+let gameMode = "ai"; // FIX: ALWAYS default to vs AI on launch
+localStorage.setItem("ytz_mode", "ai"); // Clear any cached online state
+
 let aiDifficulty = localStorage.getItem("ytz_diff") || "normal";
 let myId = 1;
 let currentRoomId = null;
-let isHost = false;
+let isHost = true; // Default to host so the local buttons work
 let chatStarted = false;
 
 SystemUI.init({
@@ -41,31 +43,49 @@ SystemUI.init({
     ]
 });
 
-document.getElementById("sys-ytz-mode").value = gameMode;
-document.getElementById("sys-ytz-diff").value = aiDifficulty;
-updateAiDiffVisibility();
-
-document.getElementById("sys-ytz-mode").addEventListener("change", (e) => {
-    gameMode = e.target.value;
-    localStorage.setItem("ytz_mode", gameMode);
-    updateAiDiffVisibility();
-    updatePlayerLabels();
-    if (gameMode === "online") {
-        document.getElementById("multiplayer-lobby").classList.remove("hidden");
-    } else {
-        document.getElementById("multiplayer-lobby").classList.add("hidden");
-        SystemUI.stopChat();
-        chatStarted = false;
+// Delay to wait for OS UI injection
+setTimeout(() => {
+    const modeEl = document.getElementById("sys-ytz-mode");
+    const diffEl = document.getElementById("sys-ytz-diff");
+    
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", (e) => {
+            gameMode = e.target.value;
+            localStorage.setItem("ytz_mode", gameMode);
+            updateAiDiffVisibility();
+            updatePlayerLabels();
+            
+            if (gameMode === "online") {
+                document.getElementById("multiplayer-lobby").classList.remove("hidden");
+            } else {
+                document.getElementById("multiplayer-lobby").classList.add("hidden");
+                SystemUI.stopChat();
+                chatStarted = false;
+                
+                myId = 1;
+                isHost = true;
+                resetGame();
+            }
+        });
     }
-});
-
-document.getElementById("sys-ytz-diff").addEventListener("change", (e) => {
-    aiDifficulty = e.target.value;
-    localStorage.setItem("ytz_diff", aiDifficulty);
-});
+    
+    if (diffEl) {
+        diffEl.value = aiDifficulty;
+        diffEl.addEventListener("change", (e) => {
+            aiDifficulty = e.target.value;
+            localStorage.setItem("ytz_diff", aiDifficulty);
+        });
+    }
+    updateAiDiffVisibility();
+}, 10);
 
 function updateAiDiffVisibility() {
-    document.getElementById("sys-ytz-diff").style.display = gameMode === "ai" ? "" : "none";
+    const diffEl = document.getElementById("sys-ytz-diff");
+    if (diffEl) {
+        const wrap = diffEl.closest('.hud-dropdown-wrap') || diffEl.parentElement;
+        wrap.style.display = gameMode === "ai" ? "" : "none";
+    }
 }
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
@@ -149,7 +169,6 @@ function listenToRoom() {
         const data = snapshot.val();
         if (!data) return;
 
-        // Fire once for BOTH host and joiner — independent of lobby visibility
         if (data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true;
             if (lobbyUI) lobbyUI.classList.add("hidden");
@@ -181,6 +200,10 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     updatePlayerLabels();
     SystemUI.stopChat();
     chatStarted = false;
+    
+    myId = 1;
+    isHost = true;
+    resetGame();
 });
 
 // ==========================================
@@ -390,7 +413,6 @@ function closeScorecard() {
 function renderScorecard() {
     const inner = document.getElementById("scorecard-inner");
 
-    // Can the current player score right now?
     const isMyTurn = gameState === "playing" && (
         (gameMode !== "online" && gameMode !== "ai") ||
         (gameMode === "ai" && currentTurn === 1) ||
@@ -420,7 +442,6 @@ function renderScorecard() {
     CATS.filter(c => c.section === 'upper').forEach(cat => {
         const v1 = s1[cat.id];
         const v2 = s2[cat.id];
-        // Potential score for MY scores if can score
         const pot = canScore && v1 === null && currentTurn === 1 ? calcScore(cat.id, dice) :
                     canScore && v2 === null && currentTurn === 2 ? calcScore(cat.id, dice) : null;
 
@@ -428,14 +449,13 @@ function renderScorecard() {
         const isClickable = canScore && myScores[cat.id] === null;
 
         html += `<tr class="scorecard-row${isClickable ? ' can-score' : ''}" 
-                     ${isClickable ? `onclick="scoreCategory('${cat.id}')"` : ''}>
+                     ${isClickable ? `onclick="window.scoreCategory('${cat.id}')"` : ''}>
             <td>${cat.label}</td>
             ${scoreCellHtml(v1, currentTurn === 1 && canScore && v1 === null, calcScore(cat.id, dice))}
             ${scoreCellHtml(v2, currentTurn === 2 && canScore && v2 === null, calcScore(cat.id, dice))}
         </tr>`;
     });
 
-    // Upper bonus row
     const upper1 = calcUpperTotal(s1);
     const upper2 = calcUpperTotal(s2);
     const bonus1Txt = s1.sixes !== null && UPPER_IDS.every(id => s1[id] !== null)
@@ -460,21 +480,19 @@ function renderScorecard() {
         const isClickable = canScore && myScores[cat.id] === null;
 
         html += `<tr class="scorecard-row${isClickable ? ' can-score' : ''}"
-                     ${isClickable ? `onclick="scoreCategory('${cat.id}')"` : ''}>
+                     ${isClickable ? `onclick="window.scoreCategory('${cat.id}')"` : ''}>
             <td>${cat.label}</td>
             ${scoreCellHtml(v1, currentTurn === 1 && canScore && v1 === null, calcScore(cat.id, dice))}
             ${scoreCellHtml(v2, currentTurn === 2 && canScore && v2 === null, calcScore(cat.id, dice))}
         </tr>`;
     });
 
-    // Yahtzee bonus row
     html += `<tr class="scorecard-row">
         <td>Yahtzee Bonus</td>
         <td class="score-col ${yb1 > 0 ? '' : 'zero'}">${yb1 > 0 ? '+' + (yb1 * 100) : '—'}</td>
         <td class="score-col ${yb2 > 0 ? '' : 'zero'}">${yb2 > 0 ? '+' + (yb2 * 100) : '—'}</td>
     </tr>`;
 
-    // Totals
     const total1 = calcTotalScore(s1, yb1);
     const total2 = calcTotalScore(s2, yb2);
     html += `<tr class="scorecard-total-row">
@@ -500,7 +518,9 @@ function scoreCellHtml(existingVal, isPotential, potentialVal) {
 // ==========================================
 // 8. SCORING A CATEGORY
 // ==========================================
-function scoreCategory(catId) {
+
+// FIX: Expose function to global scope so inline onclick handler can find it
+window.scoreCategory = function(catId) {
     if (gameState !== "playing") return;
     if (!hasRolledThisTurn) return;
     if (gameMode === "online" && currentTurn !== myId) return;
@@ -511,12 +531,6 @@ function scoreCategory(catId) {
 
     const val = calcScore(catId, dice);
 
-    // Yahtzee bonus check
-    if (catId === 'yahtzee' && val === 0 && myScores['yahtzee'] === 50) {
-        // bonus yahtzee — handled below if rolled a yahtzee
-    }
-
-    // Check for bonus Yahtzee (already scored 50 in yahtzee, rolling another)
     const counts = [0,0,0,0,0,0];
     dice.forEach(d => counts[d-1]++);
     if (Math.max(...counts) === 5 && myScores['yahtzee'] === 50) {
@@ -548,7 +562,7 @@ function scoreCategory(catId) {
 
     closeScorecard();
     advanceTurnLocal();
-}
+};
 
 // ==========================================
 // 9. TURN MANAGEMENT
@@ -564,14 +578,11 @@ function advanceTurnLocal() {
         return;
     }
 
-    // Switch turn
     if (gameMode === "local" || gameMode === "ai") {
         currentTurn = currentTurn === 1 ? 2 : 1;
-        // Advance round after both players have gone
         if (currentTurn === 1) round++;
     }
 
-    // Reset for new turn
     dice = [1,1,1,1,1];
     kept = [false,false,false,false,false];
     rollsLeft = 3;
@@ -614,15 +625,12 @@ function advanceTurnOnline(updateObj) {
 // ==========================================
 function aiTakeTurn() {
     if (gameState !== "playing") return;
-
-    // AI gets up to 3 rolls
     aiRollStep(3);
 }
 
 function aiRollStep(rollsRemaining) {
     if (gameState !== "playing") return;
 
-    // Roll non-kept dice
     new Audio('../../system/audio/dice-shake-1.ogg').play().catch(()=>{});
     for (let i = 0; i < 5; i++) {
         if (!kept[i]) dice[i] = Math.ceil(Math.random() * 6);
@@ -630,7 +638,6 @@ function aiRollStep(rollsRemaining) {
     rollsLeft = rollsRemaining - 1;
     hasRolledThisTurn = true;
 
-    // Animate dice
     for (let i = 0; i < 5; i++) {
         if (!kept[i]) {
             const el = getDieEl(i);
@@ -646,15 +653,9 @@ function aiRollStep(rollsRemaining) {
         renderScorecard();
 
         if (rollsLeft > 0) {
-            // Decide what to keep
             kept = aiDecideKeep(dice, scores2, aiDifficulty);
             updateDiceDisplay();
 
-            // Decide whether to roll again or score
-            const bestCat = aiBestCategory(dice, scores2);
-            const bestScore = calcScore(bestCat, dice);
-
-            // Hard always re-rolls if benefit; Normal has 80% chance
             const shouldReroll = rollsLeft > 0 && !kept.every(k => k) &&
                 (aiDifficulty === "hard" || Math.random() < 0.8);
 
@@ -664,12 +665,10 @@ function aiRollStep(rollsRemaining) {
             }
         }
 
-        // Score the best available category
         setTimeout(() => {
             const catId = aiBestCategory(dice, scores2);
             const val = calcScore(catId, dice);
 
-            // Bonus yahtzee check
             const counts = [0,0,0,0,0,0];
             dice.forEach(d => counts[d-1]++);
             if (Math.max(...counts) === 5 && scores2['yahtzee'] === 50) {
@@ -694,42 +693,32 @@ function aiDecideKeep(dice, scores, diff) {
     const maxFace = counts.indexOf(maxCount) + 1;
 
     if (diff === "normal") {
-        // Simple: keep matching faces, with some randomness
-        if (Math.random() < 0.15) return [false,false,false,false,false]; // sometimes reroll all
+        if (Math.random() < 0.15) return [false,false,false,false,false]; 
         return dice.map(d => d === maxFace && maxCount >= 2);
     }
 
-    // Hard: smarter decision
-    // Check for large straight potential
     const unique = [...new Set(dice)].sort((a,b)=>a-b);
     if (unique.length === 5 && scores['largeStraight'] === null) {
-        return dice.map(() => true); // keep all — already a large straight
+        return dice.map(() => true); 
     }
     if (unique.length >= 4 && scores['largeStraight'] === null) {
-        // Keep the straight dice
         const seq = findLongestSeq(dice);
         return dice.map(d => seq.includes(d));
     }
 
-    // Keep Yahtzee or four of a kind
     if (maxCount >= 4) return dice.map(d => d === maxFace);
 
-    // Full house check
     if (maxCount === 3 && counts.filter(c => c > 0).length === 2) {
-        return dice.map(() => true); // already full house
+        return dice.map(() => true); 
     }
 
-    // Three of a kind: keep the triplet
     if (maxCount >= 3) return dice.map(d => d === maxFace);
 
-    // Two pair: keep both pairs
     const pairs = counts.map((c, i) => c >= 2 ? i + 1 : 0).filter(v => v > 0);
     if (pairs.length >= 2) return dice.map(d => pairs.includes(d));
 
-    // One pair: keep the pair
     if (maxCount === 2) return dice.map(d => d === maxFace);
 
-    // Default: keep highest face value dice
     return dice.map(d => d >= 5);
 }
 
@@ -752,14 +741,12 @@ function aiBestCategory(dice, scores) {
     let best = null;
     let bestVal = -1;
 
-    // Hard: pick highest score. Normal: pick highest with slight randomness
     const available = CATS.filter(c => scores[c.id] === null);
     available.forEach(cat => {
         let val = calcScore(cat.id, dice);
 
-        // Prefer not zeroing out valuable categories
         if (aiDifficulty === "normal" && Math.random() < 0.2) {
-            val += Math.random() * 5; // small noise
+            val += Math.random() * 5; 
         }
 
         if (val > bestVal) {
@@ -768,9 +755,7 @@ function aiBestCategory(dice, scores) {
         }
     });
 
-    // If all available give 0, pick least valuable to sacrifice
     if (bestVal === 0 && available.length > 0) {
-        // Sacrifice upper section first (smaller payout), avoid sacrificing Yahtzee/straights if possible
         const sacrifice = available.find(c => c.section === 'upper') || available[0];
         return sacrifice.id;
     }

@@ -1,3 +1,8 @@
+// =============================================
+// BLACKJACK PRO — bj_app.js (V2 Engine)
+// Dynamic Seat Array & Dealer-as-Player Drop-In
+// =============================================
+
 let savedDifficulty = localStorage.getItem("blackjack_diff") || "17";
 
 SystemUI.init({
@@ -18,11 +23,33 @@ SystemUI.init({
                 { value: "17", label: "Normal" },
                 { value: "19", label: "Hard" }
             ]
+        },
+        {
+            id: "sys-bj-mode",
+            label: "Mode",
+            options: [
+                { value: "ai",     label: "🤖 vs Dealer" },
+                { value: "online", label: "🌐 Online" }
+            ]
         }
     ]
 });
 
-document.getElementById("sys-difficulty").value = savedDifficulty;
+// --- Online (V2 Drop-In) ---
+let gameMode      = "ai"; 
+let currentRoomId = null;
+let roomListener  = null;
+let chatStarted   = false;
+let seats         = []; 
+let myId          = 1; 
+let isHost        = true; 
+
+// UI Sync
+setTimeout(() => {
+    document.getElementById("sys-difficulty").value = savedDifficulty;
+    document.getElementById("sys-bj-mode").value = gameMode;
+    updateDealerRuleText();
+}, 10);
 
 function updateDealerRuleText() {
     const el = document.getElementById("dealer-rule-text");
@@ -31,7 +58,6 @@ function updateDealerRuleText() {
     else if (savedDifficulty === "19") el.textContent = "Dealer must draw to 18 and stand on 19";
     else                               el.textContent = "Dealer must draw to 16 and stand on 17";
 }
-updateDealerRuleText();
 
 document.getElementById("sys-difficulty").addEventListener("change", (e) => {
     savedDifficulty = e.target.value;
@@ -40,6 +66,18 @@ document.getElementById("sys-difficulty").addEventListener("change", (e) => {
     updateDealerRuleText();
     showToast("Difficulty Changed", "Rules updated for the next hand.");
     updateBetUI();
+});
+
+document.getElementById("sys-bj-mode").addEventListener("change", function () {
+    gameMode = this.value;
+    if (this.value === "online") {
+        SystemUI.v2Lobby.show();
+    } else {
+        SystemUI.v2Lobby.hide();
+        myId = 1; isHost = true;
+        SystemUI.stopChat(); chatStarted = false;
+        resetTableForBetting();
+    }
 });
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
@@ -61,7 +99,6 @@ let winStreak = parseInt(localStorage.getItem("blackjack_streak")) || 0;
 function updateStreakUI() { document.getElementById("streak-val").innerText = winStreak; }
 updateStreakUI();
 
-// OS BETTING INTEGRATION (Smart Sound Routing)
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
         if (!isGameOver) return;
@@ -69,13 +106,8 @@ SystemUI.setupBetting("os-betting-rack", {
             showToast("Not Enough Cash", "You don't have enough bankroll for that bet.");
             return;
         }
-        
-        // Smart Audio: First chip hits table, rest stack!
-        if (currentBet === 0) {
-            SystemUI.playSound('chipTable');
-        } else {
-            SystemUI.playSound('chipStack');
-        }
+        if (currentBet === 0) SystemUI.playSound('chipTable');
+        else SystemUI.playSound('chipStack');
 
         currentBet += val;
         updateBetUI();
@@ -107,23 +139,17 @@ function updateBetUI() {
 
 function renderTableChips() {
     const potDisplay = document.getElementById("table-pot-display");
-    
     if (currentBet === 0) {
-        potDisplay.classList.add("hidden");
+        if (potDisplay) potDisplay.classList.add("hidden");
         SystemUI.renderTableStacks(0, "table-bet-chips");
-        if (document.getElementById("dealer-bet-chips")) SystemUI.renderTableStacks(0, "dealer-bet-chips"); 
         return;
     }
-
-    potDisplay.innerText = `POT: $${currentBet * 2}`;
-    potDisplay.classList.remove("hidden");
-
-    SystemUI.renderTableStacks(currentBet, "table-bet-chips");
-    if (document.getElementById("dealer-bet-chips")) {
-        SystemUI.renderTableStacks(currentBet, "dealer-bet-chips");
+    if (potDisplay) {
+        potDisplay.innerText = `POT: $${currentBet * 2}`;
+        potDisplay.classList.remove("hidden");
     }
+    SystemUI.renderTableStacks(currentBet, "table-bet-chips");
 }
-
 
 let modalTimer;
 let resetPending = false;
@@ -140,14 +166,6 @@ function showToast(title, message, resetTableAfter = false) {
     if (resetTableAfter) resetTableForBetting();
   }, 3500);
 }
-document.getElementById("toast-modal").addEventListener("click", () => {
-  const overlay = document.getElementById("toast-modal");
-  if (!overlay.classList.contains("hidden")) {
-    clearTimeout(modalTimer);
-    overlay.classList.add("hidden");
-    if (resetPending) { resetTableForBetting(); resetPending = false; }
-  }
-});
 
 function resetTableForBetting() {
   isGameOver = true;
@@ -159,6 +177,7 @@ function resetTableForBetting() {
   renderGame(); 
   document.getElementById("playing-controls").classList.add("hidden");
   document.getElementById("betting-controls").classList.remove("hidden");
+  if (gameMode === "online") pushToFirebase();
 }
 
 const suits = ["♠", "♥", "♦", "♣"];
@@ -188,7 +207,7 @@ function shuffleDeck() {
 
 function dealCard(hand) {
   hand.push(deck.pop());
-  SystemUI.playSound('card'); // Triggers OS random card sounds
+  SystemUI.playSound('card');
 }
 
 function calculateScore(hand) {
@@ -202,18 +221,16 @@ function calculateScore(hand) {
 }
 
 document.getElementById("deal-btn").addEventListener("click", () => {
+  if (gameMode === "online" && myId === 2) return;
   SystemUI.money -= currentBet; 
   SystemUI.updateMoneyDisplay();
   
   isGameOver = false;
   updateBetUI(); 
-  
-  // OS Audio Instead of Local Audio
   SystemUI.playSound('shuffle');
 
   document.getElementById("betting-controls").classList.add("hidden");
   document.getElementById("playing-controls").classList.remove("hidden");
-  // Keep buttons locked during the deal animation to prevent spam
   document.getElementById("hit-btn").disabled = true;
   document.getElementById("stand-btn").disabled = true;
   document.getElementById("double-btn").disabled = true;
@@ -222,19 +239,18 @@ document.getElementById("deal-btn").addEventListener("click", () => {
   let numDecks = (savedDifficulty === "19") ? 6 : (savedDifficulty === "17" ? 4 : 1);
   if (deck.length < 20) { createDeck(numDecks); shuffleDeck(); }
 
-  // Added slight delays so the card sounds don't all trigger at the exact same millisecond
   setTimeout(() => dealCard(playerHand), 100);
   setTimeout(() => dealCard(dealerHand), 300);
   setTimeout(() => dealCard(playerHand), 500);
   setTimeout(() => {
       dealCard(dealerHand);
       renderGame();
-      // Unlock buttons only after all 4 cards are fully dealt
       document.getElementById("hit-btn").disabled = false;
       document.getElementById("stand-btn").disabled = false;
       document.getElementById("double-btn").disabled = false;
       if (dealerHand[0].name === "A") document.getElementById("insurance-btn").classList.remove("hidden");
       if (calculateScore(playerHand) === 21) handleStand();
+      if (gameMode === "online") pushToFirebase();
   }, 700);
 });
 
@@ -247,6 +263,7 @@ document.getElementById("hit-btn").addEventListener("click", () => {
   
   if (calculateScore(playerHand) > 21) determineWinner();
   else if (calculateScore(playerHand) === 21) handleStand();
+  if (gameMode === "online") pushToFirebase();
 });
 
 document.getElementById("stand-btn").addEventListener("click", handleStand);
@@ -254,14 +271,22 @@ document.getElementById("stand-btn").addEventListener("click", handleStand);
 function handleStand() {
   if (isGameOver) return;
   document.getElementById("insurance-btn").classList.add("hidden");
-  const difficultyLimit = Number(savedDifficulty);
   
+  const currentSeatIdx = 1; 
+  if (gameMode === "online" && seats[currentSeatIdx] && seats[currentSeatIdx].type === "human") {
+      if (myId === 1) {
+          showToast("Waiting", "Waiting for Dealer to move...");
+          return;
+      }
+  }
+
+  const difficultyLimit = Number(savedDifficulty);
   function playDealerTurn() {
       let dealerScore = calculateScore(dealerHand);
       if (dealerScore < difficultyLimit) {
           dealCard(dealerHand);
           renderGame();
-          setTimeout(playDealerTurn, 600); // 600ms delay between dealer draws for tension!
+          setTimeout(playDealerTurn, 600);
       } else {
           determineWinner();
       }
@@ -287,6 +312,7 @@ document.getElementById("double-btn").addEventListener("click", () => {
   
   if (calculateScore(playerHand) > 21) determineWinner();
   else handleStand();
+  if (gameMode === "online") pushToFirebase();
 });
 
 document.getElementById("insurance-btn").addEventListener("click", () => {
@@ -310,6 +336,7 @@ document.getElementById("insurance-btn").addEventListener("click", () => {
   } else {
     showToast("Safe!", "Dealer does not have Blackjack.");
   }
+  if (gameMode === "online") pushToFirebase();
 });
 
 function determineWinner() {
@@ -350,7 +377,6 @@ function determineWinner() {
 
 function getCardImage(card) {
   const suitMap = { "♠": "Spades", "♥": "Hearts", "♦": "Diamonds", "♣": "Clubs" };
-  // FIXED: Pointing to the new standard cards folder
   return `../../system/images/cards/standard/card${suitMap[card.suit]}${card.name}.png`;
 }
 
@@ -390,6 +416,72 @@ function renderGame() {
       dBubble.innerText = calculateScore(dealerHand); dBubble.classList.remove("hidden");
     } else { dBubble.classList.add("hidden"); }
   } else { dBubble.classList.add("hidden"); }
+}
+
+// --- V2 MULTIPLAYER (Lobby Hooks) ---
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        isHost = true; myId = 1; chatStarted = false;
+        seats = [{ type: "human", name: SystemUI.getPlayerName() }, { type: "ai", name: "Dealer" }];
+        window.dbSet(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{
+            status: "waiting", seats: seats, pHand: [], dHand: [], isGameOver: true, bet: 0
+        }).then(()=>{
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+            listenToRoom();
+        });
+    },
+    onJoin: (code) => {
+        window.dbGet(window.dbChild(window.dbRef(window.db),`bj_rooms/${code}`)).then(snap=>{
+            if(snap.exists()){
+                let data = snap.val();
+                if (data.seats && data.seats[1].type === "ai") {
+                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+                    let updatedSeats = data.seats;
+                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
+                    window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{ seats: updatedSeats, status: "playing" });
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    listenToRoom();
+                }
+            }
+        });
+    },
+    onLeave: () => {
+        gameMode="ai"; myId=1; isHost=true; resetTableForBetting();
+    },
+    onStart: () => {
+        window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{ status: "playing" });
+    }
+});
+
+function listenToRoom() {
+    let onlineGameStarted = false;
+    window.dbOnValue(window.dbRef(window.db,'bj_rooms/'+currentRoomId), snap=>{
+        const data=snap.val(); if(!data) return;
+        seats = data.seats || [];
+        SystemUI.v2Lobby.renderSeats(seats);
+        if(data.status==="playing" && !onlineGameStarted){
+            onlineGameStarted = true; SystemUI.v2Lobby.hide();
+            if(!chatStarted){ chatStarted=true; SystemUI.startChat(currentRoomId,SystemUI.getPlayerName()); }
+        }
+        syncOnline(data);
+    });
+}
+
+function syncOnline(data) {
+    playerHand = data.pHand || [];
+    dealerHand = data.dHand || [];
+    isGameOver = data.isGameOver;
+    currentBet  = data.bet || 0;
+    renderGame();
+    updateBetUI();
+}
+
+function pushToFirebase() {
+    if (gameMode !== "online") return;
+    window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{
+        pHand: playerHand, dHand: dealerHand, isGameOver: isGameOver, bet: currentBet
+    });
 }
 
 updateBetUI();

@@ -1,12 +1,12 @@
 // ==========================================
 // 1. INITIALIZE OS & STATE
 // ==========================================
-let gameMode = "ai";
-localStorage.setItem("rummy_mode", "ai"); 
+let gameMode = "ai"; // FIX: ALWAYS default to vs AI on launch
+localStorage.setItem("rummy_mode", "ai"); // Clear any cached online state
 
 let myId = 1;
 let currentRoomId = null;
-let isHost = false;
+let isHost = true; // Default to host so the start button is clickable locally
 let chatStarted = false;
 
 let p1Name = SystemUI.getPlayerName();
@@ -37,14 +37,31 @@ SystemUI.init({
 
 document.getElementById("p1-label").innerText = p1Name;
 
-document.getElementById("sys-rummy-mode").value = gameMode;
-document.getElementById("sys-rummy-mode").addEventListener("change", (e) => {
-    gameMode = e.target.value;
-    localStorage.setItem("rummy_mode", gameMode);
-    document.getElementById("sys-modal").classList.add("sys-hidden");
-    if(gameMode === "online") document.getElementById("multiplayer-lobby").classList.remove("hidden");
-    else { document.getElementById("multiplayer-lobby").classList.add("hidden"); SystemUI.stopChat(); chatStarted = false; resetGame(); }
-});
+// Sync dropdown after SystemUI injects it
+setTimeout(() => {
+    const modeDropdown = document.getElementById("sys-rummy-mode");
+    if (modeDropdown) {
+        modeDropdown.value = gameMode;
+        modeDropdown.addEventListener("change", (e) => {
+            gameMode = e.target.value;
+            localStorage.setItem("rummy_mode", gameMode);
+            document.getElementById("sys-modal").classList.add("sys-hidden");
+            
+            if(gameMode === "online") {
+                document.getElementById("multiplayer-lobby").classList.remove("hidden");
+            } else { 
+                document.getElementById("multiplayer-lobby").classList.add("hidden"); 
+                SystemUI.stopChat(); 
+                chatStarted = false; 
+                // Reset host privileges so local start button works
+                myId = 1;
+                isHost = true;
+                p2Name = "AI";
+                resetGame(); 
+            }
+        });
+    }
+}, 10);
 
 // --- RUMMY GAME STATE ---
 let deck = [];
@@ -55,11 +72,16 @@ let oppHandCount = 0;
 let myMelds = [];
 let oppMelds = [];
 
-let currentTurn = 1; 
-let currentPhase = "draw"; 
-let selectedCards = []; 
+let currentTurn = 1; // 1 = player 1 / host, 2 = player 2 / ai
+let currentPhase = "draw"; // "draw" or "discard"
+let selectedCards = [];
 let gameState = "setup";
 let lastLogSync = "";
+
+function isMyTurn() {
+    if (gameMode === "online") return currentTurn === myId;
+    return currentTurn === 1;
+}
 
 // ==========================================
 // 2. DECK & DEAL LOGIC
@@ -68,7 +90,7 @@ function buildDeck() {
     deck = [];
     const suits = ['Spades', 'Hearts', 'Diamonds', 'Clubs'];
     const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-    
+
     suits.forEach(suit => {
         values.forEach((value, index) => {
             deck.push({
@@ -77,7 +99,7 @@ function buildDeck() {
             });
         });
     });
-    
+
     for (let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -85,25 +107,24 @@ function buildDeck() {
 }
 
 function startGame() {
-    if (gameMode === "online" && !isHost) return; 
-    
+    if (gameMode === "online" && !isHost) return;
+
     playSound('shuffle');
     document.getElementById("start-game-btn").classList.add("hidden");
     document.getElementById("sort-btn").classList.remove("hidden");
-    
+
     buildDeck();
     myHand = []; oppHand = []; discardPile = []; myMelds = []; oppMelds = []; selectedCards = [];
     gameState = "playing";
     currentTurn = 1;
     currentPhase = "draw";
 
-    // Deal 10 cards
     for(let i=0; i<10; i++) {
         myHand.push(deck.pop());
         oppHand.push(deck.pop());
     }
     oppHandCount = oppHand.length;
-    
+
     discardPile.push(deck.pop());
 
     renderBoard();
@@ -116,7 +137,7 @@ document.getElementById("sort-btn").addEventListener("click", () => {
         if (a.rank !== b.rank) return a.rank - b.rank;
         return a.suit.localeCompare(b.suit);
     });
-    selectedCards = []; 
+    selectedCards = [];
     renderBoard();
 });
 
@@ -125,16 +146,16 @@ document.getElementById("sort-btn").addEventListener("click", () => {
 // ==========================================
 
 document.getElementById("stock-pile").addEventListener("click", () => {
-    if(currentTurn !== 1 || currentPhase !== "draw" || gameState !== "playing") return;
-    
+    if(!isMyTurn() || currentPhase !== "draw" || gameState !== "playing") return;
+
     if(deck.length === 0) {
         const topDiscard = discardPile.pop();
-        deck = discardPile.reverse();
+        deck = [...discardPile].reverse(); 
         discardPile = [topDiscard];
     }
-    
+
     myHand.push(deck.pop());
-    currentPhase = "discard"; 
+    currentPhase = "discard";
     playSound('card-draw');
     logMove(p1Name, "drew from deck.");
     renderBoard();
@@ -142,8 +163,8 @@ document.getElementById("stock-pile").addEventListener("click", () => {
 });
 
 document.getElementById("discard-pile").addEventListener("click", () => {
-    if(currentTurn !== 1 || currentPhase !== "draw" || discardPile.length === 0 || gameState !== "playing") return;
-    
+    if(!isMyTurn() || currentPhase !== "draw" || discardPile.length === 0 || gameState !== "playing") return;
+
     myHand.push(discardPile.pop());
     currentPhase = "discard";
     playSound('card-draw');
@@ -171,7 +192,7 @@ function isValidMeld(cards) {
 
 document.getElementById("meld-btn").addEventListener("click", () => {
     const selected = selectedCards.map(idx => myHand[idx]);
-    
+
     if(isValidMeld(selected)) {
         myMelds.push(selected);
         selectedCards.sort((a,b) => b - a).forEach(idx => { myHand.splice(idx, 1); });
@@ -188,21 +209,21 @@ document.getElementById("meld-btn").addEventListener("click", () => {
 });
 
 document.getElementById("discard-btn").addEventListener("click", () => {
-    if(selectedCards.length !== 1 || gameState !== "playing") return;
-    
+    if(selectedCards.length !== 1 || gameState !== "playing" || !isMyTurn() || currentPhase !== "discard") return;
+
     const idx = selectedCards[0];
     const card = myHand.splice(idx, 1)[0];
     discardPile.push(card);
-    
+
     selectedCards = [];
     currentPhase = "draw";
-    currentTurn = 2; 
-    
-    playSound('card-shove-2');
+    currentTurn = (gameMode === "online") ? (myId === 1 ? 2 : 1) : 2;
+
+    playSound('switch4'); // Simple snappy sound for discarding
     logMove(p1Name, `discarded a card.`);
     renderBoard();
     checkWin(1);
-    
+
     if(gameState === "playing") {
         if(gameMode === "online") pushGameState();
         if(gameMode === "ai") setTimeout(aiTurn, 1500);
@@ -224,7 +245,7 @@ function checkWin(player) {
 }
 
 // ==========================================
-// 4. THE AI BRAIN (NOW MELADS!)
+// 4. THE AI BRAIN
 // ==========================================
 function aiTurn() {
     if (gameState !== "playing") return;
@@ -232,7 +253,7 @@ function aiTurn() {
     // 1. AI Draws
     if(deck.length === 0) {
         const topDiscard = discardPile.pop();
-        deck = discardPile.reverse();
+        deck = [...discardPile].reverse(); 
         discardPile = [topDiscard];
     }
 
@@ -247,7 +268,7 @@ function aiTurn() {
     oppHandCount = oppHand.length;
     renderBoard();
 
-    // 2. AI Attempts to Meld (Searches for 3-of-a-kind)
+    // 2. AI Attempts to Meld (searches for 3-of-a-kind)
     let rankCounts = {};
     oppHand.forEach(c => {
         rankCounts[c.rank] = rankCounts[c.rank] || [];
@@ -257,26 +278,25 @@ function aiTurn() {
     for (let rank in rankCounts) {
         if (rankCounts[rank].length >= 3) {
             oppMelds.push(rankCounts[rank]);
-            // Remove from hand
             oppHand = oppHand.filter(c => c.rank != rank);
             oppHandCount = oppHand.length;
             logMove(p2Name, "played a Meld!");
             playSound('win');
             renderBoard();
-            break; // Only play one meld per turn to be safe
+            break;
         }
     }
 
     // 3. AI Discards
     setTimeout(() => {
         if (gameState !== "playing") return;
-        const discard = oppHand.shift(); 
+        const discard = oppHand.shift();
         discardPile.push(discard);
         oppHandCount = oppHand.length;
-        
-        playSound('card-shove-2');
+
+        playSound('switch4');
         logMove(p2Name, "discarded a card.");
-        
+
         currentTurn = 1;
         currentPhase = "draw";
         renderBoard();
@@ -288,11 +308,11 @@ function aiTurn() {
 // 5. RENDER ENGINE & UI
 // ==========================================
 function toggleSelection(index) {
-    if (currentPhase !== "discard" || currentTurn !== 1) return;
+    if (currentPhase !== "discard" || !isMyTurn()) return;
     const pos = selectedCards.indexOf(index);
     if (pos > -1) selectedCards.splice(pos, 1);
     else selectedCards.push(index);
-    playSound('card-draw');
+    playSound('click1'); // Nice tactile click
     renderBoard();
 }
 
@@ -375,25 +395,36 @@ function renderBoard() {
     turnBanner.classList.remove("hidden");
     phaseBanner.classList.remove("hidden");
 
-    if (currentTurn === 1) {
+    if (isMyTurn()) {
         turnBanner.innerText = "⭐ YOUR TURN";
         turnBanner.style.color = "#2ecc71";
         if (currentPhase === "draw") {
             phaseBanner.innerText = "DRAW FROM DECK OR DISCARD PILE";
-            meldBtn.classList.add("hidden"); discardBtn.classList.add("hidden");
-            selectedCards = []; 
+            meldBtn.classList.add("hidden");
+            discardBtn.classList.add("hidden");
+            discardBtn.disabled = false;
+            discardBtn.style.opacity = "1";
+            selectedCards = [];
         } else if (currentPhase === "discard") {
-            phaseBanner.innerText = "MELD CARDS OR DISCARD TO END TURN";
+            phaseBanner.innerText = selectedCards.length === 0
+                ? "TAP A CARD TO SELECT IT, THEN DISCARD OR MELD"
+                : "MELD 3+ CARDS OR SELECT 1 TO DISCARD";
+
             if (selectedCards.length >= 3) meldBtn.classList.remove("hidden");
             else meldBtn.classList.add("hidden");
-            if (selectedCards.length === 1) discardBtn.classList.remove("hidden");
-            else discardBtn.classList.add("hidden");
+
+            discardBtn.classList.remove("hidden");
+            discardBtn.disabled = selectedCards.length !== 1;
+            discardBtn.style.opacity = selectedCards.length === 1 ? "1" : "0.5";
         }
     } else {
         turnBanner.innerText = gameMode === "ai" ? "🤖 AI IS THINKING..." : "⏳ OPPONENT'S TURN";
         turnBanner.style.color = "#e74c3c";
         phaseBanner.innerText = "WAITING...";
-        meldBtn.classList.add("hidden"); discardBtn.classList.add("hidden");
+        meldBtn.classList.add("hidden");
+        discardBtn.classList.add("hidden");
+        discardBtn.disabled = false;
+        discardBtn.style.opacity = "1";
     }
 }
 
@@ -416,7 +447,7 @@ document.getElementById("btn-play-again").addEventListener("click", () => {
 });
 
 document.getElementById("btn-exit-game").addEventListener("click", () => {
-    window.location.reload(); // Simple refresh resets back to OS / AI mode
+    window.location.reload();
 });
 
 function resetGame() {
@@ -431,7 +462,7 @@ function resetGame() {
     document.getElementById("sort-btn").classList.add("hidden");
     document.getElementById("meld-btn").classList.add("hidden");
     document.getElementById("discard-btn").classList.add("hidden");
-    
+
     if (gameMode === "online" && !isHost) {
         document.getElementById("start-game-btn").innerText = "Waiting for Host...";
         document.getElementById("start-game-btn").disabled = true;
@@ -478,21 +509,24 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
                 players: 2, p2Name: p1Name, status: "playing"
             });
             lobbyUI.classList.add("hidden");
-            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
-            document.getElementById("start-game-btn").innerText = "Waiting for Host...";
-            document.getElementById("start-game-btn").disabled = true;
             listenToRoom();
         }
     });
 });
 
 function listenToRoom() {
+    let onlineGameStarted = false;
     window.dbOnValue(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if(!data) return;
-        if(data.status === "playing" && !chatStarted) {
-            chatStarted = true; lobbyUI.classList.add("hidden");
-            playSound('win'); SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+        if(data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true;
+            lobbyUI.classList.add("hidden");
+            if (!chatStarted) {
+                chatStarted = true;
+                playSound('win');
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
         }
         syncFromFirebase(data);
     });
@@ -504,14 +538,14 @@ function pushGameState() {
         deck: deck, discardPile: discardPile,
         turn: currentTurn, phase: currentPhase, status: gameState
     };
-    if (myId === 1) { 
-        payload.p1Hand = myHand; payload.p2Hand = oppHand; 
+    if (myId === 1) {
+        payload.p1Hand = myHand; payload.p2Hand = oppHand;
         payload.p1Melds = myMelds; payload.p2Melds = oppMelds;
-    } else { 
-        payload.p2Hand = myHand; payload.p1Hand = oppHand; 
+    } else {
+        payload.p2Hand = myHand; payload.p1Hand = oppHand;
         payload.p2Melds = myMelds; payload.p1Melds = oppMelds;
     }
-    
+
     const lastLogNode = document.getElementById("move-log").lastElementChild;
     if(lastLogNode) payload.lastLogHTML = lastLogNode.innerHTML;
 
@@ -522,12 +556,12 @@ function syncFromFirebase(data) {
     if (data.status === "playing" && data.deck) {
         document.getElementById("start-game-btn").classList.add("hidden");
         document.getElementById("sort-btn").classList.remove("hidden");
-        
+
         gameState = "playing";
         deck = data.deck || []; discardPile = data.discardPile || [];
         currentTurn = data.turn || 1;
         currentPhase = data.phase || "draw";
-        
+
         if (myId === 1) {
             myHand = data.p1Hand || []; oppHand = data.p2Hand || []; p2Name = data.p2Name || "Opponent";
             myMelds = data.p1Melds || []; oppMelds = data.p2Melds || [];
@@ -548,8 +582,8 @@ function syncFromFirebase(data) {
             }
         }
 
-        renderBoard(); 
-    } else if (data.status === "finished") { 
+        renderBoard();
+    } else if (data.status === "finished") {
         if(data.winner && data.winner !== p1Name) {
             showGameOver(data.winner, `${data.winner} emptied their hand first!`);
         }
@@ -563,6 +597,9 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     localStorage.setItem("rummy_mode", "ai");
     lobbyUI.classList.add("hidden");
     SystemUI.stopChat(); chatStarted = false;
+    
+    myId = 1;
+    isHost = true;
     resetGame();
 });
 

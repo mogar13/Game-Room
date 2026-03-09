@@ -253,6 +253,153 @@ const SystemUI = {
     },
 
     // ==========================================
+    // V2 MULTIPLAYER LOBBY API (THE DROP-IN SYSTEM)
+    // ==========================================
+    v2Lobby: {
+        callbacks: {},
+        
+        setup: function(callbacks) {
+            this.callbacks = callbacks || {};
+            if (!document.getElementById("v2-lobby-overlay")) this.injectHTML();
+            this.bindEvents();
+        },
+
+        injectHTML: function() {
+            const html = `
+                <div id="v2-lobby-overlay" class="sys-hidden">
+                    <div class="v2-lobby-box">
+                        <button id="v2-btn-close-lobby" style="position:absolute; top:10px; right:10px; background:none; border:none; color:#f1c40f; font-size:1.5rem; cursor:pointer;">&times;</button>
+                        <h2 class="v2-lobby-title">MULTIPLAYER ARENA</h2>
+                        
+                        <div id="v2-setup-phase">
+                            <div class="v2-lobby-section">
+                                <h3 class="v2-lobby-subtitle">HOST A GAME</h3>
+                                <button id="v2-btn-host" class="v2-btn v2-btn-primary">CREATE NEW ROOM</button>
+                            </div>
+                            <div class="v2-lobby-divider">OR</div>
+                            <div class="v2-lobby-section">
+                                <h3 class="v2-lobby-subtitle">JOIN A GAME</h3>
+                                <input type="text" id="v2-join-input" class="v2-join-input" placeholder="Enter 4-Digit Code" maxlength="4" autocomplete="off">
+                                <button id="v2-btn-join" class="v2-btn v2-btn-join">JOIN ROOM</button>
+                            </div>
+                            <div id="v2-error-msg" style="color: #e74c3c; font-size: 0.85rem; margin-top: 15px; min-height: 15px; font-weight: bold;"></div>
+                        </div>
+
+                        <div id="v2-room-phase" class="sys-hidden">
+                            <div class="v2-lobby-section">
+                                <h3 class="v2-lobby-subtitle">ROOM CODE</h3>
+                                <span id="v2-code-display" class="v2-code-display">----</span>
+                                <button id="v2-btn-copy-code" style="background:#f1c40f;color:#000;border:none;border-radius:6px;padding:4px 12px;font-weight:bold;cursor:pointer;font-size:0.8rem;margin-bottom:6px;">📋 COPY</button>
+                            </div>
+                            
+                            <div id="v2-seat-list" class="v2-seat-list">
+                                </div>
+                            
+                            <div class="v2-lobby-actions">
+                                <button id="v2-btn-start" class="v2-btn v2-btn-start sys-hidden">START GAME</button>
+                                <button id="v2-btn-leave" class="v2-btn v2-btn-leave">BACK TO LOCAL PLAY</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', html);
+        },
+
+        bindEvents: function() {
+            document.getElementById("v2-btn-close-lobby").addEventListener("click", () => {
+                SystemUI.playSound('click');
+                this.hide();
+                if (this.callbacks.onClose) this.callbacks.onClose();
+            });
+
+            document.getElementById("v2-btn-host").addEventListener("click", () => {
+                SystemUI.playSound('click');
+                if (this.callbacks.onHost) this.callbacks.onHost();
+            });
+
+            document.getElementById("v2-btn-join").addEventListener("click", () => {
+                SystemUI.playSound('click');
+                const code = document.getElementById("v2-join-input").value.trim().toUpperCase();
+                if (code.length !== 4) {
+                    this.showError("CODE MUST BE 4 CHARACTERS");
+                    return;
+                }
+                if (this.callbacks.onJoin) this.callbacks.onJoin(code);
+            });
+
+            document.getElementById("v2-btn-leave").addEventListener("click", () => {
+                SystemUI.playSound('click');
+                this.showSetupPhase();
+                if (this.callbacks.onLeave) this.callbacks.onLeave();
+            });
+
+            document.getElementById("v2-btn-start").addEventListener("click", () => {
+                SystemUI.playSound('win');
+                if (this.callbacks.onStart) this.callbacks.onStart();
+            });
+
+            document.getElementById("v2-btn-copy-code").addEventListener("click", (e) => {
+                const code = document.getElementById("v2-code-display").innerText;
+                navigator.clipboard.writeText(code).catch(()=>{});
+                e.target.innerText = "✓ COPIED!";
+                setTimeout(() => e.target.innerText = "📋 COPY", 2000);
+            });
+        },
+
+        show: function() {
+            document.getElementById("v2-lobby-overlay").classList.remove("sys-hidden");
+            this.showSetupPhase();
+        },
+
+        hide: function() {
+            document.getElementById("v2-lobby-overlay").classList.add("sys-hidden");
+        },
+
+        showSetupPhase: function() {
+            document.getElementById("v2-setup-phase").classList.remove("sys-hidden");
+            document.getElementById("v2-room-phase").classList.add("sys-hidden");
+            document.getElementById("v2-error-msg").innerText = "";
+            document.getElementById("v2-join-input").value = "";
+        },
+
+        showRoomPhase: function(roomCode, isHost) {
+            document.getElementById("v2-setup-phase").classList.add("sys-hidden");
+            document.getElementById("v2-room-phase").classList.remove("sys-hidden");
+            document.getElementById("v2-code-display").innerText = roomCode;
+            
+            const startBtn = document.getElementById("v2-btn-start");
+            if (isHost) startBtn.classList.remove("sys-hidden");
+            else startBtn.classList.add("sys-hidden");
+        },
+
+        showError: function(msg) {
+            document.getElementById("v2-error-msg").innerText = msg;
+        },
+
+        renderSeats: function(seatsArray) {
+            const list = document.getElementById("v2-seat-list");
+            list.innerHTML = "";
+            
+            seatsArray.forEach((seat, index) => {
+                const isHuman = seat.type === "human";
+                const icon = isHuman ? "👤" : "🤖";
+                
+                const html = `
+                    <div class="v2-seat ${seat.type}">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="font-size:1.2rem;">${icon}</span>
+                            <span class="v2-seat-name">${seat.name}</span>
+                        </div>
+                        <span class="v2-seat-type">${seat.type}</span>
+                    </div>
+                `;
+                list.insertAdjacentHTML('beforeend', html);
+            });
+        }
+    },
+
+    // ==========================================
     // IN-GAME CHAT
     // ==========================================
     _chatRoomId: null,
@@ -441,6 +588,9 @@ const SystemUI = {
     }
 };
 
+// =========================================
+// LEGACY HTML INJECTIONS (Do Not Remove)
+// =========================================
 if (!document.getElementById("multiplayer-lobby")) {
     const lobbyHTML = `
     <div id="multiplayer-lobby" class="hidden">
@@ -478,8 +628,7 @@ if (!document.getElementById("multiplayer-lobby")) {
         setTimeout(() => { this.textContent = '📋 COPY'; }, 2000);
     });
 
-    // Cooldown on CREATE NEW ROOM — capture phase fires before the game's handler.
-    // Disables for 4s then re-enables so the user can generate a fresh code.
+    // Cooldown on CREATE NEW ROOM
     document.getElementById('btn-create-room').addEventListener('click', function() {
         this.disabled = true;
         this.textContent = '⏳ CREATING...';
@@ -487,7 +636,7 @@ if (!document.getElementById("multiplayer-lobby")) {
             this.disabled = false;
             this.textContent = 'CREATE NEW ROOM';
         }, 4000);
-    }, true); // capture = true: runs before game's bubble-phase handler
+    }, true); 
 }
 
 if (!document.getElementById("sys-chat-panel")) {

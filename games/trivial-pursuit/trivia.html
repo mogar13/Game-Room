@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Trivia Pursuit</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../system/system_ui.css">
+    <link rel="stylesheet" href="trivia_style.css">
+</head>
+<body>
+
+<div id="game-container">
+
+    <!-- ── SCOREBOARD ───────────────────────── -->
+    <div id="scoreboard">
+        <div class="score-block" id="s-block-1">
+            <div class="s-name" id="s-name-1">YOU</div>
+            <div class="s-score" id="s-score-1">0</div>
+            <div class="s-streak" id="s-streak-1"></div>
+        </div>
+
+        <div id="score-mid">
+            <div id="q-counter">—</div>
+            <div id="q-counter-label">QUESTION</div>
+        </div>
+
+        <div class="score-block" id="s-block-2">
+            <div class="s-name" id="s-name-2">AI</div>
+            <div class="s-score" id="s-score-2">0</div>
+            <div class="s-streak" id="s-streak-2"></div>
+        </div>
+    </div>
+
+    <!-- ── TIMER BAR ─────────────────────────── -->
+    <div id="timer-wrap">
+        <div id="timer-bar"></div>
+        <div id="timer-val">15</div>
+    </div>
+
+    <!-- ── CATEGORY + DIFFICULTY BADGE ─────── -->
+    <div id="meta-row">
+        <div id="category-badge">—</div>
+        <div id="diff-badge" class="diff-easy">EASY</div>
+    </div>
+
+    <!-- ── QUESTION CARD ────────────────────── -->
+    <div id="question-card">
+        <div id="question-type-tag">MULTIPLE CHOICE</div>
+        <div id="question-text">Loading questions from the internet...</div>
+    </div>
+
+    <!-- ── ANSWER GRID ───────────────────────── -->
+    <div id="answer-grid">
+        <!-- Multiple choice: 4 buttons in 2x2 grid -->
+        <!-- True/False: 2 buttons side by side     -->
+        <!-- JS populates these dynamically          -->
+    </div>
+
+    <!-- ── RESULT FEEDBACK ──────────────────── -->
+    <div id="result-banner" class="hidden">
+        <span id="result-icon">✓</span>
+        <span id="result-text">CORRECT!</span>
+        <span id="result-pts">+200</span>
+    </div>
+
+    <!-- ── LOADING SCREEN ───────────────────── -->
+    <div id="loading-screen" class="hidden">
+        <div id="loading-spinner"></div>
+        <div id="loading-text">FETCHING QUESTIONS...</div>
+        <div id="loading-sub">Connecting to OpenTDB</div>
+    </div>
+
+    <!-- ── START SCREEN ─────────────────────── -->
+    <div id="start-screen">
+        <div id="start-logo">
+            <span class="logo-tri">▲</span>
+            <span class="logo-title">TRIVIA<br>PURSUIT</span>
+        </div>
+        <div id="start-tagline">POWERED BY OPENTDB</div>
+        <button id="start-btn">START GAME</button>
+    </div>
+
+    <!-- ── BETWEEN QUESTION OVERLAY ─────────── -->
+    <div id="next-overlay" class="hidden">
+        <div id="next-box">
+            <div id="next-result-icon">✓</div>
+            <div id="next-result-label">CORRECT!</div>
+            <div id="next-correct-ans"></div>
+            <div id="next-score-delta"></div>
+            <button id="next-btn">NEXT QUESTION →</button>
+        </div>
+    </div>
+
+    <!-- ── GAME OVER MODAL ───────────────────── -->
+    <div id="game-over-modal" class="hidden">
+        <div class="game-over-box">
+            <div id="game-over-emoji">🏆</div>
+            <div id="game-over-title">YOU WIN!</div>
+            <div id="game-over-msg">Final score: 1800 – 1400</div>
+            <div id="game-over-breakdown"></div>
+            <button id="btn-play-again">PLAY AGAIN</button>
+            <button id="btn-exit-game" onclick="window.location.reload()">EXIT</button>
+        </div>
+    </div>
+
+</div><!-- /#game-container -->
+
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+<script src="../../system/player_name.js"></script>
+<script src="../../system/system_ui.js"></script>
+<script src="trivia_app.js"></script>
+</body>
+</html>

@@ -4,11 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>The Game Shack</title>
+  
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#111111">
   <meta name="color-scheme" content="dark">
+  
+  <link rel="icon" type="image/png" href="system/images/icons/joystick.png">
+  <link rel="apple-touch-icon" href="system/images/icons/joystick.png">
+  <link rel="manifest" href="manifest.json">
+  
   <link rel="stylesheet" href="hub-style.css">
 </head>
 <body>
@@ -53,18 +59,89 @@
       
       <main class="game-grid" id="game-grid">
         
+        <a href="games/backgammon/bg.html" class="game-card hub-interactive" data-id="backgammon" data-name="backgammon" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/pieces/black/token_circle_flat_black.png');"></div>
+          <h2>Backgammon</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+        <a href="games/battleship/battleship.html" class="game-card hub-interactive" data-id="battleship" data-name="battleship navy ships multiplayer" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/icons/battleship-icon.png');"></div>
+          <h2>Battleship</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
         <a href="games/blackjack/blackjack.html" class="game-card hub-interactive" data-id="blackjack" data-name="blackjack cards 21 dealer" data-cat="casino">
           <div class="fav-btn hub-interactive">☆</div>
           <div class="card-icon" style="background-image: url('system/images/cards/standard/cardSpadesA.png');"></div>
           <h2>Blackjack</h2>
-          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span> <span class="badge b-casino">🎰 Casino</span></div>
+          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
-        <a href="games/tic-tac-toe/ttt.html" class="game-card hub-interactive" data-id="ttt" data-name="tic tac toe x o multiplayer" data-cat="board">
+        <a href="games/checkers/checkers.html" class="game-card hub-interactive" data-id="checkers" data-name="checkers draughts board pieces" data-cat="board">
           <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/icons/ttt-icon.png');"></div>
-          <h2>Tic-Tac-Toe</h2>
-          <div class="card-badges"><span class="badge b-online">👥 Online</span></div>
+          <div class="card-icon" style="background-image: url('system/images/pieces/red/token_circle_flat_red.png');"></div>
+          <h2>Checkers</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+        <a href="games/chess/chess.html" class="game-card hub-interactive" data-id="chess" data-name="chess" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/pieces/chess-pieces/white-rook.png');"></div>
+          <h2>Chess</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+        <a href="games/clue/clue.html" class="game-card hub-interactive" data-id="clue" data-name="clue" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/icons/icon14.png');"></div>
+          <h2>Clue</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+
+        <a href="games/connect4/c4.html" class="game-card hub-interactive" data-id="c4" data-name="connect 4 four multiplayer" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/pieces/yellow/token_circle_flat_yellow.png');"></div>
+          <h2>Connect 4</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+         <a href="games/domino/domino.html" class="game-card hub-interactive" data-id="domino" data-name="classic domino" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/icons/domino.png');"></div>
+          <h2>Domino</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+        <a href="games/family-feud/feud.html" class="game-card hub-interactive" data-id="family-feud" data-name="family feud" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/icons/coin-pile.png');"></div>
+          <h2>Family Feud</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+        <a href="games/memory/memory.html" class="game-card hub-interactive" data-id="memory" data-name="memory match cards pairs" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/cards/standard/cardBack_green5.png'); border-radius: 5px;"></div>
+          <h2>Memory</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+          <a href="games/risk/risk.html" class="game-card hub-interactive" data-id="risk" data-name="risk the board game" data-cat="casino">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/icons/streak.png'); border-radius: 50%;"></div>
+          <h2>Risk</h2>
+          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+        <a href="games/roulette/roulette.html" class="game-card hub-interactive" data-id="roulette" data-name="roulette spin wheel casino" data-cat="casino">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/wheel.png'); border-radius: 50%;"></div>
+          <h2>Roulette</h2>
+          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
         <a href="games/rps/rps.html" class="game-card hub-interactive" data-id="rps" data-name="rps rock paper scissors" data-cat="board">
@@ -74,89 +151,69 @@
           <div class="card-badges"><span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
-        <a href="games/memory/memory.html" class="game-card hub-interactive" data-id="memory" data-name="memory match cards pairs" data-cat="board">
+        <a href="games/rummy/rummy.html" class="game-card hub-interactive" data-id="rummy" data-name="classic rummy" data-cat="board">
           <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/cards/standard/cardBack_red2.png'); border-radius: 5px;"></div>
-          <h2>Memory</h2>
-          <div class="card-badges"><span class="badge b-online">👥 Online</span></div>
+          <div class="card-icon" style="background-image: url('system/images/cards/standard/cardBack_red5.png');"></div>
+          <h2>Rummy</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
         <a href="games/slots/slots.html" class="game-card hub-interactive" data-id="slots" data-name="slots spin high roller casino" data-cat="casino">
           <div class="fav-btn hub-interactive">☆</div>
           <div class="card-icon" style="background-image: url('system/images/icons/slots-icon.png'); border-radius: 8px;"></div>
-          <h2>High-Roller Slots</h2>
-          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span> <span class="badge b-casino">🎰 Casino</span></div>
-        </a>
-
-        <a href="games/roulette/roulette.html" class="game-card hub-interactive" data-id="roulette" data-name="roulette spin wheel casino" data-cat="casino">
-          <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/wheel.png'); border-radius: 50%;"></div>
-          <h2>Roulette</h2>
-          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span> <span class="badge b-casino">🎰 Casino</span></div>
-        </a>
-
-        <a href="games/connect4/c4.html" class="game-card hub-interactive" data-id="c4" data-name="connect 4 four multiplayer" data-cat="board">
-          <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/pieces/yellow/pieceYellow_border10.png');"></div>
-          <h2>Connect 4</h2>
-          <div class="card-badges"><span class="badge b-online">👥 Online</span></div>
+          <h2>Slots</h2>
+          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
         <a href="games/snakes-and-ladders/snl.html" class="game-card hub-interactive" data-id="snl" data-name="snakes ladders chutes multiplayer" data-cat="board">
           <div class="fav-btn hub-interactive">☆</div>
           <div class="card-icon" style="background-image: url('system/images/icons/snl-icon.png');"></div>
           <h2>Snakes & Ladders</h2>
-          <div class="card-badges"><span class="badge b-online">👥 Online</span></div>
-        </a>
-
-        <a href="games/battleship/battleship.html" class="game-card hub-interactive" data-id="battleship" data-name="battleship navy ships multiplayer" data-cat="board">
-          <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/icons/battleship-icon.png');"></div>
-          <h2>Battleship</h2>
-          <div class="card-badges"><span class="badge b-online">👥 Online</span></div>
-        </a>
-
-          <a href="games/yahtzee/yahtzee.html" class="game-card hub-interactive" data-id="yahtzee" data-name="yahtzee die game" data-cat="board">
-          <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/icons/icon2.png');"></div>
-          <h2>Yahtzee</h2>
           <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
-        <a href="games/checkers/checkers.html" class="game-card hub-interactive" data-id="checkers" data-name="checkers draughts board pieces" data-cat="board">
+        <a href="games/solitaire/solitaire.html" class="game-card hub-interactive" data-id="solitaire" data-name="Klondike solitaire" data-cat="board">
           <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/pieces/red/pieceRed_border11.png');"></div>
-          <h2>Checkers</h2>
+          <div class="card-icon" style="background-image: url('system/images/cards/standard/cardBack_blue2.png');"></div>
+          <h2>Solitaire</h2>
+          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span></div>
+        </a>
+
+        <a href="games/holdem/texas_holdem.html" class="game-card hub-interactive" data-id="texas_holdem" data-name="Texas Hold Em Poker" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/cards/standard/cardSpadesK.png');"></div>
+          <h2>Texas Hold 'Em</h2>
           <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
-          <a href="games/uno/uno.html" class="game-card hub-interactive" data-id="uno" data-name="UNO!" data-cat="board">
+        <a href="games/tic-tac-toe/ttt.html" class="game-card hub-interactive" data-id="ttt" data-name="tic tac toe x o multiplayer" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/icons/ttt-icon.png');"></div>
+          <h2>Tic-Tac-Toe</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> </div>
+        </a>
+
+          <a href="games/trivial-pursuit/trivia.html" class="game-card hub-interactive" data-id="trivial-pursuit" data-name="trivial-pursuit" data-cat="board">
+          <div class="fav-btn hub-interactive">☆</div>
+          <div class="card-icon" style="background-image: url('system/images/icons/scroll.png');"></div>
+          <h2>Trivial Pursuit</h2>
+          <div class="card-badges"><span class="badge b-online">👥 Online</span> </div>
+        </a>
+
+        <a href="games/uno/uno.html" class="game-card hub-interactive" data-id="uno" data-name="UNO!" data-cat="board">
           <div class="fav-btn hub-interactive">☆</div>
           <div class="card-icon" style="background-image: url('system/images/cards/uno/wild/wild_card.png');"></div>
           <h2>UNO</h2>
           <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
-         <a href="games/domino/domino.html" class="game-card hub-interactive" data-id="domino" data-name="classic domino" data-cat="board">
+        <a href="games/yahtzee/yahtzee.html" class="game-card hub-interactive" data-id="yahtzee" data-name="yahtzee die game" data-cat="board">
           <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/pieces/red/pieceRed_border10.png');"></div>
-          <h2>Domino</h2>
+          <div class="card-icon" style="background-image: url('system/images/icons/icon2.png');"></div>
+          <h2>Yahtzee</h2>
           <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
         </a>
 
-          <a href="games/solitaire/solitaire.html" class="game-card hub-interactive" data-id="solitaire" data-name="Klondike solitaire" data-cat="board">
-          <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/cards/standard/cardSpadesA.png');"></div>
-          <h2>Solitaire</h2>
-          <div class="card-badges"><span class="badge b-solo">🤖 Solo</span></div>
-        </a>
-
-          <a href="games/rummy/rummy.html" class="game-card hub-interactive" data-id="rummy" data-name="classic rummy" data-cat="board">
-          <div class="fav-btn hub-interactive">☆</div>
-          <div class="card-icon" style="background-image: url('system/images/cards/standard/cardSpades10.png');"></div>
-          <h2>Rummy</h2>
-          <div class="card-badges"><span class="badge b-online">👥 Online</span> <span class="badge b-solo">🤖 Solo</span></div>
-        </a>
       </main>
 
       <button class="nav-btn hub-interactive" id="next-page">►</button>

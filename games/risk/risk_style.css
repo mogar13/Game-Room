@@ -1,0 +1,946 @@
+/* =============================================
+   RISK — risk_style.css
+   Casino OS | The Game Shack
+   Aesthetic: Military war room — aged olive/
+   khaki, tactical grid, stencil lettering.
+   Fonts: Special Elite (stencil display) +
+          Share Tech Mono (data/numbers)
+   ============================================= */
+
+:root {
+    --bg:          #1a1a0f;
+    --panel:       #1f1f12;
+    --panel-2:     #252515;
+    --olive:       #6b7c3a;
+    --olive-lt:    #8a9e4a;
+    --olive-glow:  rgba(107,124,58,0.35);
+    --khaki:       #c8b878;
+    --khaki-dim:   #9a8c58;
+    --map-ocean:   #2a3f5f;
+    --map-grid:    rgba(180,200,160,0.06);
+    --red:         #c0392b;
+    --muted:       rgba(200,184,120,0.38);
+    --border:      rgba(107,124,58,0.25);
+    --radius:      4px;
+
+    /* Player colours (military faction colours) */
+    --p1: #e74c3c;   /* Red */
+    --p2: #3498db;   /* Blue */
+    --p3: #2ecc71;   /* Green */
+    --p4: #f39c12;   /* Yellow/Gold */
+    --p5: #9b59b6;   /* Purple */
+    --p6: #1abc9c;   /* Teal */
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    background-image:
+        /* Tactical grid */
+        repeating-linear-gradient(
+            0deg,
+            transparent, transparent 29px,
+            var(--map-grid) 29px, var(--map-grid) 30px
+        ),
+        repeating-linear-gradient(
+            90deg,
+            transparent, transparent 29px,
+            var(--map-grid) 29px, var(--map-grid) 30px
+        );
+    min-height: 100dvh;
+    overflow: hidden;
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--khaki);
+}
+
+/* ── GAME WRAP ───────────────────────────────── */
+#game-wrap {
+    display: flex;
+    height: 100dvh;
+    padding-top: 48px; /* HUD */
+    overflow: hidden;
+}
+
+/* ── MAP AREA ────────────────────────────────── */
+#map-area {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: var(--map-ocean);
+    background-image:
+        repeating-linear-gradient(
+            0deg, transparent, transparent 39px,
+            rgba(100,140,180,0.08) 39px, rgba(100,140,180,0.08) 40px
+        ),
+        repeating-linear-gradient(
+            90deg, transparent, transparent 39px,
+            rgba(100,140,180,0.08) 39px, rgba(100,140,180,0.08) 40px
+        );
+    border-right: 1px solid var(--border);
+}
+
+#svg-container {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* The injected SVG map */
+#svg-container svg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/*
+ * SVG Territory Styling
+ * Each territory <path> gets coloured based on owner.
+ * Base style applied to all paths, owner colour via JS inline style.
+ */
+#svg-container svg path {
+    stroke: rgba(0,0,0,0.6);
+    stroke-width: 0.8;
+    cursor: pointer;
+    transition: filter 0.15s, opacity 0.15s;
+    fill: #4a5a30;  /* default unowned colour */
+}
+
+#svg-container svg path:hover {
+    filter: brightness(1.3);
+}
+
+#svg-container svg path.selected-from {
+    stroke: #fff !important;
+    stroke-width: 2.5 !important;
+    filter: brightness(1.4) drop-shadow(0 0 4px rgba(255,255,255,0.5));
+}
+
+#svg-container svg path.selected-to {
+    stroke: #ffff00 !important;
+    stroke-width: 2.5 !important;
+    filter: brightness(1.3) drop-shadow(0 0 4px rgba(255,255,0,0.5));
+}
+
+#svg-container svg path.valid-target {
+    stroke: rgba(255,255,100,0.8) !important;
+    stroke-width: 1.8 !important;
+    filter: brightness(1.2);
+}
+
+#svg-container svg path.reachable {
+    stroke: rgba(100,255,100,0.7) !important;
+    stroke-width: 1.8 !important;
+    filter: brightness(1.15);
+}
+
+/* ── TROOP COUNTERS ──────────────────────────── */
+#troop-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.troop-counter {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #fff;
+    border: 1.5px solid rgba(255,255,255,0.4);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.15);
+    pointer-events: none;
+    z-index: 10;
+    transition: transform 0.2s, box-shadow 0.2s;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.troop-counter.pulse {
+    animation: troopPulse 0.4s ease-out;
+}
+
+@keyframes troopPulse {
+    0%   { transform: translate(-50%,-50%) scale(1); }
+    40%  { transform: translate(-50%,-50%) scale(1.5); }
+    100% { transform: translate(-50%,-50%) scale(1); }
+}
+
+/* ── TERRITORY TOOLTIP ───────────────────────── */
+#territory-tooltip {
+    position: absolute;
+    background: rgba(10,10,5,0.92);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px 10px;
+    font-size: 0.68rem;
+    color: var(--khaki);
+    pointer-events: none;
+    z-index: 50;
+    white-space: nowrap;
+    letter-spacing: 1px;
+}
+
+/* ── SIDE PANEL ──────────────────────────────── */
+#side-panel {
+    width: 200px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 8px;
+    background: var(--panel);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+/* Phase block */
+#phase-block {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    text-align: center;
+    border-top: 3px solid var(--olive);
+}
+
+#phase-label {
+    font-family: 'Special Elite', cursive;
+    font-size: 1rem;
+    letter-spacing: 4px;
+    color: var(--olive-lt);
+}
+
+#phase-sub {
+    font-size: 0.6rem;
+    color: var(--muted);
+    margin-top: 2px;
+    letter-spacing: 1px;
+}
+
+/* Current player */
+#current-player-block {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.cp-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1.5px solid rgba(255,255,255,0.3);
+    box-shadow: 0 0 6px currentColor;
+}
+
+#cp-name {
+    font-family: 'Special Elite', cursive;
+    font-size: 0.78rem;
+    letter-spacing: 1px;
+    color: var(--khaki);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+/* Draft block */
+#draft-block {
+    text-align: center;
+    background: var(--panel-2);
+    border: 1px solid var(--olive);
+    border-radius: var(--radius);
+    padding: 10px;
+    box-shadow: 0 0 12px var(--olive-glow);
+}
+
+#draft-count {
+    font-family: 'Special Elite', cursive;
+    font-size: 2.2rem;
+    color: var(--olive-lt);
+    line-height: 1;
+}
+
+#draft-label {
+    font-size: 0.55rem;
+    letter-spacing: 3px;
+    color: var(--muted);
+    margin-top: 2px;
+}
+
+/* Attack / Fortify info blocks */
+#attack-block,
+#fortify-block {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font-size: 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+#atk-from-label, #atk-to-label,
+#fort-from-label, #fort-to-label {
+    font-size: 0.52rem;
+    letter-spacing: 2px;
+    color: var(--muted);
+}
+
+#atk-from-name, #atk-to-name,
+#fort-from-name, #fort-to-name {
+    font-family: 'Special Elite', cursive;
+    font-size: 0.78rem;
+    color: var(--khaki);
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#atk-arrow, #fort-arrow {
+    color: var(--olive-lt);
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+#atk-cancel-btn, #fort-cancel-btn {
+    font-size: 0.6rem;
+    letter-spacing: 1px;
+    background: none;
+    border: 1px solid rgba(200,56,43,0.4);
+    border-radius: 3px;
+    color: rgba(200,56,43,0.7);
+    padding: 4px;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: background 0.15s;
+}
+#atk-cancel-btn:hover, #fort-cancel-btn:hover {
+    background: rgba(200,56,43,0.15);
+    color: #e74c3c;
+}
+
+/* Phase action buttons */
+#phase-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+#phase-actions button {
+    font-family: 'Special Elite', cursive;
+    font-size: 0.72rem;
+    letter-spacing: 2px;
+    border-radius: var(--radius);
+    padding: 10px 8px;
+    cursor: pointer;
+    min-height: 38px;
+    transition: background 0.15s, transform 0.08s;
+}
+
+#btn-end-attack {
+    background: rgba(192,57,43,0.2);
+    color: #e74c3c;
+    border: 1px solid rgba(192,57,43,0.4);
+}
+#btn-end-attack:hover { background: rgba(192,57,43,0.35); }
+
+#btn-end-turn {
+    background: linear-gradient(180deg, var(--olive-lt) 0%, var(--olive) 100%);
+    color: #0d0d05;
+    border: none;
+    box-shadow: 0 3px 12px var(--olive-glow);
+}
+#btn-end-turn:hover { transform: translateY(-1px); }
+
+#btn-trade-cards {
+    background: rgba(200,184,120,0.08);
+    color: var(--khaki);
+    border: 1px solid var(--border);
+}
+#btn-trade-cards:hover { background: rgba(200,184,120,0.15); }
+
+/* Player roster */
+#player-roster {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.roster-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    transition: border-color 0.2s;
+}
+
+.roster-row.active-turn {
+    border-color: var(--olive);
+    background: rgba(107,124,58,0.1);
+}
+
+.roster-row.eliminated {
+    opacity: 0.3;
+}
+
+.roster-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+.roster-name {
+    font-size: 0.68rem;
+    color: var(--muted);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: 0.5px;
+}
+
+.roster-name.is-me { color: var(--khaki); }
+
+.roster-terrs {
+    font-size: 0.6rem;
+    color: var(--muted);
+}
+
+/* Dice result */
+#dice-result {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px;
+    text-align: center;
+}
+
+#dice-atk-row, #dice-def-row {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin: 3px 0;
+}
+
+.die-pip {
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Special Elite', cursive;
+    font-size: 0.9rem;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+.die-pip.atk { background: rgba(231,76,60,0.7); color: #fff; border: 1px solid rgba(231,76,60,0.9); }
+.die-pip.def { background: rgba(52,152,219,0.7); color: #fff; border: 1px solid rgba(52,152,219,0.9); }
+.die-pip.win { filter: brightness(1.4) drop-shadow(0 0 4px currentColor); }
+.die-pip.lose { opacity: 0.45; }
+
+#dice-sep {
+    font-size: 0.55rem;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin: 2px 0;
+}
+
+#dice-outcome {
+    font-family: 'Special Elite', cursive;
+    font-size: 0.72rem;
+    letter-spacing: 2px;
+    margin-top: 4px;
+}
+
+/* ── MODALS ──────────────────────────────────── */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.82);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 600;
+    backdrop-filter: blur(4px);
+    padding: 16px;
+}
+
+.modal-overlay.hidden { display: none; }
+
+.modal-box {
+    background: linear-gradient(155deg, var(--panel-2) 0%, var(--bg) 100%);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--olive);
+    border-radius: 6px;
+    padding: 22px 18px 18px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    animation: modalIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes modalIn {
+    from { opacity: 0; transform: scale(0.92) translateY(16px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-title {
+    font-family: 'Special Elite', cursive;
+    font-size: 1.1rem;
+    letter-spacing: 3px;
+    color: var(--olive-lt);
+    margin-bottom: 4px;
+}
+
+.modal-subtitle {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-bottom: 14px;
+    letter-spacing: 0.5px;
+}
+
+.modal-section-label {
+    font-size: 0.55rem;
+    letter-spacing: 3px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    margin-top: 10px;
+}
+
+.modal-row {
+    display: flex;
+    gap: 14px;
+}
+
+.modal-col { flex: 1; }
+
+/* Dice picker */
+.dice-picker {
+    display: flex;
+    gap: 6px;
+}
+
+.dice-opt {
+    flex: 1;
+    padding: 10px;
+    font-family: 'Special Elite', cursive;
+    font-size: 1.1rem;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.12s;
+}
+
+.dice-opt:hover  { border-color: var(--olive); color: var(--khaki); }
+.dice-opt.active {
+    background: rgba(107,124,58,0.2);
+    border-color: var(--olive-lt);
+    color: var(--olive-lt);
+    box-shadow: 0 0 8px var(--olive-glow);
+}
+
+/* Battle dice display */
+#battle-dice-display {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    margin: 14px 0;
+    flex-wrap: wrap;
+}
+
+#battle-losses {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+    line-height: 1.6;
+}
+
+#battle-territory-msg {
+    text-align: center;
+    font-family: 'Special Elite', cursive;
+    font-size: 0.9rem;
+    letter-spacing: 2px;
+    color: var(--olive-lt);
+    margin-bottom: 6px;
+}
+
+/* Troop move row */
+#troop-move-row, #fortify-picker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin: 8px 0;
+}
+
+#troop-move-minus, #troop-move-plus,
+#fort-minus, #fort-plus {
+    width: 34px;
+    height: 34px;
+    font-size: 1.3rem;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--khaki);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s;
+}
+#troop-move-minus:hover, #troop-move-plus:hover,
+#fort-minus:hover, #fort-plus:hover {
+    background: rgba(107,124,58,0.2);
+    border-color: var(--olive);
+}
+
+#troop-move-count, #fort-count {
+    font-family: 'Special Elite', cursive;
+    font-size: 1.6rem;
+    color: var(--olive-lt);
+    min-width: 40px;
+    text-align: center;
+}
+
+/* Card hand display */
+#card-hand-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0;
+}
+
+.risk-card {
+    width: 54px;
+    min-height: 70px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 5px 3px;
+    cursor: pointer;
+    transition: all 0.12s;
+    position: relative;
+}
+
+.risk-card:hover { border-color: var(--olive); }
+.risk-card.selected {
+    border-color: var(--olive-lt);
+    background: rgba(107,124,58,0.2);
+    box-shadow: 0 0 10px var(--olive-glow);
+}
+
+.risk-card .card-type-icon { font-size: 1.3rem; line-height: 1; }
+.risk-card .card-terr-name {
+    font-size: 0.42rem;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.2;
+    letter-spacing: 0.3px;
+}
+.risk-card .card-type-label {
+    font-size: 0.48rem;
+    letter-spacing: 1px;
+    color: var(--olive-lt);
+    text-transform: uppercase;
+}
+
+#card-trade-bonus {
+    text-align: center;
+    padding: 8px;
+    background: rgba(107,124,58,0.15);
+    border: 1px solid var(--olive);
+    border-radius: var(--radius);
+    margin: 8px 0;
+}
+
+#card-bonus-label {
+    font-family: 'Special Elite', cursive;
+    font-size: 1rem;
+    letter-spacing: 3px;
+    color: var(--olive-lt);
+}
+
+/* Modal actions */
+.modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.modal-btn-cancel,
+.modal-btn-confirm {
+    flex: 1;
+    font-family: 'Special Elite', cursive;
+    font-size: 0.78rem;
+    letter-spacing: 2px;
+    border-radius: var(--radius);
+    padding: 11px;
+    cursor: pointer;
+    min-height: 42px;
+    transition: transform 0.08s, box-shadow 0.12s;
+}
+
+.modal-btn-cancel {
+    background: rgba(255,255,255,0.04);
+    color: var(--muted);
+    border: 1px solid rgba(255,255,255,0.07);
+}
+.modal-btn-cancel:hover { background: rgba(255,255,255,0.09); color: var(--khaki); }
+
+.modal-btn-confirm {
+    background: linear-gradient(180deg, var(--olive-lt) 0%, var(--olive) 100%);
+    color: #0d0d05;
+    border: none;
+    box-shadow: 0 3px 12px var(--olive-glow);
+}
+.modal-btn-confirm:hover { transform: translateY(-1px); box-shadow: 0 5px 18px var(--olive-glow); }
+.modal-btn-confirm:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ── GAME OVER ────────────────────────────────── */
+#game-over-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(8px);
+}
+#game-over-modal.hidden { display: none; }
+
+.game-over-box {
+    background: linear-gradient(155deg, var(--panel-2) 0%, var(--bg) 100%);
+    border: 1px solid var(--olive);
+    border-radius: 8px;
+    padding: 36px 28px 28px;
+    text-align: center;
+    max-width: 340px;
+    width: 92%;
+    box-shadow: 0 0 60px var(--olive-glow), 0 24px 64px rgba(0,0,0,0.8);
+    animation: modalIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+#game-over-emoji { font-size: 3rem; margin-bottom: 10px; }
+
+#game-over-title {
+    font-family: 'Special Elite', cursive;
+    font-size: 1.8rem;
+    letter-spacing: 4px;
+    color: var(--olive-lt);
+    margin-bottom: 8px;
+}
+
+#game-over-msg {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 22px;
+    letter-spacing: 1px;
+    line-height: 1.6;
+}
+
+#btn-play-again {
+    font-family: 'Special Elite', cursive;
+    font-size: 0.9rem;
+    letter-spacing: 3px;
+    background: linear-gradient(180deg, var(--olive-lt) 0%, var(--olive) 100%);
+    color: #0d0d05;
+    border: none;
+    border-radius: var(--radius);
+    padding: 13px;
+    cursor: pointer;
+    width: 100%;
+    min-height: 48px;
+    margin-bottom: 10px;
+    transition: transform 0.1s;
+    box-shadow: 0 4px 20px var(--olive-glow);
+}
+#btn-play-again:hover { transform: scale(1.02); }
+
+#btn-exit-game {
+    font-family: 'Special Elite', cursive;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    background: none;
+    color: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: var(--radius);
+    padding: 9px;
+    cursor: pointer;
+    width: 100%;
+    min-height: 38px;
+    transition: color 0.15s;
+}
+#btn-exit-game:hover { color: rgba(255,255,255,0.4); }
+
+/* ── START SCREEN ────────────────────────────── */
+#start-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 29px, var(--map-grid) 29px, var(--map-grid) 30px),
+        repeating-linear-gradient(90deg, transparent, transparent 29px, var(--map-grid) 29px, var(--map-grid) 30px),
+        radial-gradient(ellipse 70% 60% at 50% 45%, rgba(107,124,58,0.1) 0%, transparent 65%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    z-index: 700;
+    padding: 20px;
+}
+#start-screen.hidden { display: none; }
+
+#start-logo { text-align: center; }
+
+#start-icon {
+    font-size: 4rem;
+    line-height: 1;
+    filter: drop-shadow(0 0 20px rgba(107,124,58,0.7));
+    animation: iconPulse 3s ease-in-out infinite;
+}
+
+@keyframes iconPulse {
+    0%,100% { filter: drop-shadow(0 0 14px rgba(107,124,58,0.5)); }
+    50%      { filter: drop-shadow(0 0 40px rgba(107,124,58,0.9)); }
+}
+
+#start-title {
+    font-family: 'Special Elite', cursive;
+    font-size: 4rem;
+    letter-spacing: 14px;
+    color: var(--olive-lt);
+    text-shadow: 0 0 40px rgba(107,124,58,0.4), 0 2px 0 rgba(0,0,0,0.5);
+    margin-top: 6px;
+}
+
+#start-sub {
+    font-size: 0.65rem;
+    letter-spacing: 6px;
+    color: var(--muted);
+    margin-top: 4px;
+}
+
+#setup-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 340px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+}
+
+.setup-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.setup-label {
+    font-size: 0.58rem;
+    letter-spacing: 3px;
+    color: var(--muted);
+    width: 60px;
+    flex-shrink: 0;
+}
+
+#player-count-row, #setup-mode-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.count-btn {
+    width: 38px;
+    height: 38px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-family: 'Special Elite', cursive;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.12s;
+}
+.count-btn:hover  { border-color: var(--olive); color: var(--khaki); }
+.count-btn.active { background: rgba(107,124,58,0.2); border-color: var(--olive-lt); color: var(--olive-lt); }
+
+.mode-btn {
+    padding: 8px 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.12s;
+    white-space: nowrap;
+}
+.mode-btn:hover  { border-color: var(--olive); color: var(--khaki); }
+.mode-btn.active { background: rgba(107,124,58,0.2); border-color: var(--olive-lt); color: var(--olive-lt); }
+
+#start-btn {
+    font-family: 'Special Elite', cursive;
+    font-size: 1rem;
+    letter-spacing: 5px;
+    background: linear-gradient(180deg, var(--olive-lt) 0%, var(--olive) 100%);
+    color: #0d0d05;
+    border: none;
+    border-radius: 40px;
+    padding: 16px 48px;
+    cursor: pointer;
+    box-shadow: 0 6px 28px var(--olive-glow);
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+#start-btn:hover  { transform: translateY(-2px); box-shadow: 0 10px 40px var(--olive-glow); }
+#start-btn:active { transform: scale(0.97); }
+
+/* ── UTILITY ─────────────────────────────────── */
+.hidden { display: none !important; }
+
+@media (max-width: 540px) {
+    #side-panel { width: 150px; padding: 7px 6px; }
+    #start-title { font-size: 3rem; letter-spacing: 10px; }
+    .troop-counter { width: 20px; height: 20px; font-size: 0.58rem; }
+}

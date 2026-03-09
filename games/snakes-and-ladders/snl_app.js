@@ -1,11 +1,13 @@
 // ==========================================
 // 1. INITIALIZE CASINO OS & MULTIPLAYER STATE
 // ==========================================
-let gameMode = localStorage.getItem("snl_mode") || "ai"; 
+let gameMode = "ai"; // FIX: ALWAYS default to vs AI on launch
+localStorage.setItem("snl_mode", "ai"); // Clear any cached online state
+
 let myId = 1; 
 let currentRoomId = null; 
-let isHost = false;
-let chatStarted = false; // NEW: Tracks if we've loaded the chat yet
+let isHost = true; // Default to host so local roll buttons work
+let chatStarted = false;
 
 SystemUI.init({
     gameName: "SNAKES & LADDERS PRO",
@@ -29,22 +31,32 @@ SystemUI.init({
     ]
 });
 
-// Handle OS Menu Changes
-document.getElementById("sys-snl-mode").value = gameMode;
-document.getElementById("sys-snl-mode").addEventListener("change", (e) => {
-    gameMode = e.target.value;
-    localStorage.setItem("snl_mode", gameMode);
-    document.getElementById("sys-modal").classList.add("sys-hidden");
-    
-    if (gameMode === "online") {
-        document.getElementById("multiplayer-lobby").classList.remove("hidden");
-    } else {
-        document.getElementById("multiplayer-lobby").classList.add("hidden");
-        SystemUI.stopChat();
-        chatStarted = false;
-        resetGame();
+// Handle OS Menu Changes (Wait for SystemUI to inject dropdowns)
+setTimeout(() => {
+    const modeDropdown = document.getElementById("sys-snl-mode");
+    if (modeDropdown) {
+        modeDropdown.value = gameMode;
+        modeDropdown.addEventListener("change", (e) => {
+            gameMode = e.target.value;
+            localStorage.setItem("snl_mode", gameMode);
+            document.getElementById("sys-modal").classList.add("sys-hidden");
+            
+            if (gameMode === "online") {
+                document.getElementById("multiplayer-lobby").classList.remove("hidden");
+            } else {
+                document.getElementById("multiplayer-lobby").classList.add("hidden");
+                SystemUI.stopChat();
+                chatStarted = false;
+                
+                // Reset host privileges so local buttons work
+                myId = 1;
+                isHost = true;
+                resetGame();
+            }
+        });
     }
-});
+}, 10);
+
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
     if(confirm("Reset the game?")) {
         resetGame();
@@ -126,13 +138,11 @@ btnJoinRoom.addEventListener("click", () => {
     });
 });
 
-// The Magic Listener: Triggers instantly when Firebase data changes
 function listenToRoom() {
     window.dbOnValue(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
 
-        // If guest joined, hide lobby for the host and trigger chat
         if (data.status === "playing" && !chatStarted) {
             chatStarted = true;
             if (lobbyUI) lobbyUI.classList.add("hidden");
@@ -140,7 +150,6 @@ function listenToRoom() {
             SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
         }
 
-        // Sync positions and turn from Firebase
         playerPositions[0] = data.pos1 || 1;
         playerPositions[1] = data.pos2 || 1;
         currentPlayer = data.turn || 1;
@@ -148,14 +157,12 @@ function listenToRoom() {
         renderPlayers();
         updateTurnUI();
 
-        // Check win after syncing
         if (playerPositions[0] === 100) {
             showWinner(myId === 1 ? "YOU WIN!" : "OPPONENT WINS!");
         } else if (playerPositions[1] === 100) {
             showWinner(myId === 2 ? "YOU WIN!" : "OPPONENT WINS!");
         }
 
-        // Re-enable roll button if it's our turn
         rollBtn.disabled = (currentPlayer !== myId || isMoving);
     });
 }
@@ -168,7 +175,6 @@ const turnIndicator = document.getElementById("turn-indicator");
 const rollBtn = document.getElementById("roll-btn");
 const dieImg = document.getElementById("die-img");
 
-// Dice face image filenames
 const diceFaces = [
     "dieWhite_border1.png",
     "dieWhite_border2.png",
@@ -178,7 +184,7 @@ const diceFaces = [
     "dieWhite_border6.png"
 ];
 
-let playerPositions = [1, 1]; // P1 at index 0, P2 at index 1
+let playerPositions = [1, 1]; 
 let currentPlayer = 1; 
 let isMoving = false;
 
@@ -192,17 +198,12 @@ const ladders = {
 
 function createBoard() {
     board.innerHTML = "";
-    // ZIG-ZAG: Row 9 (top) down to Row 0 (bottom)
-    // Row 0 (bottom): even → left-to-right → cells 1–10  (cell 1 = bottom-left)
-    // Row 1:          odd  → right-to-left → cells 20–11
-    // Row 2:          even → left-to-right → cells 21–30
-    // ...etc
     for (let row = 9; row >= 0; row--) {
-        if (row % 2 === 0) { // Even rows: left to right → cell 1 ends up at bottom-left
+        if (row % 2 === 0) { 
             for (let col = 1; col <= 10; col++) {
                 addCell(row * 10 + col);
             }
-        } else { // Odd rows: right to left
+        } else { 
             for (let col = 10; col >= 1; col--) {
                 addCell(row * 10 + col);
             }
@@ -236,7 +237,6 @@ function getCellCenter(cellNum) {
 }
 
 function drawSnakesAndLadders() {
-    // Remove old canvas if it exists
     const old = document.getElementById("snl-canvas");
     if (old) old.remove();
 
@@ -257,7 +257,6 @@ function drawSnakesAndLadders() {
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
 
-    // Draw Ladders (green)
     ctx.strokeStyle = "#2ecc71";
     ctx.shadowColor = "#2ecc71";
     ctx.shadowBlur = 6;
@@ -269,11 +268,9 @@ function drawSnakesAndLadders() {
         ctx.moveTo(start.x, start.y);
         ctx.lineTo(end.x, end.y);
         ctx.stroke();
-        // Arrow head at top
         drawArrow(ctx, start, end);
     }
 
-    // Draw Snakes (red)
     ctx.strokeStyle = "#e74c3c";
     ctx.shadowColor = "#e74c3c";
     ctx.shadowBlur = 6;
@@ -281,7 +278,6 @@ function drawSnakesAndLadders() {
         const start = getCellCenter(parseInt(from));
         const end   = getCellCenter(parseInt(to));
         if (!start || !end) continue;
-        // Wavy snake line using quadratic curves
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
         const mx = (start.x + end.x) / 2;
@@ -308,23 +304,18 @@ function drawArrow(ctx, from, to) {
     ctx.fill();
 }
 
-// Redraw on resize so lines stay accurate
 window.addEventListener("resize", () => {
     drawSnakesAndLadders();
 });
 
-// PNG piece paths
 const piecePaths = [
-    "../../system/images/pieces/red/pieceRed_border03.png",   // Player 1 - red
-    "../../system/images/pieces/blue/pieceBlue_border04.png"  // Player 2 - blue
+    "../../system/images/pieces/red/pieceRed_border03.png",   
+    "../../system/images/pieces/blue/pieceBlue_border04.png"  
 ];
 
-// Token positions in a 2x2 grid within each cell
 const tokenOffsets = [
-    { left: "5%",  bottom: "5%"  },  // P1: bottom-left
-    { left: "50%", bottom: "5%"  },  // P2: bottom-right
-    { left: "5%",  bottom: "50%" },  // P3: top-left
-    { left: "50%", bottom: "50%" },  // P4: top-right
+    { left: "5%",  bottom: "5%"  },  
+    { left: "50%", bottom: "5%"  }   
 ];
 
 function renderPlayers() {
@@ -345,14 +336,13 @@ function renderPlayers() {
     });
 }
 
-// Turn text matches player token colors
 function updateTurnUI() {
     if (currentPlayer === 1) {
         turnIndicator.innerText = "Player 1's Turn";
-        turnIndicator.style.color = "#e74c3c"; // Red
+        turnIndicator.style.color = "#e74c3c"; 
     } else {
         turnIndicator.innerText = gameMode === "ai" ? "AI is Thinking..." : "Player 2's Turn";
-        turnIndicator.style.color = "#3498db"; // Blue
+        turnIndicator.style.color = "#3498db"; 
     }
 }
 
@@ -419,7 +409,7 @@ function calculateNewPos(current, roll) {
 async function movePlayer(playerIdx, steps) {
     let targetPos = playerPositions[playerIdx] + steps;
 
-    if (targetPos > 100) return; // Can't go past 100
+    if (targetPos > 100) return; 
 
     for (let i = 1; i <= steps; i++) {
         playerPositions[playerIdx]++;
@@ -487,5 +477,8 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     document.getElementById("multiplayer-lobby").classList.add("hidden");
     SystemUI.stopChat();
     chatStarted = false;
+    
+    myId = 1;
+    isHost = true;
     resetGame();
 });

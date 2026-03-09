@@ -1,0 +1,22 @@
+{
+  "name": "The Game Shack",
+  "short_name": "Game Shack",
+  "description": "Your personal arcade and casino.",
+  "start_url": "./Index.html",
+  "display": "fullscreen",
+  "background_color": "#050505",
+  "theme_color": "#111111",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "system/images/icons/joystick.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "system/images/icons/joystick.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

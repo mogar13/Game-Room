@@ -2,11 +2,14 @@
 // 1. INITIALIZE CASINO OS & MULTIPLAYER STATE
 // ==========================================
 let gameMode = localStorage.getItem("bs_mode") || "ai";
+let aiDifficulty = localStorage.getItem("bs_diff") || "hard";
 let myId = 1; 
 let currentRoomId = null;
 let isMoving = false;
-let isHost = false;
-let chatStarted = false; // NEW: Tracks if we've loaded the chat yet
+let isHost = true; // Default to true so local play works
+let chatStarted = false; 
+let seats = [];
+let roomListener = null;
 
 SystemUI.init({
     gameName: "BATTLESHIP PRO",
@@ -18,60 +21,76 @@ SystemUI.init({
                 { value: "ai", label: "🤖 vs AI" },
                 { value: "online", label: "🌐 Online" }
             ]
+        },
+        {
+            id: "sys-bs-diff",
+            options: [
+                { value: "easy", label: "Easy AI" },
+                { value: "normal", label: "Normal AI" },
+                { value: "hard",   label: "Hard AI" }
+            ]
         }
     ]
 });
 
-// NEW AUDIO MANAGER FOR COMBAT
 const sfxHit = new Audio('../../system/audio/hit.mp3');
 const sfxSplash = new Audio('../../system/audio/splash.mp3');
 
 function playCombatSound(type) {
     let snd = type === 'hit' ? sfxHit : sfxSplash;
-    snd.pause(); // Stops it if it's currently playing
-    snd.currentTime = 0; // Rewinds to the start so it doesn't overlap
+    snd.pause(); 
+    snd.currentTime = 0; 
     snd.play().catch(e => console.log("Audio failed:", e));
 }
 
-function playBSSound(file) {
-    const audio = new Audio(`../../system/audio/${file}.ogg`);
-    audio.play().catch(e => console.log("Audio failed:", e));
+// Sync dropdowns after init
+setTimeout(() => {
+    const modeEl = document.getElementById("sys-bs-mode");
+    const diffEl = document.getElementById("sys-bs-diff");
+    
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", (e) => {
+            gameMode = e.target.value;
+            localStorage.setItem("bs_mode", gameMode);
+            document.getElementById("sys-modal").classList.add("sys-hidden");
+            syncDiffVisibility();
+            
+            if (gameMode === "online") {
+                SystemUI.v2Lobby.show();
+            } else {
+                SystemUI.v2Lobby.hide();
+                SystemUI.stopChat();
+                chatStarted = false;
+                myId = 1; isHost = true;
+                if (roomListener) { roomListener(); roomListener = null; }
+                resetGame();
+            }
+        });
+    }
+
+    if (diffEl) {
+        diffEl.value = aiDifficulty;
+        diffEl.addEventListener("change", (e) => {
+            aiDifficulty = e.target.value;
+            localStorage.setItem("bs_diff", aiDifficulty);
+        });
+    }
+    
+    syncDiffVisibility();
+}, 10);
+
+function syncDiffVisibility() {
+    const wrap = document.getElementById("sys-bs-diff")?.closest(".hud-dropdown-wrap") ||
+                 document.getElementById("sys-bs-diff")?.parentElement;
+    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
 }
 
-// Handle OS Menu Changes
-document.getElementById("sys-bs-mode").value = gameMode;
-document.getElementById("sys-bs-mode").addEventListener("change", (e) => {
-    gameMode = e.target.value;
-    localStorage.setItem("bs_mode", gameMode);
-    document.getElementById("sys-modal").classList.add("sys-hidden");
-    if (gameMode === "online") {
-        document.getElementById("multiplayer-lobby").classList.remove("hidden");
-    } else {
-        document.getElementById("multiplayer-lobby").classList.add("hidden");
-        SystemUI.stopChat();
-        chatStarted = false;
-        resetGame();
-    }
-});
-
-// OS RESET INTEGRATION
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
     if(confirm("Wipe the board and restart the game?")) {
         resetGame();
         document.getElementById("sys-modal").classList.add("sys-hidden");
     }
-});
-
-// Lobby Escapes
-document.getElementById("lobby-close-btn").addEventListener("click", () => {
-    document.getElementById("multiplayer-lobby").classList.add("hidden");
-});
-document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
-    gameMode = "ai";
-    document.getElementById("sys-bs-mode").value = "ai";
-    document.getElementById("multiplayer-lobby").classList.add("hidden");
-    SystemUI.stopChat();
-    chatStarted = false;
 });
 
 // ==========================================
@@ -85,7 +104,8 @@ let isHorizontal = true;
 let deleteMode = false;
 let shipsPlacedCount = 0;
 let placedShips = new Set();
-let shipCoords = {}; // NEW: Tracks exact ship locations for deleting
+let shipCoords = {}; 
+let opponentShipCoords = {}; 
 let gameState = "setup";
 let turn = 1;
 
@@ -107,7 +127,6 @@ function initBoards() {
     }
 }
 
-// Ship Selector logic
 document.querySelectorAll(".ship-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
         if(deleteMode) toggleDeleteMode();
@@ -189,68 +208,66 @@ function placeOrDelete(index) {
 }
 
 // ==========================================
-// 3. COMBAT & FIREBASE 
+// 3. V2 LOBBY & ONLINE SYNC
 // ==========================================
-const lobbyUI = document.getElementById("multiplayer-lobby");
-
-document.getElementById("btn-create-room").addEventListener("click", () => {
-    SystemUI.playSound('click');
-    currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
-    isHost = true; myId = 1;
-    chatStarted = false; // Reset chat status
-
-    window.dbSet(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), {
-        player1Board: playerBoard,
-        player2Board: Array(100).fill(0),
-        turn: 1, status: "waiting", ready1: false, ready2: false
-    }).then(() => {
-        document.getElementById("room-code-display").classList.remove("hidden");
-        document.getElementById("host-room-id").innerText = currentRoomId;
-        listenToRoom();
-    });
-});
-
-document.getElementById("btn-join-room").addEventListener("click", () => {
-    SystemUI.playSound('click');
-    const code = document.getElementById("join-room-input").value.toUpperCase();
-    window.dbGet(window.dbChild(window.dbRef(window.db), `bs_rooms/${code}`)).then((snapshot) => {
-        if (snapshot.exists()) {
-            currentRoomId = code; isHost = false; myId = 2;
-            chatStarted = false; // Reset chat status
-
-            // Immediately set the room status to "playing" since 2 players are here
-            window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), {
-                status: "playing"
-            });
-
-            lobbyUI.classList.add("hidden");
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        isHost = true; myId = 1; chatStarted = false;
+        seats = [{ type: "human", name: SystemUI.getPlayerName() }, { type: "ai", name: "AI (" + aiDifficulty + ")" }];
+        
+        window.dbSet(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), {
+            player1Board: playerBoard,
+            player2Board: Array(100).fill(0),
+            player1Ships: shipCoords,
+            player2Ships: {},
+            turn: 1, status: "waiting", ready1: false, ready2: false, seats: seats
+        }).then(() => {
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToRoom();
-        }
-    });
+        });
+    },
+    onJoin: (code) => {
+        window.dbGet(window.dbChild(window.dbRef(window.db), `bs_rooms/${code}`)).then((snapshot) => {
+            if (snapshot.exists()) {
+                let data = snapshot.val();
+                if (data.seats && data.seats[1].type === "ai") {
+                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+                    let updatedSeats = data.seats;
+                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
+                    window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), { seats: updatedSeats, status: "playing" });
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    listenToRoom();
+                }
+            }
+        });
+    },
+    onLeave: () => { gameMode = "ai"; resetGame(); },
+    onStart: () => { window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), { status: "playing" }); }
 });
 
 function listenToRoom() {
-    window.dbOnValue(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), (snapshot) => {
+    let onlineGameStarted = false;
+    if (roomListener) roomListener();
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if (!data) return;
-
-        // THE FIX: Trigger chat reliably when the status flips to playing
-        if(data.status === "playing" && !chatStarted) {
-            chatStarted = true;
-            if(lobbyUI) lobbyUI.classList.add("hidden");
-            SystemUI.playSound('win'); 
-            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+        seats = data.seats || [];
+        SystemUI.v2Lobby.renderSeats(seats);
+        if(data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true; SystemUI.v2Lobby.hide();
+            if(!chatStarted) { chatStarted = true; SystemUI.playSound('win'); SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
         }
-
         turn = data.turn;
         playerBoard = myId === 1 ? data.player1Board : data.player2Board;
         opponentBoard = myId === 1 ? data.player2Board : data.player1Board;
+        opponentShipCoords = myId === 1 ? (data.player2Ships || {}) : (data.player1Ships || {});
         if (data.ready1 && data.ready2) {
             gameState = "playing";
             document.getElementById("status-display").innerText = turn === myId ? "YOUR TURN: FIRE!" : "ENEMY IS AIMING...";
         }
-        updateVisuals();
-        checkWin();
+        updateVisuals(); checkWin();
+        if (isHost && gameState === "playing" && turn === (seats[0].type === 'ai' ? 1 : 2)) setTimeout(aiAttack, 1000);
     });
 }
 
@@ -258,45 +275,84 @@ async function handleAttack(index) {
     if (gameState !== "playing" || isMoving) return;
     if (gameMode === "online" && turn !== myId) return;
     if (opponentBoard[index] > 1) return;
-
     isMoving = true;
-
     const isHit = opponentBoard[index] === 1;
     const newVal = isHit ? 3 : 2;
-
     if (gameMode === "online") {
         let path = myId === 1 ? 'player2Board/' : 'player1Board/';
         let updates = {}; updates[path + index] = newVal; updates['turn'] = myId === 1 ? 2 : 1;
         window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), updates);
     } else {
-        opponentBoard[index] = newVal;
-        playCombatSound(isHit ? 'hit' : 'miss');
-        
+        opponentBoard[index] = newVal; playCombatSound(isHit ? 'hit' : 'miss');
         checkWin(); 
-        
-        if (gameState === "playing") {
-            turn = 2; 
-            updateVisuals();
-            setTimeout(aiAttack, 800);
-        }
+        if (gameState === "playing") { turn = 2; updateVisuals(); setTimeout(aiAttack, 800); }
     }
     isMoving = false;
 }
 
+// ==========================================
+// 4. UPGRADED AI ENGINE (Hunt-and-Target)
+// ==========================================
+let aiTargetStack = []; 
+
 function aiAttack() {
     if (gameState !== "playing") return;
-    let idx; do { idx = Math.floor(Math.random()*100); } while(playerBoard[idx] > 1);
+    let idx;
+
+    if (aiDifficulty === "easy") {
+        do { idx = Math.floor(Math.random()*100); } while(playerBoard[idx] > 1);
+    } else {
+        // Normal & Hard use targeting logic
+        if (aiTargetStack.length > 0) {
+            idx = aiTargetStack.pop();
+        } else {
+            // Hunt Mode: Parity/Checkerboard pattern
+            let possible = [];
+            for (let i = 0; i < 100; i++) {
+                if (playerBoard[i] <= 1) {
+                    if (aiDifficulty === "hard") {
+                        if ((Math.floor(i / 10) + (i % 10)) % 2 === 0) possible.push(i);
+                    } else possible.push(i);
+                }
+            }
+            if (possible.length === 0) {
+                for (let i = 0; i < 100; i++) if (playerBoard[i] <= 1) possible.push(i);
+            }
+            idx = possible[Math.floor(Math.random() * possible.length)];
+        }
+    }
+
     const isHit = playerBoard[idx] === 1;
     playerBoard[idx] = isHit ? 3 : 2;
     playCombatSound(isHit ? 'hit' : 'miss');
-    turn = 1; updateVisuals();
+
+    if (isHit && aiDifficulty !== "easy") {
+        // Add adjacent squares to stack
+        const adj = [idx - 10, idx + 10, idx - 1, idx + 1];
+        adj.forEach(a => {
+            if (a >= 0 && a < 100 && playerBoard[a] <= 1) {
+                // Ensure horizontal adjacency doesn't wrap rows
+                if (Math.abs(idx % 10 - a % 10) <= 1) aiTargetStack.push(a);
+            }
+        });
+    }
+
+    if (gameMode === "online") {
+        let path = myId === 1 ? 'player1Board/' : 'player2Board/';
+        let updates = {}; updates[path + idx] = playerBoard[idx]; updates['turn'] = myId;
+        window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), updates);
+    } else {
+        turn = 1; updateVisuals(); checkWin();
+    }
 }
 
+// ==========================================
+// 5. RENDERING & UI
+// ==========================================
 document.getElementById("fire-btn").addEventListener("click", () => {
     if (gameMode === "online") {
         let ready = myId === 1 ? 'ready1' : 'ready2';
-        let board = myId === 1 ? 'player1Board' : 'player2Board';
-        let updates = {}; updates[ready] = true; updates[board] = playerBoard;
+        let updates = {}; updates[ready] = true; updates[myId === 1 ? 'player1Ships' : 'player2Ships'] = shipCoords;
         window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), updates);
         rollBtn.disabled = true;
     } else {
@@ -310,99 +366,101 @@ document.getElementById("fire-btn").addEventListener("click", () => {
 
 function autoPlaceShips(boardArray, isPlayer) {
     boardArray.fill(0);
-    if (isPlayer) shipCoords = {};
+    let coordsObj = {};
     const sizes = [5, 4, 3, 3, 2];
     const names = ["Carrier", "Battleship", "Destroyer", "Sub", "Patrol"];
     sizes.forEach((size, idx) => {
         let placed = false;
         while (!placed) {
-            let horizontal = Math.random() > 0.5;
+            let horiz = Math.random() > 0.5;
             let start = Math.floor(Math.random() * 100);
             let coords = [];
             for (let i = 0; i < size; i++) {
-                let next = horizontal ? start + i : start + (i * 10);
-                if (next >= 100 || (horizontal && Math.floor(next/10) !== Math.floor(start/10))) break;
+                let next = horiz ? start + i : start + (i * 10);
+                if (next >= 100 || (horiz && Math.floor(next/10) !== Math.floor(start/10))) break;
                 if (boardArray[next] !== 0) break;
                 coords.push(next);
             }
             if (coords.length === size) {
                 coords.forEach(c => boardArray[c] = 1);
-                if (isPlayer) shipCoords[names[idx]] = coords;
+                coordsObj[names[idx]] = coords;
                 placed = true;
             }
         }
     });
-    if(isPlayer) {
-        shipsPlacedCount = 5;
-        placedShips = new Set(["Carrier", "Battleship", "Destroyer", "Sub", "Patrol"]);
-        document.querySelectorAll(".ship-btn").forEach(b => b.disabled = true);
-        rollBtn.disabled = false;
-    }
+    if(isPlayer) { shipCoords = coordsObj; shipsPlacedCount = 5; placedShips = new Set(names); rollBtn.disabled = false; }
+    else { opponentShipCoords = coordsObj; }
     updateVisuals();
 }
 
 document.getElementById("auto-place-btn").addEventListener("click", () => {
     if (gameState !== "setup") return;
+    SystemUI.playSound('shuffle');
     autoPlaceShips(playerBoard, true);
 });
 
 function updateVisuals() {
     const pCells = document.querySelectorAll("#player-board .cell");
     const oCells = document.querySelectorAll("#opponent-board .cell");
-    
+    document.querySelectorAll('.ship-image').forEach(el => el.remove());
     playerBoard.forEach((v, i) => {
         pCells[i].className = "cell";
         if (v === 1) pCells[i].classList.add("ship");
         if (v === 2) pCells[i].classList.add("miss");
         if (v === 3) pCells[i].classList.add("hit");
     });
-
     opponentBoard.forEach((v, i) => {
         oCells[i].className = "cell";
         if (v === 2) oCells[i].classList.add("miss");
         if (v === 3) oCells[i].classList.add("hit");
     });
-    
-    if (gameState === "setup" && shipsPlacedCount === 5) {
-        rollBtn.style.opacity = "1";
-        rollBtn.disabled = false;
-    } else {
-        rollBtn.style.opacity = "0.5";
-        rollBtn.disabled = true;
+    const imgMap = { "Carrier": "ShipCarrierHull.png", "Battleship": "ShipBattleshipHull.png", "Destroyer": "ShipDestroyerHull.png", "Sub": "Submarine.png", "Patrol": "ShipPatrolHull.png" };
+    placedShips.forEach(shipName => {
+        const coords = shipCoords[shipName]; if (!coords) return;
+        const isH = coords.length > 1 && coords[1] - coords[0] === 1;
+        const sprite = document.createElement('div');
+        sprite.className = `ship-image ${isH ? 'horiz' : ''}`;
+        sprite.style.setProperty('--ship-size', coords.length);
+        sprite.style.backgroundImage = `url('../../system/images/pieces/battleship/${imgMap[shipName]}')`;
+        pCells[coords[0]].appendChild(sprite);
+    });
+    for (let shipName in opponentShipCoords) {
+        const coords = opponentShipCoords[shipName]; if (!coords) continue;
+        if (coords.every(idx => opponentBoard[idx] === 3)) {
+            const isH = coords.length > 1 && coords[1] - coords[0] === 1;
+            const sprite = document.createElement('div');
+            sprite.className = `ship-image ${isH ? 'horiz' : ''}`;
+            sprite.style.setProperty('--ship-size', coords.length);
+            sprite.style.backgroundImage = `url('../../system/images/pieces/battleship/${imgMap[shipName]}')`;
+            oCells[coords[0]].appendChild(sprite);
+        }
     }
+    rollBtn.disabled = !(gameState === "setup" && shipsPlacedCount === 5);
+    rollBtn.style.opacity = rollBtn.disabled ? "0.5" : "1";
 }
 
 function checkWin() {
-    const pRemaining = playerBoard.filter(v => v === 1).length;
-    const oRemaining = opponentBoard.filter(v => v === 1).length;
+    const pRem = playerBoard.filter(v => v === 1).length;
+    const oRem = opponentBoard.filter(v => v === 1).length;
     const statusText = document.getElementById("status-display");
-
-    if (oRemaining === 0 && gameState === "playing") {
-        SystemUI.playSound('win'); 
-        statusText.innerText = "VICTORY! ENEMY FLEET SUNK!";
-        gameState = "finished";
-        updateVisuals();
-    } else if (pRemaining === 0 && gameState === "playing") {
-        SystemUI.playSound('lose'); 
-        statusText.innerText = "DEFEAT! YOUR FLEET IS GONE!";
-        gameState = "finished";
-        updateVisuals();
+    if (oRem === 0 && gameState === "playing") {
+        SystemUI.playSound('win'); statusText.innerText = "VICTORY! ENEMY FLEET SUNK!";
+        gameState = "finished"; updateVisuals();
+    } else if (pRem === 0 && gameState === "playing") {
+        SystemUI.playSound('lose'); statusText.innerText = "DEFEAT! YOUR FLEET IS GONE!";
+        gameState = "finished"; updateVisuals();
     }
 }
 
 function resetGame() {
-    SystemUI.playSound('shuffle');
-    playerBoard.fill(0); opponentBoard.fill(0);
-    gameState = "setup"; shipsPlacedCount = 0; turn = 1;
-    placedShips.clear();
-    shipCoords = {};
-    document.querySelectorAll(".ship-btn").forEach(b => b.disabled = false);
-    document.querySelectorAll(".ship-btn").forEach(b => b.classList.remove("selected"));
+    SystemUI.playSound('shuffle'); playerBoard.fill(0); opponentBoard.fill(0);
+    gameState = "setup"; shipsPlacedCount = 0; turn = 1; aiTargetStack = [];
+    placedShips.clear(); shipCoords = {}; opponentShipCoords = {};
+    document.querySelectorAll(".ship-btn").forEach(b => { b.disabled = false; b.classList.remove("selected"); });
     document.getElementById("ship-selector").classList.remove("hidden");
     document.getElementById("status-display").innerText = "PLACE YOUR FLEET";
     initBoards();
 }
 
 document.getElementById("restart-btn").addEventListener("click", resetGame);
-
 initBoards();

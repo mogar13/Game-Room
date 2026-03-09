@@ -1,0 +1,688 @@
+/* =============================================
+   FAMILY FEUD — feud_style.css
+   Casino OS | The Game Shack
+   ============================================= */
+
+:root {
+    --bg:          #07091a;
+    --panel:       #0d1230;
+    --tile-hidden: #111930;
+    --tile-border: #1e2d7a;
+    --gold:        #f5c518;
+    --gold-dim:    #c49a14;
+    --gold-glow:   rgba(245, 197, 24, 0.35);
+    --red:         #e53030;
+    --red-glow:    rgba(229, 48, 48, 0.45);
+    --green:       #22c55e;
+    --muted:       rgba(255,255,255,0.38);
+    --radius:      8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background-color: var(--bg);
+    background-image:
+        radial-gradient(ellipse 60% 40% at 15% 10%, rgba(30, 58, 160, 0.18) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 35% at 85% 85%, rgba(245, 197, 24, 0.07) 0%, transparent 55%);
+    min-height: 100dvh;
+    overflow-x: hidden;
+    font-family: 'Rajdhani', sans-serif;
+    color: #fff;
+}
+
+#game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 56px 12px 24px;
+    min-height: 100dvh;
+    gap: 8px;
+    max-width: 620px;
+    margin: 0 auto;
+}
+
+/* ── SCOREBOARD ─────────────────────────────── */
+#scoreboard {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    width: 100%;
+    gap: 6px;
+}
+
+.team-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--tile-border);
+    border-radius: var(--radius);
+    padding: 8px 10px 10px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    min-width: 0;
+}
+
+.team-block.active {
+    border-color: var(--gold);
+    box-shadow: 0 0 18px var(--gold-glow);
+}
+
+.team-name {
+    font-family: 'Anton', sans-serif;
+    font-size: 0.68rem;
+    letter-spacing: 2px;
+    color: var(--gold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    width: 100%;
+    text-align: center;
+}
+
+.team-pts {
+    font-family: 'Anton', sans-serif;
+    font-size: 2.2rem;
+    letter-spacing: 1px;
+    color: #fff;
+    line-height: 1;
+    margin-top: 2px;
+}
+
+#board-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+#round-label {
+    font-family: 'Anton', sans-serif;
+    font-size: 0.62rem;
+    letter-spacing: 3px;
+    color: var(--muted);
+}
+
+#board-pts-display {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--gold);
+}
+
+/* ── STATUS ROW ─────────────────────────────── */
+#status-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    gap: 12px;
+}
+
+#strikes-zone {
+    display: flex;
+    gap: 7px;
+}
+
+.strike-box {
+    width: 34px;
+    height: 34px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Anton', sans-serif;
+    font-size: 1.2rem;
+    color: transparent;
+    transition: all 0.15s;
+    background: rgba(0,0,0,0.3);
+}
+
+.strike-box.active {
+    border-color: var(--red);
+    background: var(--red);
+    color: #fff;
+    box-shadow: 0 0 14px var(--red-glow);
+    animation: strikeIn 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes strikeIn {
+    0%   { transform: scale(0.4) rotate(-15deg); opacity: 0.2; }
+    60%  { transform: scale(1.25) rotate(6deg); }
+    100% { transform: scale(1) rotate(0); }
+}
+
+#phase-tag {
+    font-family: 'Anton', sans-serif;
+    font-size: 0.72rem;
+    letter-spacing: 3px;
+    color: var(--gold);
+    background: rgba(245, 197, 24, 0.07);
+    border: 1px solid rgba(245, 197, 24, 0.22);
+    border-radius: 20px;
+    padding: 5px 14px;
+    white-space: nowrap;
+}
+
+/* ── QUESTION BANNER ────────────────────────── */
+#question-wrap {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--tile-border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    text-align: center;
+}
+
+#question-label {
+    font-family: 'Anton', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 5px;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+#question-text {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.08rem;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.35;
+}
+
+/* ── ANSWER BOARD ───────────────────────────── */
+#answer-board {
+    width: 100%;
+}
+
+#board-frame {
+    background: #070a1c;
+    border: 2px solid var(--tile-border);
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow:
+        0 0 0 1px rgba(30, 45, 122, 0.4),
+        0 0 40px rgba(20, 40, 130, 0.35),
+        inset 0 0 24px rgba(0,0,0,0.6);
+}
+
+#tiles-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+}
+
+/* ── TILE FLIP ANIMATION ────────────────────── */
+/*
+ * CSS 3D Card Flip:
+ * 1. .answer-tile sets perspective on the container
+ * 2. .tile-inner holds both faces and uses transform-style: preserve-3d
+ * 3. .tile-front and .tile-back both use backface-visibility: hidden
+ *    so only the face pointing toward the viewer is visible
+ * 4. .tile-back starts pre-rotated 180deg
+ * 5. Adding .revealed to .answer-tile flips .tile-inner 180deg,
+ *    which brings the back face into view
+ */
+.answer-tile {
+    height: 56px;
+    perspective: 700px;
+}
+
+.tile-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.52s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.answer-tile.revealed .tile-inner {
+    transform: rotateY(180deg);
+}
+
+.tile-front,
+.tile-back {
+    position: absolute;
+    inset: 0;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+/* Front: hidden / numbered */
+.tile-front {
+    background: var(--tile-hidden);
+    border: 1px solid var(--tile-border);
+    justify-content: center;
+}
+
+.t-num {
+    font-family: 'Anton', sans-serif;
+    font-size: 1.6rem;
+    color: rgba(255,255,255,0.12);
+    user-select: none;
+}
+
+/* Back: revealed answer */
+.tile-back {
+    background: linear-gradient(140deg, #1e41a8 0%, #0f2568 100%);
+    border: 1px solid #3050cc;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.12),
+        0 0 14px rgba(30, 65, 168, 0.5);
+    transform: rotateY(180deg); /* pre-rotated so it starts hidden */
+    justify-content: space-between;
+    padding: 0 14px;
+}
+
+.t-ans {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 72%;
+    user-select: none;
+}
+
+.t-pts {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--gold);
+    white-space: nowrap;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+/* ── FULL-SCREEN STRIKE FLASH ───────────────── */
+#strike-flash {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Anton', sans-serif;
+    font-size: min(40vw, 280px);
+    color: var(--red);
+    text-shadow: 0 0 80px var(--red), 0 0 140px var(--red-glow);
+    background: rgba(180, 20, 20, 0.12);
+    z-index: 800;
+    pointer-events: none;
+    opacity: 0;
+}
+
+#strike-flash.flash {
+    animation: strikeFlashAnim 0.9s ease-out forwards;
+}
+
+@keyframes strikeFlashAnim {
+    0%   { opacity: 1; transform: scale(0.6); }
+    25%  { opacity: 1; transform: scale(1.08); }
+    75%  { opacity: 0.8; }
+    100% { opacity: 0; transform: scale(1.12); }
+}
+
+/* ── BUZZ ZONE ──────────────────────────────── */
+#buzz-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+#buzz-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 300px;
+    padding: 18px 24px;
+    background: linear-gradient(180deg, #f5c518 0%, #c49a14 100%);
+    border: none;
+    border-radius: 60px;
+    cursor: pointer;
+    box-shadow:
+        0 6px 28px rgba(245, 197, 24, 0.5),
+        0 -2px 0 rgba(255,255,255,0.2) inset,
+        0 2px 0 rgba(100, 60, 0, 0.5) inset;
+    transition: transform 0.08s, box-shadow 0.08s;
+    animation: buzzPulse 2.2s ease-in-out infinite;
+}
+
+#buzz-btn:active {
+    transform: scale(0.95) translateY(3px);
+    box-shadow: 0 2px 10px rgba(245, 197, 24, 0.3);
+    animation: none;
+}
+
+@keyframes buzzPulse {
+    0%, 100% { box-shadow: 0 6px 28px rgba(245, 197, 24, 0.5), 0 -2px 0 rgba(255,255,255,0.2) inset; }
+    50%       { box-shadow: 0 6px 44px rgba(245, 197, 24, 0.8), 0 -2px 0 rgba(255,255,255,0.2) inset; }
+}
+
+.buzz-icon  { font-size: 1.5rem; line-height: 1; }
+.buzz-label {
+    font-family: 'Anton', sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: 4px;
+    color: #1a0e00;
+    line-height: 1;
+}
+
+#buzz-hint {
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 1px;
+}
+
+#buzz-hint kbd {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+}
+
+/* ── GUESS ZONE ─────────────────────────────── */
+#guess-zone {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#active-team-banner {
+    text-align: center;
+    font-family: 'Anton', sans-serif;
+    font-size: 0.9rem;
+    letter-spacing: 3px;
+    color: var(--gold);
+    padding: 7px 12px;
+    background: rgba(245, 197, 24, 0.06);
+    border: 1px solid rgba(245, 197, 24, 0.16);
+    border-radius: var(--radius);
+}
+
+#guess-row {
+    display: flex;
+    gap: 8px;
+}
+
+#guess-input {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--tile-border);
+    border-radius: var(--radius);
+    color: #fff;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    padding: 12px 14px;
+    outline: none;
+    min-height: 50px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#guess-input:focus {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.12);
+}
+
+#guess-input::placeholder {
+    color: rgba(255,255,255,0.18);
+    font-weight: 500;
+}
+
+#guess-btn {
+    font-family: 'Anton', sans-serif;
+    letter-spacing: 2px;
+    font-size: 1rem;
+    background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
+    color: #1a0e00;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0 22px;
+    min-height: 50px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: transform 0.08s;
+}
+
+#guess-btn:active { transform: scale(0.96); }
+
+#action-btns {
+    display: flex;
+    gap: 8px;
+}
+
+#pass-btn {
+    flex: 1;
+    font-family: 'Anton', sans-serif;
+    letter-spacing: 2px;
+    font-size: 0.9rem;
+    background: rgba(255,255,255,0.05);
+    color: var(--muted);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius);
+    min-height: 44px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+#pass-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+.steal-btn {
+    flex: 1;
+    font-family: 'Anton', sans-serif;
+    letter-spacing: 2px;
+    font-size: 0.9rem;
+    background: linear-gradient(180deg, #e53030 0%, #9e1414 100%);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    min-height: 44px;
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(229, 48, 48, 0.45);
+    animation: stealPulse 1.6s ease-in-out infinite;
+    transition: transform 0.08s;
+}
+
+.steal-btn:active { transform: scale(0.96); animation: none; }
+
+@keyframes stealPulse {
+    0%, 100% { box-shadow: 0 4px 18px rgba(229, 48, 48, 0.45); }
+    50%       { box-shadow: 0 4px 32px rgba(229, 48, 48, 0.75); }
+}
+
+/* ── START BUTTON ───────────────────────────── */
+#start-btn {
+    width: 100%;
+    max-width: 300px;
+    padding: 16px;
+    font-family: 'Anton', sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: 4px;
+    background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
+    color: #1a0e00;
+    border: none;
+    border-radius: 60px;
+    cursor: pointer;
+    box-shadow: 0 6px 28px rgba(245, 197, 24, 0.4);
+    transition: transform 0.1s, box-shadow 0.1s;
+    margin-top: auto;
+}
+
+#start-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 36px rgba(245, 197, 24, 0.5); }
+#start-btn:active { transform: scale(0.96); }
+
+/* ── WRONG FLASH ────────────────────────────── */
+#wrong-flash {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    font-family: 'Anton', sans-serif;
+    font-size: 2.8rem;
+    letter-spacing: 6px;
+    color: #fff;
+    background: var(--red);
+    border-radius: 14px;
+    padding: 14px 40px;
+    z-index: 600;
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: 0 0 40px var(--red-glow);
+}
+
+#wrong-flash.flash {
+    animation: wrongFlashAnim 0.75s ease-out forwards;
+}
+
+@keyframes wrongFlashAnim {
+    0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.75); }
+    20%  { transform: translate(-50%, -50%) scale(1.1); }
+    65%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* ── CORRECT FLASH ──────────────────────────── */
+#correct-flash {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    font-family: 'Anton', sans-serif;
+    font-size: 3.5rem;
+    color: var(--green);
+    text-shadow: 0 0 40px var(--green);
+    z-index: 600;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#correct-flash.flash {
+    animation: correctFlashAnim 0.6s ease-out forwards;
+}
+
+@keyframes correctFlashAnim {
+    0%   { opacity: 1; transform: translate(-50%, -50%) scale(0.6); }
+    40%  { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.1); }
+}
+
+/* ── GAME OVER MODAL ────────────────────────── */
+#game-over-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(6px);
+}
+
+#game-over-modal.hidden { display: none; }
+
+.game-over-box {
+    background: linear-gradient(155deg, #111e40 0%, var(--bg) 100%);
+    border: 2px solid var(--gold);
+    border-radius: 18px;
+    padding: 36px 28px 26px;
+    text-align: center;
+    max-width: 320px;
+    width: 90%;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.85), 0 0 44px var(--gold-glow);
+}
+
+#game-over-emoji { font-size: 3.2rem; margin-bottom: 10px; }
+
+#game-over-title {
+    font-family: 'Anton', sans-serif;
+    font-size: 2rem;
+    letter-spacing: 4px;
+    color: var(--gold);
+    margin-bottom: 8px;
+}
+
+#game-over-msg {
+    font-size: 0.95rem;
+    color: var(--muted);
+    margin-bottom: 24px;
+    line-height: 1.6;
+}
+
+#btn-play-again {
+    font-family: 'Anton', sans-serif;
+    letter-spacing: 2px;
+    font-size: 1.1rem;
+    background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
+    color: #1a0e00;
+    border: none;
+    border-radius: 10px;
+    padding: 13px 36px;
+    cursor: pointer;
+    width: 100%;
+    min-height: 50px;
+    margin-bottom: 10px;
+    transition: transform 0.1s;
+}
+
+#btn-play-again:hover { transform: scale(1.03); }
+
+#btn-exit-game {
+    font-family: 'Anton', sans-serif;
+    letter-spacing: 2px;
+    font-size: 0.85rem;
+    background: none;
+    color: rgba(255,255,255,0.22);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 9px 24px;
+    cursor: pointer;
+    width: 100%;
+    min-height: 40px;
+    transition: color 0.15s;
+}
+
+#btn-exit-game:hover { color: rgba(255,255,255,0.5); }
+
+/* ── UTILITY ─────────────────────────────────── */
+.hidden { display: none !important; }
+
+/* ── MOBILE ──────────────────────────────────── */
+@media (max-width: 480px) {
+    #game-container { padding: 54px 8px 16px; gap: 6px; }
+
+    .team-pts { font-size: 1.8rem; }
+    .answer-tile { height: 50px; }
+    .t-ans { font-size: 0.88rem; }
+    .t-pts { font-size: 0.78rem; }
+    .tile-back { padding: 0 10px; }
+
+    #question-text { font-size: 0.95rem; }
+    .buzz-label { font-size: 1.3rem; }
+    #buzz-btn { padding: 15px 20px; }
+
+    #wrong-flash { font-size: 2.2rem; padding: 12px 28px; }
+}
+
+@media (min-width: 520px) {
+    .answer-tile { height: 62px; }
+    .t-ans { font-size: 1.08rem; }
+    .t-pts { font-size: 0.95rem; }
+    .team-pts { font-size: 2.6rem; }
+}

@@ -1,13 +1,14 @@
 // ==========================================
-// 1. INITIALIZE OS & STATE
+// 1. INITIALIZE OS & STATE (V2 Engine)
 // ==========================================
 let gameMode = "ai";
 localStorage.setItem("domino_mode", "ai"); 
 
 let myId = 1;
 let currentRoomId = null;
-let isHost = false;
+let isHost = true;
 let chatStarted = false;
+let seats = [];
 
 let p1Name = SystemUI.getPlayerName();
 let p2Name = "AI";
@@ -18,7 +19,7 @@ function playDominoSound(type) {
     else if (type === 'play') snd = new Audio('../../system/audio/card-shove-2.ogg'); 
     else if (type === 'win') snd = new Audio('../../system/audio/win.ogg');
     else if (type === 'lose') snd = new Audio('../../system/audio/lose.ogg');
-    else if (type === 'tie') snd = new Audio('../../system/audio/tie.ogg'); // Added Tie
+    else if (type === 'tie') snd = new Audio('../../system/audio/tie.ogg'); 
 
     if (snd) {
         snd.pause();
@@ -30,6 +31,7 @@ function playDominoSound(type) {
 function logMove(player, msg, isSystem = false) {
     const logContainer = document.getElementById("move-log-container");
     const logDiv = document.getElementById("move-log");
+    if(!logContainer || !logDiv) return;
     logContainer.classList.remove("hidden");
 
     const entry = document.createElement("div");
@@ -51,12 +53,16 @@ let myHand = [];
 let oppHand = []; 
 let oppHandCount = 0;
 let currentTurn = 1;
+
+function isMyTurn() {
+    return gameMode === "online" ? currentTurn === myId : currentTurn === 1;
+}
 let leftEnd = null;
 let rightEnd = null;
 let consecutivePasses = 0;
 let gameState = "setup"; 
 let lastPlayedTileId = null;
-let pendingPlayIndex = null; // Used for the Side Picker modal
+let pendingPlayIndex = null; 
 
 SystemUI.init({
     gameName: "DOMINOES PRO",
@@ -68,17 +74,26 @@ SystemUI.init({
 
 document.getElementById("p1-label").innerText = p1Name;
 
-document.getElementById("sys-domino-mode").value = gameMode;
-document.getElementById("sys-domino-mode").addEventListener("change", (e) => {
-    gameMode = e.target.value;
-    localStorage.setItem("domino_mode", gameMode);
-    document.getElementById("sys-modal").classList.add("sys-hidden");
-    if (gameMode === "online") document.getElementById("multiplayer-lobby").classList.remove("hidden");
-    else {
-        document.getElementById("multiplayer-lobby").classList.add("hidden");
-        SystemUI.stopChat(); chatStarted = false; resetGame();
+// Sync dropdown after init
+setTimeout(() => {
+    const modeEl = document.getElementById("sys-domino-mode");
+    if(modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", (e) => {
+            gameMode = e.target.value;
+            localStorage.setItem("domino_mode", gameMode);
+            document.getElementById("sys-modal").classList.add("sys-hidden");
+            if (gameMode === "online") {
+                SystemUI.v2Lobby.show();
+            } else {
+                SystemUI.v2Lobby.hide();
+                SystemUI.stopChat(); chatStarted = false;
+                myId = 1; isHost = true;
+                resetGame();
+            }
+        });
     }
-});
+}, 10);
 
 // ==========================================
 // 2. CSS TILE GENERATOR 
@@ -87,7 +102,6 @@ function buildBoneyard() {
     boneyard = [];
     for (let i = 0; i <= 6; i++) {
         for (let j = i; j <= 6; j++) {
-            // Added placedLeftVal and placedRightVal to track rotation mathematically
             boneyard.push({ id: generateId(), top: i, bottom: j, isDouble: i === j, placedLeftVal: null, placedRightVal: null });
         }
     }
@@ -125,13 +139,12 @@ function renderTileElement(tile, isBoard = false) {
         <div class="domino-half bottom">${getPipsHTML(tile.bottom)}</div>
     `;
 
-    // Mathematical Rotation Logic: Matches dots perfectly
     if (isBoard && !tile.isDouble) {
         wrapper.classList.add("horizontal");
         if (tile.placedLeftVal === tile.top) {
-            el.classList.add("rotate-minus-90"); // Points TOP to the LEFT
+            el.classList.add("rotate-minus-90"); 
         } else {
-            el.classList.add("rotate-90"); // Points BOTTOM to the LEFT
+            el.classList.add("rotate-90"); 
         }
     }
 
@@ -172,7 +185,7 @@ function startGame() {
         myHand.push(boneyard.pop());
         oppHand.push(boneyard.pop());
     }
-    oppHandCount = 7;
+    oppHandCount = oppHand.length;
 
     renderTable();
     checkPassVisibility();
@@ -180,7 +193,7 @@ function startGame() {
 }
 
 function attemptPlayTile(index) {
-    if (currentTurn !== 1 || gameState !== "playing") return;
+    if (!isMyTurn() || gameState !== "playing") return;
 
     const tile = myHand[index];
     let canLeft = false;
@@ -195,7 +208,6 @@ function attemptPlayTile(index) {
     if (tile.top === rightEnd || tile.bottom === rightEnd) canRight = true;
 
     if (canLeft && canRight && leftEnd !== rightEnd && !tile.isDouble) {
-        // Tile matches both sides, and sides are different. Ask user!
         pendingPlayIndex = index;
         document.getElementById("side-picker-modal").classList.remove("hidden");
     } else if (canLeft) {
@@ -207,7 +219,6 @@ function attemptPlayTile(index) {
     }
 }
 
-// Modal Listeners
 document.getElementById("btn-play-left").addEventListener("click", () => {
     document.getElementById("side-picker-modal").classList.add("hidden");
     if(pendingPlayIndex !== null) executePlay(pendingPlayIndex, 'left', 1);
@@ -229,7 +240,6 @@ function executePlay(index, position, player) {
     const tile = hand.splice(index, 1)[0];
     lastPlayedTileId = tile.id;
     
-    // The exact mathematical connection logic
     if (position === 'first') {
         leftEnd = tile.top;
         rightEnd = tile.bottom;
@@ -270,22 +280,23 @@ function executePlay(index, position, player) {
     checkWin(player);
     
     if (gameState === "playing") {
-        currentTurn = player === 1 ? 2 : 1;
+        currentTurn = (gameMode === "online") ? (myId === 1 ? 2 : 1) : (player === 1 ? 2 : 1);
         renderTable(); 
         checkPassVisibility();
         if (gameMode === "online") pushGameState();
-        if (currentTurn === 2 && gameMode === "ai") setTimeout(aiTurn, 1500);
+        if (currentTurn === 2 && gameMode === "ai") setTimeout(aiTurn, 1200);
     }
 }
 
 function drawFromBoneyard() {
-    if (currentTurn !== 1 || boneyard.length === 0 || gameState !== "playing") return;
+    if (!isMyTurn() || boneyard.length === 0 || gameState !== "playing") return;
     
     const tile = boneyard.pop();
     myHand.push(tile);
     playDominoSound('draw');
     logMove(p1Name, "drew a tile.");
     
+    lastPlayedTileId = null; 
     renderTable();
     checkPassVisibility();
     if (gameMode === "online") pushGameState();
@@ -294,13 +305,13 @@ function drawFromBoneyard() {
 document.getElementById("boneyard").addEventListener("click", drawFromBoneyard);
 
 document.getElementById("pass-turn-btn").addEventListener("click", () => {
-    if (currentTurn !== 1 || gameState !== "playing") return;
+    if (!isMyTurn() || gameState !== "playing") return;
     
     playDominoSound('play');
     logMove(p1Name, "knocked (passed).");
     consecutivePasses++;
     
-    currentTurn = 2;
+    currentTurn = (gameMode === "online") ? (myId === 1 ? 2 : 1) : 2;
     renderTable();
     checkPassVisibility();
     
@@ -313,7 +324,7 @@ document.getElementById("pass-turn-btn").addEventListener("click", () => {
 
 function checkPassVisibility() {
     const passBtn = document.getElementById("pass-turn-btn");
-    if (currentTurn !== 1 || gameState !== "playing") {
+    if (!isMyTurn() || gameState !== "playing") {
         passBtn.classList.add("hidden");
         return;
     }
@@ -358,27 +369,42 @@ function checkBlockedGame() {
 }
 
 // ==========================================
-// 4. THE AI BRAIN
+// 4. THE AI BRAIN (Strategic Heuristic)
 // ==========================================
 function aiTurn() {
     if (gameState !== "playing") return;
 
-    let validIdx = -1;
-    let position = null;
-
+    let possibleMoves = [];
     if (board.length === 0) {
-        validIdx = 0; position = 'first';
+        oppHand.forEach((t, i) => {
+            possibleMoves.push({ 
+                index: i, 
+                pos: 'first', 
+                score: (t.top + t.bottom) + (t.isDouble ? 50 : 0) 
+            });
+        });
     } else {
-        // AI prioritizes right side, then left
-        for (let i = 0; i < oppHand.length; i++) {
-            let t = oppHand[i];
-            if (t.top === rightEnd || t.bottom === rightEnd) { validIdx = i; position = 'right'; break; }
-            if (t.top === leftEnd || t.bottom === leftEnd) { validIdx = i; position = 'left'; break; }
-        }
+        oppHand.forEach((t, i) => {
+            if (t.top === rightEnd || t.bottom === rightEnd) {
+                possibleMoves.push({ 
+                    index: i, 
+                    pos: 'right', 
+                    score: (t.top + t.bottom) + (t.isDouble ? 50 : 0) 
+                });
+            }
+            if (t.top === leftEnd || t.bottom === leftEnd) {
+                possibleMoves.push({ 
+                    index: i, 
+                    pos: 'left', 
+                    score: (t.top + t.bottom) + (t.isDouble ? 50 : 0) 
+                });
+            }
+        });
     }
 
-    if (validIdx !== -1) {
-        executePlay(validIdx, position, 2);
+    if (possibleMoves.length > 0) {
+        possibleMoves.sort((a, b) => b.score - a.score);
+        executePlay(possibleMoves[0].index, possibleMoves[0].pos, 2);
     } else if (boneyard.length > 0) {
         oppHand.push(boneyard.pop());
         oppHandCount = oppHand.length;
@@ -394,6 +420,7 @@ function aiTurn() {
         renderTable();
         checkPassVisibility();
         checkBlockedGame();
+        if(gameMode === "online") pushGameState();
     }
 }
 
@@ -402,6 +429,7 @@ function aiTurn() {
 // ==========================================
 function renderTable() {
     const handDiv = document.getElementById("player-hand");
+    if(!handDiv) return;
     handDiv.innerHTML = "";
     myHand.forEach((tile, index) => {
         const tileEl = renderTileElement(tile, false);
@@ -410,12 +438,12 @@ function renderTable() {
     });
 
     const trainDiv = document.getElementById("domino-train");
+    if(!trainDiv) return;
     trainDiv.innerHTML = "";
     board.forEach(tile => {
         trainDiv.appendChild(renderTileElement(tile, true));
     });
 
-    // AUTO-SCALING MAGIC: Scales train down so it never requires scrolling
     requestAnimationFrame(() => {
         const boardArea = document.getElementById("domino-board");
         if(boardArea && trainDiv) {
@@ -431,11 +459,13 @@ function renderTable() {
     });
 
     const oppHandDiv = document.getElementById("opponent-hand");
-    oppHandDiv.innerHTML = "";
-    for(let i=0; i < oppHandCount; i++){
-        const backEl = document.createElement("div");
-        backEl.className = "domino-back";
-        oppHandDiv.appendChild(backEl);
+    if(oppHandDiv) {
+        oppHandDiv.innerHTML = "";
+        for(let i=0; i < oppHandCount; i++){
+            const backEl = document.createElement("div");
+            backEl.className = "domino-back";
+            oppHandDiv.appendChild(backEl);
+        }
     }
     
     document.getElementById("p1-label").innerText = p1Name;
@@ -444,7 +474,7 @@ function renderTable() {
 
     const banner = document.getElementById("turn-banner");
     banner.classList.remove("hidden");
-    if (currentTurn === 1) {
+    if (isMyTurn()) {
         banner.innerText = "⭐ YOUR TURN";
         banner.style.color = "#2ecc71"; 
     } else {
@@ -453,7 +483,6 @@ function renderTable() {
     }
 }
 
-// Listen for resizing to adjust board
 window.addEventListener("resize", renderTable);
 
 function resetGame() {
@@ -482,56 +511,62 @@ function resetGame() {
 document.getElementById("start-game-btn").addEventListener("click", startGame);
 
 // ==========================================
-// 6. FIREBASE MULTIPLAYER & SYNC
+// 6. MULTIPLAYER (V2 Engine)
 // ==========================================
-const lobbyUI = document.getElementById("multiplayer-lobby");
-let lastLogSync = "";
-
-function generateRoomCode() {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let code = "";
-    for(let i=0; i<4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-    return code;
-}
-
-document.getElementById("btn-create-room").addEventListener("click", () => {
-    playDominoSound('win');
-    currentRoomId = generateRoomCode(); isHost = true; myId = 1; chatStarted = false;
-    window.dbSet(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), {
-        status: "waiting", players: 1, p1Name: p1Name, turn: 1
-    }).then(() => {
-        document.getElementById("room-code-display").classList.remove("hidden");
-        document.getElementById("host-room-id").innerText = currentRoomId;
-        document.getElementById("btn-create-room").disabled = true;
-        listenToRoom();
-    });
-});
-
-document.getElementById("btn-join-room").addEventListener("click", () => {
-    playDominoSound('win');
-    const code = document.getElementById("join-room-input").value.toUpperCase();
-    window.dbGet(window.dbChild(window.dbRef(window.db), `domino_rooms/${code}`)).then((snapshot) => {
-        if (snapshot.exists() && snapshot.val().players === 1) {
-            currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-            window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), {
-                players: 2, p2Name: p1Name, status: "playing"
-            });
-            lobbyUI.classList.add("hidden");
-            SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
-            document.getElementById("start-game-btn").innerText = "Waiting for Host...";
-            document.getElementById("start-game-btn").disabled = true;
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        currentRoomId = Math.random().toString(36).substr(2, 4).toUpperCase();
+        isHost = true; myId = 1; chatStarted = false;
+        seats = [{ type: "human", name: SystemUI.getPlayerName() }, { type: "ai", name: "AI" }];
+        window.dbSet(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), {
+            status: "waiting", currentTurn: 1, seats: seats
+        }).then(() => {
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToRoom();
-        }
-    });
+        });
+    },
+    onJoin: (code) => {
+        window.dbGet(window.dbChild(window.dbRef(window.db), `domino_rooms/${code}`)).then((snapshot) => {
+            if (snapshot.exists()) {
+                let data = snapshot.val();
+                if (data.seats && data.seats[1].type === "ai") {
+                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+                    let updatedSeats = data.seats;
+                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
+                    window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { 
+                        seats: updatedSeats, 
+                        status: "playing" 
+                    });
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    listenToRoom();
+                }
+            }
+        });
+    },
+    onLeave: () => {
+        gameMode = "ai"; myId = 1; isHost = true;
+        resetGame();
+    },
+    onStart: () => {
+        window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "playing" });
+    }
 });
 
 function listenToRoom() {
+    let onlineGameStarted = false;
     window.dbOnValue(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if(!data) return;
-        if(data.status === "playing" && !chatStarted) {
-            chatStarted = true; lobbyUI.classList.add("hidden");
-            playDominoSound('win'); SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+        seats = data.seats || [];
+        SystemUI.v2Lobby.renderSeats(seats);
+        if(data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true;
+            SystemUI.v2Lobby.hide();
+            if(!chatStarted) {
+                chatStarted = true;
+                playDominoSound('win');
+                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
         }
         syncFromFirebase(data);
     });
@@ -540,17 +575,23 @@ function listenToRoom() {
 function pushGameState() {
     if (gameMode !== "online") return;
     let payload = {
-        board: board, boneyard: boneyard,
-        turn: currentTurn, leftEnd: leftEnd, rightEnd: rightEnd,
-        consecutivePasses: consecutivePasses, status: gameState,
-        lastPlayedTileId: lastPlayedTileId
+        board: board, 
+        boneyard: boneyard, 
+        turn: currentTurn, 
+        leftEnd: leftEnd, 
+        rightEnd: rightEnd,
+        consecutivePasses: consecutivePasses, 
+        status: gameState, 
+        lastPlayedTileId: lastPlayedTileId, 
+        seats: seats
     };
-    if (myId === 1) { payload.p1Hand = myHand; payload.p2Hand = oppHand; } 
-    else { payload.p2Hand = myHand; payload.p1Hand = oppHand; }
-    
-    const lastLogNode = document.getElementById("move-log").lastElementChild;
-    if(lastLogNode) payload.lastLogHTML = lastLogNode.innerHTML;
-
+    if (myId === 1) { 
+        payload.p1Hand = myHand; 
+        payload.p2Hand = oppHand; 
+    } else { 
+        payload.p2Hand = myHand; 
+        payload.p1Hand = oppHand; 
+    }
     window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), payload);
 }
 
@@ -560,43 +601,36 @@ function syncFromFirebase(data) {
         document.getElementById("move-log-container").classList.remove("hidden");
         document.getElementById("boneyard").classList.remove("hidden");
         gameState = "playing";
-        boneyard = data.boneyard || []; board = data.board || [];
+        boneyard = data.boneyard || []; 
+        board = data.board || [];
         currentTurn = data.turn || 1;
         leftEnd = data.leftEnd !== undefined ? data.leftEnd : null;
         rightEnd = data.rightEnd !== undefined ? data.rightEnd : null;
         consecutivePasses = data.consecutivePasses || 0;
         lastPlayedTileId = data.lastPlayedTileId || null;
-        
         if (myId === 1) {
-            myHand = data.p1Hand || []; oppHand = data.p2Hand || []; p2Name = data.p2Name || "Opponent";
+            myHand = data.p1Hand || []; 
+            oppHand = data.p2Hand || []; 
+            p2Name = seats[1].name;
         } else {
-            myHand = data.p2Hand || []; oppHand = data.p1Hand || []; p2Name = data.p1Name || "Opponent";
+            myHand = data.p2Hand || []; 
+            oppHand = data.p1Hand || []; 
+            p2Name = seats[0].name;
         }
         oppHandCount = oppHand.length;
-
-        if (data.lastLogHTML && data.lastLogHTML !== lastLogSync) {
-            lastLogSync = data.lastLogHTML;
-            if (!data.lastLogHTML.includes(p1Name)) {
-                const logDiv = document.getElementById("move-log");
-                const entry = document.createElement("div");
-                entry.innerHTML = data.lastLogHTML;
-                logDiv.appendChild(entry);
-                logDiv.scrollTop = logDiv.scrollHeight;
+        renderTable(); 
+        checkPassVisibility();
+        
+        // V2 DROP-IN AI: If host and current turn is an AI seat
+        if (isHost && gameState === "playing") {
+            const currentSeatIdx = currentTurn - 1;
+            if (seats[currentSeatIdx] && seats[currentSeatIdx].type === 'ai') {
+                setTimeout(aiTurn, 1000);
             }
         }
-
-        renderTable(); checkPassVisibility();
-    } else if (data.status === "finished") { resetGame(); }
+    } else if (data.status === "finished") {
+        resetGame();
+    }
 }
-
-document.getElementById("lobby-close-btn").addEventListener("click", () => { lobbyUI.classList.add("hidden"); });
-document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
-    gameMode = "ai"; p2Name = "AI";
-    document.getElementById("sys-domino-mode").value = "ai";
-    localStorage.setItem("domino_mode", "ai");
-    lobbyUI.classList.add("hidden");
-    SystemUI.stopChat(); chatStarted = false;
-    resetGame();
-});
 
 resetGame();
