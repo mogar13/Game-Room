@@ -1,16 +1,21 @@
 // =============================================
 // RISK — risk_app.js
-// The Game Shack | Casino OS
+// The Game Shack | Casino OS (V2 + Smart AI)
 // Modes: vs AI | Hotseat | Online
 // =============================================
 
 // ── 1. OS INIT ────────────────────────────────
-let gameMode    = localStorage.getItem("risk_mode") || "ai";
+let gameMode = "ai";
+localStorage.setItem("risk_mode", "ai");
+
+let aiDifficulty = localStorage.getItem("risk_diff") || "normal";
 let chatStarted = false;
 let currentRoomId = null;
 let myId    = 1;
-let isHost  = false;
+let isHost  = true;
 let myPlayerIndex = 0;
+let seats = [];
+let selectedColorIdx = 0; // NEW: Color Picker
 
 SystemUI.init({
     gameName: "RISK",
@@ -23,23 +28,64 @@ SystemUI.init({
                 { value: "hotseat", label: "👥 Hotseat" },
                 { value: "online",  label: "🌐 Online"  }
             ]
+        },
+        {
+            id: "sys-risk-diff",
+            options: [
+                { value: "easy",   label: "Easy AI" },
+                { value: "normal", label: "Normal AI" },
+                { value: "hard",   label: "Hard AI" }
+            ]
         }
     ]
 });
 
-setTimeout(() => { gameMode = document.getElementById("sys-risk-mode").value; }, 10);
+setTimeout(() => { 
+    const modeEl = document.getElementById("sys-risk-mode");
+    const diffEl = document.getElementById("sys-risk-diff");
 
-document.getElementById("sys-risk-mode").addEventListener("change", e => {
-    gameMode = e.target.value;
-    localStorage.setItem("risk_mode", gameMode);
-    document.getElementById("sys-modal").classList.add("sys-hidden");
-    if (gameMode === "online") {
-        document.getElementById("multiplayer-lobby").classList.remove("hidden");
-    } else {
-        document.getElementById("multiplayer-lobby").classList.add("hidden");
-        SystemUI.stopChat();
-        chatStarted = false;
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", e => {
+            gameMode = e.target.value;
+            localStorage.setItem("risk_mode", gameMode);
+            document.getElementById("sys-modal")?.classList.add("sys-hidden");
+            syncDiffVisibility();
+            if (gameMode === "online") {
+                SystemUI.v2Lobby.show();
+            } else {
+                SystemUI.v2Lobby.hide();
+                SystemUI.stopChat();
+                chatStarted = false;
+                myId = 1; isHost = true; myPlayerIndex = 0;
+            }
+        });
     }
+
+    if (diffEl) {
+        diffEl.value = aiDifficulty;
+        diffEl.addEventListener("change", e => {
+            aiDifficulty = e.target.value;
+            localStorage.setItem("risk_diff", aiDifficulty);
+        });
+    }
+
+    syncDiffVisibility();
+}, 100);
+
+function syncDiffVisibility() {
+    const wrap = document.getElementById("sys-risk-diff")?.closest(".hud-dropdown-wrap") ||
+                 document.getElementById("sys-risk-diff")?.parentElement;
+    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
+}
+
+// ── COLOR PICKER LISTENER ────────────────────
+document.querySelectorAll(".color-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+        document.querySelectorAll(".color-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedColorIdx = parseInt(btn.dataset.colorIdx);
+    });
 });
 
 // ── 2. PLAYER COLOURS ────────────────────────
@@ -78,11 +124,11 @@ const CONTINENTS = {
 // ── 4. TERRITORY DATA ────────────────────────
 /*
  * 42 territories. Each entry:
- *   id:         matches SVG <path> id attribute
- *   name:       display name
- *   continent:  continent key
- *   cx, cy:     centroid as % of SVG viewBox (for troop counter placement)
- *   adj:        adjacency list (ids of connected territories)
+ * id:         matches SVG <path> id attribute
+ * name:       display name
+ * continent:  continent key
+ * cx, cy:     centroid as % of SVG viewBox (for troop counter placement)
+ * adj:        adjacency list (ids of connected territories)
  *
  * Centroid percentages are relative to the Wikimedia Risk SVG viewBox
  * which is approximately 1015 × 585 px.
@@ -188,28 +234,10 @@ let svgViewBox    = { w: 1015, h: 585 };
 let mapRect       = null;
 
 // ── 7. WORLD MAP + TERRITORY OVERLAY ────────
-/*
- * TWO-LAYER ARCHITECTURE:
- *
- * Layer 1 — #world-map-bg (BlankMap-World.svg):
- *   Loaded via fetch() from ../../system/images/BlankMap-World.svg (same-origin,
- *   works on Netlify). Styled dark: olive land, navy ocean. pointer-events: none.
- *   Falls back gracefully if file missing — game works either way.
- *
- * Layer 2 — #svg-container (Territory overlay SVG):
- *   Built synchronously. One <rect> per Risk territory, semi-transparent.
- *   Unowned: continent tint at 0.6 opacity. Owned: player colour at 0.45 opacity.
- *   World map geography shows through the coloured ownership overlays.
- *   All click/hover events handled here.
- *
- * Troop counters (#troop-layer) float above both.
- */
-
 const VB_W = 1000, VB_H = 560;
 
 // Territory rectangle positions [x, y, width, height] in the 1000×560 viewBox
 const LAYOUT = {
-    // North America
     alaska:              [5,   10,  85,  65],
     northwest_territory: [93,  10,  90,  65],
     greenland:           [186, 5,   95,  75],
@@ -219,12 +247,10 @@ const LAYOUT = {
     western_us:          [5,   161, 115, 80],
     eastern_us:          [123, 161, 110, 80],
     central_america:     [45,  244, 100, 55],
-    // South America
     venezuela:           [55,  302, 90,  80],
     peru:                [55,  385, 90,  80],
     brazil:              [148, 302, 82,  163],
     argentina:           [78,  468, 92,  70],
-    // Europe
     iceland:             [358, 5,   72,  55],
     scandinavia:         [433, 5,   78,  75],
     ukraine:             [514, 8,   72,  112],
@@ -232,14 +258,12 @@ const LAYOUT = {
     northern_europe:     [433, 83,  78,  65],
     western_europe:      [353, 131, 77,  85],
     southern_europe:     [433, 151, 78,  65],
-    // Africa
     north_africa:        [353, 228, 102, 93],
     egypt:               [458, 228, 92,  84],
     east_africa:         [458, 315, 92,  98],
     congo:               [353, 324, 102, 88],
     south_africa:        [368, 415, 96,  88],
     madagascar:          [467, 412, 72,  82],
-    // Asia
     ural:                [589, 8,   82,  90],
     siberia:             [674, 8,   90,  80],
     yakutsk:             [767, 8,   82,  75],
@@ -252,14 +276,12 @@ const LAYOUT = {
     india:               [674, 252, 92,  108],
     southeast_asia:      [769, 253, 95,  118],
     japan:               [868, 93,  82,  80],
-    // Australia
     indonesia:           [767, 384, 100, 78],
     new_guinea:          [870, 378, 104, 73],
     western_australia:   [767, 465, 100, 78],
     eastern_australia:   [870, 454, 104, 90],
 };
 
-// Continent tint for unowned territory overlays
 const CONT_TINT = {
     northAmerica: "#2a4020",
     southAmerica: "#3a2e18",
@@ -269,7 +291,6 @@ const CONT_TINT = {
     australia:    "#183838",
 };
 
-// Compute territory centroids from LAYOUT and write back into TERRITORIES
 TERRITORIES.forEach(t => {
     const r = LAYOUT[t.id];
     if (!r) return;
@@ -277,7 +298,6 @@ TERRITORIES.forEach(t => {
     t.cy = ((r[1] + r[3] / 2) / VB_H) * 100;
 });
 
-// ── Load world map background (fire-and-forget) ──
 function loadWorldMapBackground() {
     fetch('../../system/images/BlankMap-World.svg')
         .then(r => {
@@ -291,18 +311,14 @@ function loadWorldMapBackground() {
             if (!bgSvg) return;
 
             bgSvg.style.cssText = 'width:100%;height:100%;display:block;position:absolute;inset:0;';
-
-            // Remove internal <style> that fights our colours
             bgSvg.querySelectorAll('style').forEach(s => s.remove());
 
-            // Ocean
             const oceanEl = bgSvg.getElementById('ocean');
             if (oceanEl) {
                 oceanEl.style.fill   = '#192840';
                 oceanEl.style.stroke = 'none';
             }
 
-            // All country paths → dark olive military
             bgSvg.querySelectorAll('[id]').forEach(el => {
                 if (el.id === 'ocean' || el.tagName === 'svg') return;
                 if (el.tagName === 'path' || el.tagName === 'g') {
@@ -314,18 +330,16 @@ function loadWorldMapBackground() {
             });
         })
         .catch(() => {
-            // Silently fall back — territory overlay is still fully visible
+            // Silently fall back to CSS background image if JS blocked by CORS
         });
 }
 
-// ── Build territory overlay SVG (synchronous) ──
 function buildTerritoryOverlay() {
     const ns  = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(ns, 'svg');
     svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
     svg.style.cssText = 'width:100%;height:100%;display:block;position:absolute;inset:0;';
 
-    // Fallback ocean background (only visible if world map not loaded)
     const ocean = document.createElementNS(ns, 'rect');
     ocean.setAttribute('x', '0'); ocean.setAttribute('y', '0');
     ocean.setAttribute('width', VB_W); ocean.setAttribute('height', VB_H);
@@ -333,7 +347,6 @@ function buildTerritoryOverlay() {
     ocean.setAttribute('pointer-events', 'none');
     svg.appendChild(ocean);
 
-    // Continent watermark labels
     const contLabels = [
         { text: 'N. AMERICA', x: 130, y: 295 },
         { text: 'S. AMERICA', x: 120, y: 545 },
@@ -355,7 +368,6 @@ function buildTerritoryOverlay() {
         svg.appendChild(t);
     });
 
-    // Adjacency lines (behind rects)
     const drawn = new Set();
     TERRITORIES.forEach(t => {
         const r1 = LAYOUT[t.id];
@@ -380,7 +392,6 @@ function buildTerritoryOverlay() {
         });
     });
 
-    // Territory rects
     TERRITORIES.forEach(t => {
         const r = LAYOUT[t.id];
         if (!r) return;
@@ -402,24 +413,25 @@ function buildTerritoryOverlay() {
         rect.style.transition = 'filter 0.12s, fill-opacity 0.12s';
         svg.appendChild(rect);
 
-        // Territory name
+        // FIX: Increased Font Size for Legibility
         const label = document.createElementNS(ns, 'text');
         label.setAttribute('x', x + w / 2);
         label.setAttribute('y', y + h / 2 + 3);
         label.setAttribute('text-anchor',    'middle');
         label.setAttribute('font-family',    'Share Tech Mono, monospace');
-        label.setAttribute('font-size',      w < 72 ? '5.5' : '6.5');
-        label.setAttribute('fill',           'rgba(230,210,150,0.7)');
+        label.setAttribute('font-size',      w < 72 ? '8' : '9.5');
+        label.setAttribute('fill',           'rgba(230,210,150,0.85)');
         label.setAttribute('pointer-events', 'none');
         label.setAttribute('letter-spacing', '0.2');
+        
         const words = t.name.split(' ');
         if (words.length > 1 && w > 62) {
             const mid = Math.ceil(words.length / 2);
             const l1 = document.createElementNS(ns, 'tspan');
-            l1.setAttribute('x', x + w / 2); l1.setAttribute('dy', '-4');
+            l1.setAttribute('x', x + w / 2); l1.setAttribute('dy', '-5');
             l1.textContent = words.slice(0, mid).join(' ');
             const l2 = document.createElementNS(ns, 'tspan');
-            l2.setAttribute('x', x + w / 2); l2.setAttribute('dy', '9');
+            l2.setAttribute('x', x + w / 2); l2.setAttribute('dy', '11');
             l2.textContent = words.slice(mid).join(' ');
             label.appendChild(l1);
             label.appendChild(l2);
@@ -440,7 +452,6 @@ function buildTerritoryOverlay() {
         el.addEventListener('click',      ()  => onTerritoryClick(t.id));
         el.addEventListener('mouseenter', (e) => showTooltip(t.id, e));
         el.addEventListener('mouseleave', hideTooltip);
-        // Touch support
         el.addEventListener('touchend', (e) => {
             e.preventDefault();
             onTerritoryClick(t.id);
@@ -504,7 +515,7 @@ function clearAllPathClasses() {
         const path = getTerritoryPath(t.id);
         if (!path) return;
         path.classList.remove("selected-from","selected-to","valid-target","reachable");
-        updateTerritoryColor(t.id); // restore fill after class removal
+        updateTerritoryColor(t.id);
     });
 }
 
@@ -529,8 +540,6 @@ function updateTroopCounter(id) {
     el.textContent      = state.troops;
     el.style.background = state.owner >= 0 ? players[state.owner].color : "#4a5530";
 
-    // Use the SVG element's actual rendered bounding rect
-    // (accounts for aspect-ratio letterboxing inside the container)
     const svgRect = svgEl.getBoundingClientRect();
     if (!svgRect.width || !mapRect) return;
 
@@ -578,7 +587,7 @@ function hideTooltip() {
 const INITIAL_TROOPS = { 2: 40, 3: 35, 4: 30, 5: 25, 6: 20 };
 
 function initGame(count, setup) {
-    numPlayers = count;
+    numPlayers = gameMode === "online" ? seats.length : count;
     setupMode  = setup;
     players    = [];
     territories = {};
@@ -587,14 +596,23 @@ function initGame(count, setup) {
     currentTurn = 0;
     attackFrom = attackTo = fortifyFrom = fortifyTo = null;
 
+    // Build colors and names arrays, shifting the selected color to Player 1
+    let localColors = [...PLAYER_COLORS];
+    let localNames = [...PLAYER_NAMES];
+    
+    if (selectedColorIdx !== 0) {
+        [localColors[0], localColors[selectedColorIdx]] = [localColors[selectedColorIdx], localColors[0]];
+        [localNames[0], localNames[selectedColorIdx]] = [localNames[selectedColorIdx], localNames[0]];
+    }
+
     // Build players
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < numPlayers; i++) {
         const isHuman = (gameMode === "hotseat") ? true
-                      : (gameMode === "online")  ? (i === myPlayerIndex)
+                      : (gameMode === "online")  ? (seats[i]?.type === "human")
                       : (i === 0);
         players.push({
-            name:        i === 0 ? SystemUI.getPlayerName() : (gameMode === "hotseat" ? `Player ${i+1}` : PLAYER_NAMES[i]),
-            color:       PLAYER_COLORS[i],
+            name:        (gameMode === "online") ? seats[i].name : (i === 0 ? (typeof SystemUI.getPlayerName === 'function' ? SystemUI.getPlayerName() : "Player") : (gameMode === "hotseat" ? `Player ${i+1}` : localNames[i])),
+            color:       localColors[i],
             territories: new Set(),
             cards:       [],
             setsTraded:  0,
@@ -609,7 +627,7 @@ function initGame(count, setup) {
         territories[t.id] = { owner: -1, troops: 0 };
     });
 
-    // Build card deck (one per territory + 2 wilds)
+    // Build card deck
     const types = ["infantry","cavalry","artillery"];
     TERRITORIES.forEach((t, i) => {
         cardDeck.push({ territory: t.id, type: types[i % 3] });
@@ -632,7 +650,6 @@ function initGame(count, setup) {
     updateAllColors();
     renderRoster();
     updatePhaseUI();
-    // RAF ensures browser has painted before getBoundingClientRect() is called
     requestAnimationFrame(() => {
         updateMapRect();
         updateAllTroopCounters();
@@ -652,7 +669,6 @@ function randomSetup() {
     const troopsEach = INITIAL_TROOPS[numPlayers] || 30;
     const ids = shuffleArr(TERRITORIES.map(t => t.id));
 
-    // Distribute territories round-robin
     ids.forEach((id, i) => {
         const owner = i % numPlayers;
         territories[id].owner  = owner;
@@ -660,11 +676,9 @@ function randomSetup() {
         players[owner].territories.add(id);
     });
 
-    // Distribute remaining troops evenly
     players.forEach((p, pIdx) => {
         let extra = troopsEach - p.territories.size;
         while (extra > 0) {
-            // Add one troop to a random owned territory
             const ownedArr = [...p.territories];
             const pick     = ownedArr[Math.floor(Math.random() * ownedArr.length)];
             territories[pick].troops++;
@@ -681,12 +695,11 @@ function startManualSetup() {
     document.getElementById("draft-block").classList.remove("hidden");
     document.getElementById("draft-count").textContent = setupRemaining;
 
-    if (players[currentTurn].isAI) setTimeout(aiSetupTurn, 1200);
+    if (players[currentTurn].isAI && (gameMode !== "online" || isHost)) setTimeout(aiSetupTurn, 1200);
 }
 
 function aiSetupTurn() {
-    if (gamePhase !== "setup" || !players[currentTurn].isAI) return;
-    // Place remaining troops on random owned territories (or all territories if none owned yet)
+    if (gamePhase !== "setup" || !players[currentTurn].isAI || (gameMode === "online" && !isHost)) return;
     const owned = [...players[currentTurn].territories];
     const pool  = owned.length > 0 ? owned : TERRITORIES.map(t => t.id).filter(id => territories[id].owner === -1);
     if (pool.length === 0) { nextSetupTurn(); return; }
@@ -698,13 +711,12 @@ function aiSetupTurn() {
 function placeSetupTroop(id, playerIdx) {
     const t = territories[id];
     if (t.owner === -1) {
-        // Claim unowned territory
         t.owner = playerIdx;
         t.troops = 1;
         players[playerIdx].territories.add(id);
     } else if (t.owner === playerIdx) {
         t.troops++;
-    } else { return; } // can't place on opponent's territory during setup
+    } else { return; } 
 
     updateTerritoryColor(id);
     updateTroopCounter(id);
@@ -714,10 +726,8 @@ function placeSetupTroop(id, playerIdx) {
     document.getElementById("draft-count").textContent = setupRemaining;
 
     if (setupRemaining <= 0) {
-        // All placed — check if all territories claimed
         const unclaimed = TERRITORIES.filter(t => territories[t.id].owner === -1);
         if (unclaimed.length > 0) {
-            // Give unclaimed to random players
             unclaimed.forEach(terr => {
                 const rand = Math.floor(Math.random() * numPlayers);
                 territories[terr.id].owner = rand;
@@ -738,21 +748,14 @@ function placeSetupTroop(id, playerIdx) {
 function nextSetupTurn() {
     currentTurn = (currentTurn + 1) % numPlayers;
     updateTurnDisplay();
-    if (players[currentTurn].isAI) setTimeout(aiSetupTurn, 400);
+    if (players[currentTurn].isAI && (gameMode !== "online" || isHost)) setTimeout(aiSetupTurn, 400);
 }
 
 // ── 14. DRAFT PHASE ──────────────────────────
-/*
- * Troop calculation:
- * - Base: max(3, floor(territories_owned / 3))
- * - Continent bonuses: +bonus for each fully-owned continent
- * - Card trade bonus: added on top if cards are traded this turn
- */
 function calcDraftTroops(playerIdx) {
     const p      = players[playerIdx];
     let   base   = Math.max(3, Math.floor(p.territories.size / 3));
 
-    // Continent bonuses
     Object.values(CONTINENTS).forEach(cont => {
         const ownsAll = cont.territories.every(id => territories[id].owner === playerIdx);
         if (ownsAll) base += cont.bonus;
@@ -780,7 +783,6 @@ function startDraftPhase() {
     document.getElementById("btn-end-turn").classList.add("hidden");
     document.getElementById("dice-result").classList.add("hidden");
 
-    // Show card trade button if player has 5+ cards
     const hand = players[currentTurn].cards;
     document.getElementById("btn-trade-cards").classList.toggle("hidden", hand.length < 3);
 
@@ -788,7 +790,7 @@ function startDraftPhase() {
 
     if (gameMode === "online") pushGameState();
 
-    if (players[currentTurn].isAI) setTimeout(aiDraftPhase, 800);
+    if (players[currentTurn].isAI && (gameMode !== "online" || isHost)) setTimeout(aiDraftPhase, 800);
 }
 
 // ── 15. ATTACK PHASE ─────────────────────────
@@ -821,14 +823,13 @@ function startFortifyPhase() {
     clearAllPathClasses();
     if (gameMode === "online") pushGameState();
 
-    if (players[currentTurn].isAI) setTimeout(aiFortify, 700);
+    if (players[currentTurn].isAI && (gameMode !== "online" || isHost)) setTimeout(aiFortify, 700);
 }
 
 // ── 17. TERRITORY CLICK HANDLER ──────────────
 function onTerritoryClick(id) {
     const t    = territories[id];
     const mine = t.owner === currentTurn;
-    const me   = players[currentTurn];
 
     if (!isMyTurn()) return;
 
@@ -854,7 +855,6 @@ function onTerritoryClick(id) {
 
     if (gamePhase === "attack") {
         if (mine && t.troops > 1) {
-            // Select attacking territory
             clearAllPathClasses();
             attackFrom = id;
             attackTo   = null;
@@ -862,14 +862,12 @@ function onTerritoryClick(id) {
             document.getElementById("atk-from-name").textContent = TERR_MAP[id].name;
             document.getElementById("atk-to-name").textContent   = "—";
 
-            // Highlight valid targets (adjacent enemy territories)
             TERR_MAP[id].adj.forEach(adjId => {
                 if (territories[adjId].owner !== currentTurn) {
                     setPathClass(adjId, "valid-target", true);
                 }
             });
         } else if (attackFrom && !mine) {
-            // Select target — must be adjacent
             const adj = TERR_MAP[attackFrom].adj;
             if (!adj.includes(id)) return;
             attackTo = id;
@@ -882,19 +880,16 @@ function onTerritoryClick(id) {
 
     if (gamePhase === "fortify") {
         if (mine && !fortifyFrom) {
-            // Pick source (must have >1 troops)
             if (t.troops <= 1) return;
             fortifyFrom = id;
             setPathClass(id, "selected-from", true);
             document.getElementById("fort-from-name").textContent = TERR_MAP[id].name;
 
-            // Highlight reachable own territories (connected through own territories)
             const reachable = getReachableOwnTerritories(id, currentTurn);
             reachable.forEach(rid => {
                 if (rid !== id) setPathClass(rid, "reachable", true);
             });
         } else if (fortifyFrom && mine && id !== fortifyFrom) {
-            // Pick destination (must be reachable through own territories)
             const reachable = getReachableOwnTerritories(fortifyFrom, currentTurn);
             if (!reachable.has(id)) return;
             fortifyTo = id;
@@ -906,7 +901,6 @@ function onTerritoryClick(id) {
     }
 }
 
-// BFS through own territories to find all reachable connected territories
 function getReachableOwnTerritories(startId, playerIdx) {
     const visited = new Set([startId]);
     const queue   = [startId];
@@ -923,19 +917,6 @@ function getReachableOwnTerritories(startId, playerIdx) {
 }
 
 // ── 18. COMBAT SYSTEM ────────────────────────
-/*
- * RISK COMBAT RULES:
- *
- * Attacker rolls up to 3 dice (limited by troops - 1, max 3).
- * Defender rolls up to 2 dice (limited by troops, max 2).
- *
- * Compare pairs from highest to lowest:
- *   Highest atk vs highest def → higher wins; tie → defender wins
- *   2nd atk vs 2nd def (if both rolled 2+) → same rule
- *
- * Each comparison results in one casualty (loser loses 1 troop).
- * Maximum 2 casualties per roll (one per comparison pair).
- */
 function rollCombat(atkDiceCount, defDiceCount) {
     const atkRolls = Array.from({length: atkDiceCount}, () => Math.ceil(Math.random() * 6)).sort((a,b) => b-a);
     const defRolls = Array.from({length: defDiceCount}, () => Math.ceil(Math.random() * 6)).sort((a,b) => b-a);
@@ -945,7 +926,7 @@ function rollCombat(atkDiceCount, defDiceCount) {
 
     const comparisons = [];
     for (let i = 0; i < pairs; i++) {
-        const atkWin = atkRolls[i] > defRolls[i]; // ties go to defender
+        const atkWin = atkRolls[i] > defRolls[i]; 
         if (atkWin) defLoss++;
         else        atkLoss++;
         comparisons.push({ atk: atkRolls[i], def: defRolls[i], atkWin });
@@ -958,11 +939,9 @@ function openAttackModal() {
     const atkTroops = territories[attackFrom].troops;
     const defTroops = territories[attackTo].troops;
 
-    // Max dice attacker can use = min(troops-1, 3)
     const maxAtk = Math.min(atkTroops - 1, 3);
     const maxDef = Math.min(defTroops, 2);
 
-    // Update dice pickers
     document.querySelectorAll("#atk-dice-picker .dice-opt").forEach(btn => {
         const d = parseInt(btn.dataset.dice);
         btn.disabled = d > maxAtk;
@@ -989,7 +968,6 @@ function executeAttack() {
     const result = rollCombat(atkDice, defDice);
     showDiceResult(result);
 
-    // Apply losses
     territories[attackFrom].troops -= result.atkLoss;
     territories[attackTo].troops  -= result.defLoss;
 
@@ -1006,7 +984,6 @@ function executeAttack() {
     const conquered = territories[attackTo].troops <= 0;
 
     if (conquered) {
-        // Transfer territory ownership
         players[defOwner].territories.delete(attackTo);
 
         if (players[defOwner].territories.size === 0) {
@@ -1029,13 +1006,13 @@ function executeAttack() {
 
     if (conquered) {
         showBattleResult(result, true);
-        if (players[currentTurn].isAI) {
+        if (players[currentTurn].isAI && (gameMode !== "online" || isHost)) {
             const scheduledTurn = currentTurn;
             setTimeout(() => aiAfterBattle(true, scheduledTurn), 1800);
         }
     } else {
         showBattleResult(result, false);
-        if (players[currentTurn].isAI) {
+        if (players[currentTurn].isAI && (gameMode !== "online" || isHost)) {
             const scheduledTurn = currentTurn;
             setTimeout(() => aiAfterBattle(false, scheduledTurn), 1600);
         }
@@ -1081,7 +1058,6 @@ function showBattleResult(result, conquered) {
     const modal = document.getElementById("battle-result-modal");
     const title = document.getElementById("battle-result-title");
 
-    // Dice display
     const disp = document.getElementById("battle-dice-display");
     disp.innerHTML = "";
     result.atkRolls.forEach((d, i) => {
@@ -1112,8 +1088,8 @@ function showBattleResult(result, conquered) {
         document.getElementById("battle-territory-msg").textContent =
             `${TERR_MAP[attackTo].name} captured!`;
 
-        troopMoveMin = atkDice;                              // must move at least as many as dice used
-        troopMoveMax = territories[attackFrom].troops - 1;  // must leave 1 behind
+        troopMoveMin = atkDice;                              
+        troopMoveMax = territories[attackFrom].troops - 1;  
         troopMoveVal = troopMoveMin;
 
         document.getElementById("troop-move-count").textContent = troopMoveVal;
@@ -1130,7 +1106,6 @@ function showBattleResult(result, conquered) {
     modal.classList.remove("hidden");
 }
 
-// Troop move +/- buttons
 document.getElementById("troop-move-minus").addEventListener("click", () => {
     if (troopMoveVal > troopMoveMin) {
         troopMoveVal--;
@@ -1149,12 +1124,10 @@ document.getElementById("troop-move-plus").addEventListener("click", () => {
 });
 
 document.getElementById("battle-result-ok").addEventListener("click", () => {
-    // AI handles its own results via aiAfterBattle()
     if (players[currentTurn]?.isAI) return;
 
     document.getElementById("battle-result-modal").classList.add("hidden");
 
-    // Move troops if conquered
     if (territories[attackTo]?.owner === currentTurn && territories[attackTo].troops === 0) {
         territories[attackTo].troops = troopMoveVal;
         territories[attackFrom].troops -= troopMoveVal;
@@ -1162,14 +1135,12 @@ document.getElementById("battle-result-ok").addEventListener("click", () => {
         updateTroopCounter(attackFrom);
         updateTroopCounter(attackTo);
 
-        // Draw a card if first conquest this turn
         if (!players[currentTurn].conqueredThisTurn) {
             players[currentTurn].conqueredThisTurn = true;
             drawCard(currentTurn);
         }
     }
 
-    // Check if must trade cards (5+ cards forces trade)
     if (players[currentTurn].cards.length >= 5 && isMyTurn()) {
         openCardModal(true);
     }
@@ -1183,18 +1154,6 @@ document.getElementById("battle-result-ok").addEventListener("click", () => {
 });
 
 // ── 19. CARD SYSTEM ──────────────────────────
-/*
- * TRADE SET RULES:
- * Valid sets of 3 cards:
- *   - 3 of the same type (3 infantry, 3 cavalry, or 3 artillery)
- *   - One of each type (1 infantry + 1 cavalry + 1 artillery)
- *   - Any above set with a wild card substituting one card
- *
- * Bonus: if any card in the traded set matches a territory you own,
- *        you place 2 extra troops on that territory.
- *
- * Trade values increase with each set traded globally (escalating).
- */
 function drawCard(playerIdx) {
     if (cardDeck.length === 0) return;
     players[playerIdx].cards.push(cardDeck.pop());
@@ -1204,7 +1163,6 @@ function getValidTradeSets(cards) {
     const sets = [];
     const n    = cards.length;
 
-    // Check all combinations of 3 from hand
     for (let i = 0; i < n - 2; i++) {
         for (let j = i + 1; j < n - 1; j++) {
             for (let k = j + 1; k < n; k++) {
@@ -1223,18 +1181,15 @@ function isValidSet(combo) {
     const nonWild = types.filter(Boolean);
     const wilds   = types.length - nonWild.length;
 
-    if (wilds === 3) return true; // 3 wilds
+    if (wilds === 3) return true;
 
-    // 3 of same type (wilds fill in)
     const typeGroups = {};
     nonWild.forEach(t => typeGroups[t] = (typeGroups[t] || 0) + 1);
 
-    // Check if any type has enough + wilds to make 3
     for (const [type, count] of Object.entries(typeGroups)) {
         if (count + wilds >= 3) return true;
     }
 
-    // One of each (wilds fill missing types)
     const uniqueTypes = new Set(nonWild);
     if (uniqueTypes.size + wilds >= 3 && uniqueTypes.size <= 3) return true;
 
@@ -1250,7 +1205,6 @@ function openCardModal(forced = false) {
     document.getElementById("card-modal-sub").textContent = sub;
     document.getElementById("card-modal-trade").disabled = true;
 
-    // Render hand
     const handEl = document.getElementById("card-hand-display");
     handEl.innerHTML = "";
     hand.forEach((card, i) => {
@@ -1266,7 +1220,6 @@ function openCardModal(forced = false) {
         handEl.appendChild(el);
     });
 
-    // Show valid sets
     const setsEl = document.getElementById("card-sets-list");
     setsEl.innerHTML = "";
     const validSets = getValidTradeSets(hand);
@@ -1275,7 +1228,6 @@ function openCardModal(forced = false) {
         btn.className   = "pick-btn";
         btn.textContent = `Set ${i+1}: ${set.cards.map(c => CARD_ICONS[c.type]).join(" ")} → +${tradeValue(setsTraded)} troops`;
         btn.addEventListener("click", () => {
-            // Auto-select these cards
             handEl.querySelectorAll(".risk-card").forEach(el => el.classList.remove("selected"));
             set.indices.forEach(idx => {
                 handEl.querySelector(`.risk-card[data-idx="${idx}"]`)?.classList.add("selected");
@@ -1318,16 +1270,10 @@ document.getElementById("card-modal-trade").addEventListener("click", () => {
     const bonus   = tradeValue(setsTraded);
     setsTraded++;
 
-    // Remove traded cards from hand (reverse order to preserve indices)
     indices.forEach(i => players[currentTurn].cards.splice(i, 1));
-
-    // Return to deck
     cardDeck.unshift(...traded);
-
-    // Grant bonus troops
     draftRemaining += bonus;
 
-    // Territory bonus: if any traded card matches owned territory, +2 there
     traded.forEach(card => {
         if (card.territory && players[currentTurn].territories.has(card.territory)) {
             territories[card.territory].troops += 2;
@@ -1417,7 +1363,6 @@ function endTurn() {
     document.getElementById("btn-end-turn").classList.add("hidden");
     players[currentTurn].conqueredThisTurn = false;
 
-    // Advance to next non-eliminated player
     let next = (currentTurn + 1) % numPlayers;
     while (players[next].eliminated) {
         next = (next + 1) % numPlayers;
@@ -1430,14 +1375,12 @@ function endTurn() {
 
 // ── 22. WIN CONDITION ────────────────────────
 function checkWinCondition() {
-    // Win = own all 42 territories
     for (let i = 0; i < numPlayers; i++) {
         if (!players[i].eliminated && players[i].territories.size === 42) {
             endGame(i);
             return;
         }
     }
-    // Also win if all opponents eliminated
     const alive = players.filter(p => !p.eliminated);
     if (alive.length === 1) endGame(players.indexOf(alive[0]));
 }
@@ -1460,26 +1403,11 @@ function endGame(winnerIdx) {
 }
 
 // ── 23. AI BRAIN ─────────────────────────────
-/*
- * AI strategy:
- *
- * DRAFT:  Reinforce border territories — those adjacent to enemy territories.
- *         If close to completing a continent, concentrate there.
- *
- * ATTACK: Attack when odds favour (>2× troops vs defender).
- *         Prioritise targets that complete a continent.
- *         Stop attacking when no favourable targets remain.
- *
- * FORTIFY: Move troops from interior (no enemy neighbours) to borders.
- *
- * CARDS:  Trade immediately if 5+ cards, or if a valid set and ≥5 territories lost this turn.
- */
 let aiTimeout = null;
 
 function aiDraftPhase() {
-    if (gamePhase !== "draft" || !players[currentTurn].isAI) return;
+    if (gamePhase !== "draft" || !players[currentTurn].isAI || (gameMode === "online" && !isHost)) return;
 
-    // Trade cards if 5+ or has a valid set and needs troops
     const hand = players[currentTurn].cards;
     if (hand.length >= 5 || (hand.length >= 3 && getValidTradeSets(hand).length > 0 && draftRemaining < 3)) {
         const sets = getValidTradeSets(hand);
@@ -1501,18 +1429,30 @@ function aiDraftPhase() {
         }
     }
 
-    // Place troops — prefer borders, then continent-completing territories
     const owned  = [...players[currentTurn].territories];
     const borders = owned.filter(id =>
         TERR_MAP[id].adj.some(adjId => territories[adjId].owner !== currentTurn));
 
     const targets = borders.length > 0 ? borders : owned;
+    let scored;
 
-    // Score each territory: prefer those with enemy neighbours and fewer troops
-    const scored = targets.map(id => {
-        const enemyAdj = TERR_MAP[id].adj.filter(a => territories[a].owner !== currentTurn && territories[a].owner !== -1).length;
-        return { id, score: enemyAdj * 3 - territories[id].troops };
-    }).sort((a,b) => b.score - a.score);
+    if (aiDifficulty === "easy") {
+        scored = targets.map(id => ({ id, score: Math.random() })).sort((a,b) => b.score - a.score);
+    } else if (aiDifficulty === "hard") {
+        scored = targets.map(id => {
+            const enemyAdj = TERR_MAP[id].adj.filter(a => territories[a].owner !== currentTurn && territories[a].owner !== -1).length;
+            const cont = TERR_MAP[id].continent;
+            const contData = CONTINENTS[cont];
+            const ownedInCont = contData.territories.filter(t => territories[t].owner === currentTurn).length;
+            const completionRatio = ownedInCont / contData.territories.length;
+            return { id, score: (enemyAdj * 3) - territories[id].troops + (completionRatio * 10) };
+        }).sort((a,b) => b.score - a.score);
+    } else {
+        scored = targets.map(id => {
+            const enemyAdj = TERR_MAP[id].adj.filter(a => territories[a].owner !== currentTurn && territories[a].owner !== -1).length;
+            return { id, score: enemyAdj * 3 - territories[id].troops };
+        }).sort((a,b) => b.score - a.score);
+    }
 
     const placementQueue = [];
     let remaining = draftRemaining;
@@ -1523,7 +1463,6 @@ function aiDraftPhase() {
         remaining--;
     }
 
-    // Place with delay per troop for visual effect (slower = more readable)
     let i = 0;
     const placeNext = () => {
         if (i >= placementQueue.length) {
@@ -1546,26 +1485,41 @@ function aiDraftPhase() {
 }
 
 function aiAttackPhase() {
-    if (gamePhase !== "attack" || !players[currentTurn].isAI) return;
+    if (gamePhase !== "attack" || !players[currentTurn].isAI || (gameMode === "online" && !isHost)) return;
 
-    // Find best attack target
     const attacks = [];
     players[currentTurn].territories.forEach(fromId => {
         if (territories[fromId].troops < 2) return;
         TERR_MAP[fromId].adj.forEach(toId => {
-            if (territories[toId].owner === currentTurn) return;
-            if (territories[toId].owner === -1) return;
-            const odds = territories[fromId].troops / (territories[toId].troops + 1);
+            if (territories[toId].owner === currentTurn || territories[toId].owner === -1) return;
+            let odds = territories[fromId].troops / (territories[toId].troops + 1);
+
+            if (aiDifficulty === "hard") {
+                const defOwner = territories[toId].owner;
+                const defTerrs = players[defOwner].territories.size;
+                if (defTerrs === 1 && players[defOwner].cards.length > 0) odds += 2.0; 
+                
+                const cont = TERR_MAP[toId].continent;
+                const contData = CONTINENTS[cont];
+                const ownedInCont = contData.territories.filter(t => territories[t].owner === currentTurn).length;
+                if (ownedInCont === contData.territories.length - 1) odds += 1.5; 
+            }
+
             attacks.push({ fromId, toId, odds });
         });
     });
 
-    // Only attack if odds >= 1.5
-    const viable = attacks.filter(a => a.odds >= 1.5).sort((a,b) => b.odds - a.odds);
+    let viable;
+    if (aiDifficulty === "easy") {
+        viable = attacks.filter(a => a.odds >= 1.0).sort(() => Math.random() - 0.5);
+    } else if (aiDifficulty === "hard") {
+        viable = attacks.filter(a => a.odds >= 1.2).sort((a,b) => b.odds - a.odds);
+    } else {
+        viable = attacks.filter(a => a.odds >= 1.5).sort((a,b) => b.odds - a.odds);
+    }
+
     if (viable.length === 0) {
-        aiTimeout = setTimeout(() => {
-            startFortifyPhase();
-        }, 1800);
+        aiTimeout = setTimeout(() => { startFortifyPhase(); }, 1800);
         return;
     }
 
@@ -1585,16 +1539,17 @@ function aiAttackPhase() {
     document.getElementById("atk-from-name").textContent = TERR_MAP[attackFrom].name;
     document.getElementById("atk-to-name").textContent   = TERR_MAP[attackTo].name;
 
-    aiTimeout = setTimeout(() => {
-        executeAttack();
-        // Continuation handled by aiAfterBattle() called from executeAttack
-    }, 2000);
+    aiTimeout = setTimeout(() => { executeAttack(); }, 2000);
 }
 
 function aiFortify() {
-    if (gamePhase !== "fortify" || !players[currentTurn].isAI) return;
+    if (gamePhase !== "fortify" || !players[currentTurn].isAI || (gameMode === "online" && !isHost)) return;
 
-    // Move from interior territory to border
+    if (aiDifficulty === "easy" && Math.random() < 0.5) {
+         aiTimeout = setTimeout(endTurn, 2000);
+         return;
+    }
+
     const owned = [...players[currentTurn].territories];
     const interior = owned.filter(id =>
         !TERR_MAP[id].adj.some(a => territories[a].owner !== currentTurn) &&
@@ -1623,28 +1578,19 @@ function aiFortify() {
     aiTimeout = setTimeout(endTurn, 2000);
 }
 
-// ── AI BATTLE AUTO-HANDLER ───────────────────
-/*
- * Called automatically after AI executeAttack resolves.
- * Handles: modal dismiss, troop move, card draw, 5+ card force-trade,
- * and deciding whether to attack again or move to fortify.
- */
 function aiAfterBattle(conquered, turnAtSchedule) {
-    // Guard: if current turn changed since scheduling (shouldn't happen but safety net)
-    if (gamePhase === "gameover") return;
-    if (currentTurn !== turnAtSchedule) return; // stale callback, another turn began
+    if (gamePhase === "gameover" || currentTurn !== turnAtSchedule || (gameMode === "online" && !isHost)) return; 
 
     document.getElementById("battle-result-modal").classList.add("hidden");
 
     if (conquered) {
-        // Auto-move troops: use 75% of available, min = atkDice (clamped to troops-1)
         const from = attackFrom;
         const to   = attackTo;
         if (from && to && territories[to] && territories[to].owner === currentTurn && territories[to].troops === 0) {
             const available = territories[from] ? territories[from].troops - 1 : 0;
             const minMove   = Math.min(atkDice || 1, Math.max(available, 0));
             const moveCount = Math.min(available, Math.max(minMove, Math.floor(available * 0.75)));
-            const finalMove = Math.max(moveCount, 1); // always move at least 1
+            const finalMove = Math.max(moveCount, 1); 
             if (available >= 1) {
                 territories[to].troops   = finalMove;
                 territories[from].troops -= finalMove;
@@ -1658,7 +1604,6 @@ function aiAfterBattle(conquered, turnAtSchedule) {
                 addLog(`🃏 ${players[currentTurn].name} drew a card`, players[currentTurn].color);
             }
 
-            // Forced card trade
             aiForceTradeCards();
         }
     }
@@ -1676,13 +1621,16 @@ function aiAfterBattle(conquered, turnAtSchedule) {
         return;
     }
 
-    // Continue attacking if we have viable targets
+    let threshold = 1.5;
+    if (aiDifficulty === "easy") threshold = 1.0;
+    if (aiDifficulty === "hard") threshold = 1.2;
+
     const hasTargets = [...p.territories].some(fromId =>
         territories[fromId].troops >= 2 &&
         TERR_MAP[fromId].adj.some(toId =>
             territories[toId].owner !== currentTurn &&
             territories[toId].owner !== -1 &&
-            territories[fromId].troops / (territories[toId].troops + 1) >= 1.5
+            territories[fromId].troops / (territories[toId].troops + 1) >= threshold
         )
     );
 
@@ -1693,7 +1641,6 @@ function aiAfterBattle(conquered, turnAtSchedule) {
     }
 }
 
-// Force-trade any 5+ card situations for AI (silent, no modal)
 function aiForceTradeCards() {
     const hand = players[currentTurn].cards;
     let loopGuard = 0;
@@ -1707,7 +1654,7 @@ function aiForceTradeCards() {
         const traded = idxs.map(i => hand[i]);
         idxs.forEach(i => hand.splice(i, 1));
         cardDeck.unshift(...traded);
-        draftRemaining += bonus; // will be used next draft phase
+        draftRemaining += bonus; 
     }
 }
 
@@ -1720,7 +1667,6 @@ function addLog(text, color) {
     el.textContent = text;
     if (color) el.style.borderLeftColor = color;
     log.insertBefore(el, log.firstChild);
-    // Keep last 30 entries
     while (log.children.length > 30) log.removeChild(log.lastChild);
 }
 
@@ -1732,14 +1678,12 @@ function showTurnToast(playerIdx) {
     toast.style.borderColor = p.color;
     toast.style.color       = p.color;
     toast.classList.remove("hidden", "toast-out");
-    // Clear any pending hide
     clearTimeout(toast._hideTimer);
     toast._hideTimer = setTimeout(() => {
         toast.classList.add("toast-out");
         setTimeout(() => toast.classList.add("hidden"), 600);
     }, 2200);
 }
-
 
 function setPhaseLabel(phase, sub) {
     document.getElementById("phase-label").textContent = phase;
@@ -1779,7 +1723,6 @@ function renderRoster() {
 }
 
 // ── 25. BUTTON WIRING ────────────────────────
-// Attack modal
 document.querySelectorAll("#atk-dice-picker .dice-opt").forEach(btn => {
     btn.addEventListener("click", () => {
         if (btn.disabled) return;
@@ -1835,7 +1778,6 @@ document.querySelectorAll(".count-btn").forEach(btn => {
     btn.addEventListener("click", () => {
         document.querySelectorAll(".count-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        numPlayers = parseInt(btn.dataset.count);
     });
 });
 document.querySelectorAll(".mode-btn").forEach(btn => {
@@ -1850,9 +1792,7 @@ document.getElementById("start-btn").addEventListener("click", () => {
     if (gameMode === "online" && !isHost) return;
     document.getElementById("start-btn").disabled = true;
 
-    // Build territory interaction layer (synchronous, instant)
     buildTerritoryOverlay();
-    // Load world map backdrop (async, fire-and-forget — game works without it)
     loadWorldMapBackground();
 
     const countBtn = document.querySelector(".count-btn.active");
@@ -1863,7 +1803,6 @@ document.getElementById("start-btn").addEventListener("click", () => {
 
 document.getElementById("btn-play-again").addEventListener("click", () => {
     document.getElementById("game-over-modal").classList.add("hidden");
-    // Clear troop counters from previous game
     document.getElementById("troop-layer").innerHTML = "";
     document.getElementById("log-entries").innerHTML  = "";
     document.getElementById("start-screen").classList.remove("hidden");
@@ -1876,12 +1815,11 @@ window.addEventListener("resize", () => {
 });
 
 // ── AI WATCHDOG ───────────────────────────────
-// Every 5 seconds: if it's an AI's turn and aiTimeout is null,
-// kick-start the AI. Catches any edge case where the loop silently died.
 setInterval(() => {
     if (gamePhase === "gameover" || gamePhase === "idle") return;
     if (!players[currentTurn]?.isAI) return;
-    if (aiTimeout !== null) return; // already scheduled
+    if (gameMode === "online" && !isHost) return; 
+    if (aiTimeout !== null) return; 
 
     console.warn('[Risk Watchdog] AI stuck — kicking', gamePhase, currentTurn);
     if      (gamePhase === "draft")   setTimeout(aiDraftPhase,   500);
@@ -1889,53 +1827,70 @@ setInterval(() => {
     else if (gamePhase === "fortify") setTimeout(aiFortify,      500);
 }, 5000);
 
-// ── 26. FIREBASE ONLINE ──────────────────────
-const lobbyUI = document.getElementById("multiplayer-lobby");
+// ── 26. FIREBASE ONLINE (V2 Lobby) ──────────────────────
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        if(!window.db) { alert("Server connection error."); return; }
+        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        isHost = true; myId = 1; myPlayerIndex = 0; chatStarted = false;
 
-function generateRoomCode() {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let code = "";
-    for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-    return code;
-}
-
-document.getElementById("btn-create-room").addEventListener("click", () => {
-    SystemUI.playSound('click');
-    currentRoomId = generateRoomCode();
-    isHost = true; myId = 1; myPlayerIndex = 0; chatStarted = false;
-    window.dbSet(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
-        status: "waiting", players: 1, hostName: SystemUI.getPlayerName()
-    }).then(() => {
-        document.getElementById("room-code-display").classList.remove("hidden");
-        document.getElementById("host-room-id").innerText = currentRoomId;
-        document.getElementById("btn-create-room").disabled = true;
-        listenToRoom();
-    });
-});
-
-document.getElementById("btn-join-room").addEventListener("click", () => {
-    SystemUI.playSound('click');
-    const code = document.getElementById("join-room-input").value.toUpperCase().trim();
-    window.dbGet(window.dbChild(window.dbRef(window.db), `risk_rooms/${code}`)).then(snapshot => {
-        if (snapshot.exists()) {
-            const data        = snapshot.val();
-            const playerCount = data.players || 1;
-            currentRoomId     = code;
-            isHost            = false;
-            myId              = playerCount + 1;
-            myPlayerIndex     = playerCount;
-            chatStarted       = false;
-            window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
-                players: myId,
-                [`p${myId}Name`]: SystemUI.getPlayerName(),
-                status: "playing"
-            });
-            lobbyUI.classList.add("hidden");
-            listenToRoom();
-        } else {
-            document.getElementById("lobby-error-msg").textContent = "Room not found.";
+        const countBtn = document.querySelector(".count-btn.active");
+        const count    = countBtn ? parseInt(countBtn.dataset.count) : 4;
+        
+        seats = [{ type: "human", name: SystemUI.getPlayerName() }];
+        for(let i=1; i<count; i++) {
+            seats.push({ type: "ai", name: "AI (" + aiDifficulty + ")" });
         }
-    });
+
+        window.dbSet(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
+            status: "waiting", players: 1, hostName: SystemUI.getPlayerName(), seats: seats
+        }).then(() => {
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+            listenToRoom();
+        });
+    },
+    onJoin: (code) => {
+        if(!window.db) { alert("Server connection error."); return; }
+        window.dbGet(window.dbChild(window.dbRef(window.db), `risk_rooms/${code}`)).then(snapshot => {
+            if (snapshot.exists()) {
+                let data = snapshot.val();
+                let joined = false;
+                let updatedSeats = data.seats || [];
+                
+                for(let i=0; i<updatedSeats.length; i++) {
+                    if (updatedSeats[i].type === "ai") {
+                        updatedSeats[i] = { type: "human", name: SystemUI.getPlayerName() };
+                        currentRoomId = code; isHost = false; myId = i + 1; myPlayerIndex = i; chatStarted = false;
+                        joined = true;
+                        break;
+                    }
+                }
+
+                if (joined) {
+                    window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
+                        seats: updatedSeats, status: "playing"
+                    });
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    listenToRoom();
+                } else {
+                    SystemUI.v2Lobby.showError("ROOM FULL");
+                }
+            } else {
+                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
+            }
+        });
+    },
+    onLeave: () => {
+        gameMode = "ai";
+        const modeEl = document.getElementById("sys-risk-mode");
+        if(modeEl) modeEl.value = "ai";
+        localStorage.setItem("risk_mode", "ai");
+        SystemUI.stopChat(); chatStarted = false;
+        myId = 1; isHost = true; myPlayerIndex = 0;
+    },
+    onStart: () => {
+        if(window.db) window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), { status: "playing" });
+    }
 });
 
 function listenToRoom() {
@@ -1943,9 +1898,13 @@ function listenToRoom() {
     window.dbOnValue(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), snapshot => {
         const data = snapshot.val();
         if (!data) return;
+
+        seats = data.seats || [];
+        SystemUI.v2Lobby.renderSeats(seats);
+
         if (data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true;
-            lobbyUI.classList.add("hidden");
+            SystemUI.v2Lobby.hide();
             if (!chatStarted) {
                 chatStarted = true;
                 SystemUI.playSound('win');
@@ -1963,14 +1922,14 @@ function listenToRoom() {
 
 function pushGameState() {
     if (gameMode !== "online" || !currentRoomId) return;
-    // Serialize territories and players (convert Set to Array)
     const serializedPlayers = players.map(p => ({
         ...p,
         territories: [...p.territories]
     }));
     window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
         gameState: JSON.stringify({ territories, players: serializedPlayers, currentTurn, gamePhase, setsTraded }),
-        status: gamePhase === "gameover" ? "finished" : "playing"
+        status: gamePhase === "gameover" ? "finished" : "playing",
+        seats: seats
     });
 }
 
@@ -1982,7 +1941,16 @@ function syncFromFirebase(data) {
         setsTraded   = state.setsTraded || 0;
         currentTurn  = state.currentTurn;
         gamePhase    = state.gamePhase;
-        // Restore Set from Array
+        
+        if (data.seats) {
+            state.players.forEach((p, i) => {
+                if (data.seats[i]) {
+                    p.name = data.seats[i].name;
+                    p.isAI = data.seats[i].type === "ai";
+                }
+            });
+        }
+
         players = state.players.map(p => ({ ...p, territories: new Set(p.territories) }));
 
         updateAllColors();
@@ -1995,12 +1963,3 @@ function syncFromFirebase(data) {
         if (gamePhase === "gameover") endGame(data.winner ?? 0);
     } catch (e) { console.error("Sync error:", e); }
 }
-
-document.getElementById("lobby-close-btn").addEventListener("click", () => lobbyUI.classList.add("hidden"));
-document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
-    gameMode = "ai";
-    document.getElementById("sys-risk-mode").value = "ai";
-    localStorage.setItem("risk_mode", "ai");
-    lobbyUI.classList.add("hidden");
-    SystemUI.stopChat(); chatStarted = false;
-});

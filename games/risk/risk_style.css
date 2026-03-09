@@ -57,6 +57,12 @@ body {
     z-index: 1;
     pointer-events: none;
     overflow: hidden;
+    /* FIX: Fallback background image so the map ALWAYS shows even if JS fetch is blocked */
+    background-image: url('../../system/images/BlankMap-World.svg');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    background-position: center;
+    opacity: 0.5; /* Keeps it subtle behind the colored territory boxes */
 }
 #world-map-bg svg {
     width: 100% !important;
@@ -117,8 +123,8 @@ body {
     background: rgba(6,6,2,0.95);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 5px 12px;
-    font-size: 0.68rem;
+    padding: 8px 16px;
+    font-size: 0.85rem;
     color: var(--khaki);
     pointer-events: none;
     z-index: 50;
@@ -131,17 +137,20 @@ body {
 .troop-counter {
     position: absolute;
     transform: translate(-50%, -50%);
-    width: 22px; height: 22px;
+    /* FIX: Made troop counters significantly larger and easier to read */
+    width: 28px; 
+    height: 28px;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-family: 'Share Tech Mono', monospace;
-    font-size: 0.58rem; font-weight: 700;
+    font-size: 0.9rem; 
+    font-weight: 700;
     color: #fff;
-    border: 1.5px solid rgba(255,255,255,0.45);
-    box-shadow: 0 1px 5px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.15);
+    border: 2px solid rgba(255,255,255,0.7);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.3);
     pointer-events: none;
     z-index: 15;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    text-shadow: 0 2px 4px rgba(0,0,0,1);
     transition: transform 0.18s;
 }
 .troop-counter.pulse { animation: troopPulse 0.45s ease-out; }
@@ -424,7 +433,7 @@ body {
 }
 #btn-exit-game:hover { color: rgba(255,255,255,0.4); }
 
-/* ── START SCREEN ─────────────────────────── */
+/* ── START SCREEN & COLOR PICKER ──────────── */
 #start-screen {
     position: fixed; inset: 0;
     background: var(--bg);
@@ -462,6 +471,17 @@ body {
 .setup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .setup-label { font-size: 0.55rem; letter-spacing: 3px; color: var(--muted); width: 60px; flex-shrink: 0; }
 #player-count-row,#setup-mode-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.color-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 2px solid transparent; cursor: pointer;
+    transition: transform 0.1s, border-color 0.1s, box-shadow 0.1s;
+}
+.color-btn.active {
+    border-color: #fff;
+    transform: scale(1.15);
+    box-shadow: 0 0 12px currentColor;
+}
 
 .count-btn {
     width: 42px; height: 42px;
@@ -502,7 +522,7 @@ body {
     #draft-count { font-size: 1.9rem; }
     #phase-label { font-size: 0.85rem; letter-spacing: 3px; }
     .die-pip { width: 23px; height: 23px; font-size: 0.82rem; }
-    .troop-counter { width: 20px; height: 20px; font-size: 0.55rem; }
+    .troop-counter { width: 24px; height: 24px; font-size: 0.75rem; }
 }
 
 /* ── MOBILE ≤580px ──────────────────────── */
@@ -552,7 +572,7 @@ body {
     #player-roster { flex-direction: column; flex-shrink: 0; min-width: 118px; }
     #dice-result   { flex-shrink: 0; min-width: 88px; }
 
-    .troop-counter { width: 18px; height: 18px; font-size: 0.5rem; }
+    .troop-counter { width: 22px; height: 22px; font-size: 0.7rem; }
     #start-title { font-size: 2.8rem; letter-spacing: 8px; }
     #start-btn   { font-size: 0.85rem; padding: 14px 28px; }
 }
@@ -695,46 +715,4 @@ body {
     color: var(--khaki);
     border-left-color: var(--olive);
     font-weight: 500;
-}
-
-/* ── TURN TOAST ───────────────────────────── */
-#turn-toast {
-    position: fixed;
-    top: 60px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 10px 24px;
-    font-family: 'Special Elite', cursive;
-    font-size: 1rem;
-    letter-spacing: 4px;
-    border: 2px solid currentColor;
-    border-radius: 4px;
-    background: rgba(6,6,2,0.9);
-    z-index: 500;
-    pointer-events: none;
-    backdrop-filter: blur(4px);
-    animation: toastIn 0.3s ease-out both;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.6);
-}
-#turn-toast.hidden { display: none; }
-#turn-toast.toast-out { animation: toastOut 0.6s ease-in both; }
-
-@keyframes toastIn {
-    from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-@keyframes toastOut {
-    from { opacity: 1; transform: translateX(-50%) translateY(0); }
-    to   { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-}
-
-/* ── MOBILE EVENT LOG ─────────────────────── */
-@media (max-width: 580px) {
-    #event-log {
-        flex-shrink: 0;
-        min-width: 160px;
-        height: 100%;
-        overflow: hidden;
-    }
-    #log-entries { overflow-x: hidden; }
 }
