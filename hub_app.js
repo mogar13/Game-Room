@@ -1,6 +1,6 @@
 // --- 1. HUB AUDIO ENGINE ---
 const hubAudio = {
-    click: new Audio('system/audio/confirmation_001.ogg'),
+    click: new Audio('system/audio/switch4.ogg'),
     win: new Audio('system/audio/win.ogg') 
 };
 

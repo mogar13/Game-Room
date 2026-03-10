@@ -17,9 +17,9 @@ const SystemUI = {
                 new Audio(basePath + 'card-slide-6.ogg'),
                 new Audio(basePath + 'cardPlace2.ogg')
             ],
-            win: new Audio(basePath + 'win.ogg'),
-            click: new Audio(basePath + 'switch4.ogg'),
-            exit: new Audio(basePath + 'exit.ogg'),
+            win: new Audio(basePath + 'victory.mp3'),
+            click: new Audio(basePath + 'click1.mp3'),
+            exit: new Audio(basePath + 'switch4.ogg'),
             roulette: new Audio(basePath + 'roulette.mp3'),
             lose: new Audio(basePath + 'lose.ogg'),
             tie: new Audio(basePath + 'tie.ogg'),
