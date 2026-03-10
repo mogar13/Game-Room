@@ -54,11 +54,6 @@ setTimeout(() => {
 }, 10);
 
 // ── 2. BOARD DATA ─────────────────────────────
-/*
- * 40 spaces, index 0 = GO (bottom-right corner).
- * Types: go | property | railroad | utility | tax | chance | chest | jail | parking | gotojail
- * rent[0..5] = base, 1h, 2h, 3h, 4h, hotel
- */
 const BOARD = [
     { id:0,  type:"go",       name:"GO"                   },
     { id:1,  type:"property", name:"Mediterranean Ave",  group:"brown",    price:60,  rent:[2,10,30,90,160,250],   houseCost:50,  mortgage:30  },
@@ -115,101 +110,37 @@ const GROUPS = {
     utility:  { spaces:[12,28],     size:2 },
 };
 
-// ── 3. SPACE POSITIONS ────────────────────────
+// ── 3. SPACE POSITIONS (Nailing the alignment for 300x300 SVG) ──
 /*
- * TOKEN POSITIONING SYSTEM
- * ─────────────────────────
- * A standard Monopoly board divides each side into 11 spaces: 1 corner + 9 regular + 1 corner.
- * The key insight is that corner squares are LARGER than regular spaces.
- *
- * CORNER_PCT = the percentage of board width that one corner square occupies.
- * REG_PCT    = (100 - 2 × CORNER_PCT) / 9  (the remaining width divided evenly across 9 spaces)
- *
- * For the standard layout: CORNER_PCT ≈ 11%, REG_PCT ≈ 8.67%
- * If your SVG has a visible border or internal padding, increase BOARD_INSET slightly.
- *
- * To verify calibration: double-click the board during gameplay to toggle debug dots.
- * Adjust CORNER_PCT until debug dots land on each space center.
+ * Calibrated center points for each tile slot based on SVG geometry.
  */
-const CORNER_PCT  = 11.0;  // ← change this if corners are off
-const BOARD_INSET = 0.5;   // ← % inset if SVG has an internal border
-const REG_PCT     = (100 - 2 * CORNER_PCT) / 9;
-
 const SPACE_POS = (() => {
     const pos = new Array(40);
+    const start = 94.2; 
+    const end = 5.8;
+    const step = (start - end) / 10; 
 
-    // Scale all measurements to the inset-compensated coordinate space
-    const C = CORNER_PCT;
-    const R = REG_PCT;
-    const I = BOARD_INSET;
-
-    // Four corners
-    pos[0]  = { x: 100 - I - C / 2, y: 100 - I - C / 2 }; // GO (bottom-right)
-    pos[10] = { x: I + C / 2,        y: 100 - I - C / 2 }; // Jail (bottom-left)
-    pos[20] = { x: I + C / 2,        y: I + C / 2        }; // Free Parking (top-left)
-    pos[30] = { x: 100 - I - C / 2,  y: I + C / 2        }; // Go to Jail (top-right)
-
-    // Bottom row: spaces 1–9, going right to left
-    // Space 1 is just left of GO, space 9 is just right of Jail
-    for (let i = 1; i <= 9; i++) {
-        pos[i] = {
-            x: 100 - I - C - (i - 0.5) * R,
-            y: 100 - I - C / 2
-        };
+    for (let i = 0; i <= 10; i++) {
+        pos[i] = { x: start - (i * step), y: start };
     }
-
-    // Left column: spaces 11–19, going bottom to top
-    for (let i = 11; i <= 19; i++) {
-        pos[i] = {
-            x: I + C / 2,
-            y: 100 - I - C - (i - 10 - 0.5) * R
-        };
+    for (let i = 11; i <= 20; i++) {
+        pos[i] = { x: end, y: start - ((i - 10) * step) };
     }
-
-    // Top row: spaces 21–29, going left to right
-    for (let i = 21; i <= 29; i++) {
-        pos[i] = {
-            x: I + C + (i - 20 - 0.5) * R,
-            y: I + C / 2
-        };
+    for (let i = 21; i <= 30; i++) {
+        pos[i] = { x: end + ((i - 20) * step), y: end };
     }
-
-    // Right column: spaces 31–39, going top to bottom
     for (let i = 31; i <= 39; i++) {
-        pos[i] = {
-            x: 100 - I - C / 2,
-            y: I + C + (i - 30 - 0.5) * R
-        };
+        pos[i] = { x: start, y: end + ((i - 30) * step) };
     }
-
     return pos;
 })();
 
-// Token stacking offsets so multiple pieces on the same space don't overlap exactly
 const TOKEN_OFFSETS = [
-    { dx: -2.2, dy: -2.2 }, // P1
-    { dx:  2.2, dy: -2.2 }, // P2
-    { dx: -2.2, dy:  2.2 }, // P3
-    { dx:  2.2, dy:  2.2 }, // P4
+    { dx: -2.0, dy: -2.0 }, { dx: 2.0, dy: -2.0 },
+    { dx: -2.0, dy: 2.0 },  { dx: 2.0, dy: 2.0 },
 ];
 
 // ── 4. CARD DECKS ─────────────────────────────
-/*
- * Each card: { text, action, ...params }
- *
- * Actions:
- *   goto(target, passGo)  — move to space ID, optionally collect $200
- *   back3                 — go back 3 spaces
- *   jail                  — go directly to jail
- *   gain(amount)          — receive money from bank
- *   lose(amount)          — pay bank
- *   jailfree              — receive Get Out of Jail Free card
- *   payall(amount)        — pay each other player
- *   collectall(amount)    — collect from each other player
- *   nearest_rr(doubleRent)— advance to nearest railroad
- *   nearest_util          — advance to nearest utility
- *   repairs(house,hotel)  — pay per house/hotel owned
- */
 let chanceIdx = 0;
 let chestIdx  = 0;
 
@@ -278,7 +209,6 @@ const DICE_FACES = [
     "../../system/images/dice/dieWhite_border6.png",
 ];
 
-// GROUP → CSS hex color map (for rendering colored dots / bars)
 const GROUP_HEX = {
     brown:"#8B4513", lightblue:"#87CEEB", pink:"#FF69B4", orange:"#FFA500",
     red:"#E53935", yellow:"#FDD835", green:"#2E7D32", darkblue:"#1565C0",
@@ -293,9 +223,9 @@ function createPlayer(idx, name, isAI) {
         piece: PLAYER_PIECES[idx],
         position:     0,
         money:        startingCash,
-        properties:   [],   // owned space IDs
-        houses:       {},   // { spaceId: 0-4 }
-        hotels:       {},   // { spaceId: true }
+        properties:   [],
+        houses:       {},
+        hotels:       {},
         mortgaged:    [],
         inJail:       false,
         jailTurns:    0,
@@ -308,15 +238,11 @@ function createPlayer(idx, name, isAI) {
 let players      = [];
 let turnIdx      = 0;
 let doublesRolled= 0;
-let phase        = "idle"; // idle | roll | moving | landed | build | gameover
+let phase        = "idle"; 
 let diceVal      = [1,1];
 let gameLog      = [];
-
-// Bank supply — real Monopoly has exactly 32 houses and 12 hotels.
 let bankHouses   = 32;
 let bankHotels   = 12;
-
-// Pending trade (for hotseat resolution)
 let pendingTrade = null;
 
 // ── 7. HELPERS ────────────────────────────────
@@ -358,15 +284,12 @@ function calcRent(spaceId, landingPlayer, diceTotal, forceDouble = false) {
         const hotel  = owner.hotels[spaceId] || false;
         const tier   = hotel ? 5 : houses;
         let   rent   = space.rent[tier];
-        // Double base rent when player holds full monopoly but hasn't built yet
         if (tier === 0 && hasMonopoly(owner, space.group)) rent *= 2;
         return rent;
     }
     return 0;
 }
 
-// Even-building rule: before adding a house to targetSid (which currently has N),
-// every other space in the group must also have >= N houses.
 function canBuildEven(player, group, targetSid) {
     if (!GROUPS[group]) return true;
     const current = player.houses[targetSid] || 0;
@@ -404,6 +327,7 @@ function renderAll() {
     renderActionPanel();
     renderBankSupply();
     renderLog();
+    renderCardPiles();
 }
 
 function renderTokens() {
@@ -411,7 +335,6 @@ function renderTokens() {
     if (!layer) return;
     layer.innerHTML = "";
 
-    // Group by position string (jail tokens get special key "10j")
     const byPos = {};
     activePlayers().forEach(p => {
         const key = p.inJail ? "10j" : String(p.position);
@@ -424,10 +347,7 @@ function renderTokens() {
         const slot = byPos[key].indexOf(p);
         const sp   = SPACE_POS[p.position];
         const off  = TOKEN_OFFSETS[slot] || { dx:0, dy:0 };
-
-        // Jail visitors cluster in the "just visiting" corner;
-        // actual prisoners shift slightly into the jail cell area
-        const jailNudge = p.inJail ? { dx: -1.5, dy: -1.5 } : { dx:0, dy:0 };
+        const jailNudge = p.inJail ? { dx: -1.8, dy: -1.8 } : { dx:0, dy:0 };
 
         const img = document.createElement("img");
         img.className = "token";
@@ -455,8 +375,6 @@ function renderOwnership() {
             dot.style.top        = `${sp.y}%`;
             dot.style.background = p.hex;
             dot.dataset.sid      = sid;
-            dot.title            = `${BOARD[sid].name} — ${p.name}`;
-            // Click to inspect the deed
             dot.addEventListener("click", () => openDeedModal(sid));
             layer.appendChild(dot);
         });
@@ -475,7 +393,7 @@ function renderBuildings() {
             const el  = document.createElement("div");
             el.className  = "build-marker";
             el.style.left = `${sp.x}%`;
-            el.style.top  = `${sp.y - 4.5}%`;
+            el.style.top  = `${sp.y - 4.2}%`;
             el.textContent= "🏠".repeat(n);
             layer.appendChild(el);
         });
@@ -485,11 +403,18 @@ function renderBuildings() {
             const el  = document.createElement("div");
             el.className  = "build-marker";
             el.style.left = `${sp.x}%`;
-            el.style.top  = `${sp.y - 4.5}%`;
+            el.style.top  = `${sp.y - 4.2}%`;
             el.textContent= "🏨";
             layer.appendChild(el);
         });
     });
+}
+
+function renderCardPiles() {
+    const chance = document.getElementById("chance-pile");
+    const chest = document.getElementById("chest-pile");
+    if (chance) chance.innerHTML = `<div style="width:100%;height:100%;background:rgba(230,92,0,0.3);border:1px solid #000;"></div>`;
+    if (chest) chest.innerHTML = `<div style="width:100%;height:100%;background:rgba(26,35,126,0.3);border:1px solid #000;"></div>`;
 }
 
 function renderPlayerCards() {
@@ -529,7 +454,6 @@ function renderPlayerCards() {
         panel.appendChild(card);
     });
 
-    // Wire up property pip clicks → deed modal
     panel.querySelectorAll(".prop-pip").forEach(pip => {
         pip.addEventListener("click", () => openDeedModal(parseInt(pip.dataset.sid)));
     });
@@ -573,7 +497,6 @@ function renderActionPanel() {
         if (isMyTurn && !cp.isAI) {
             if (cp.properties.length > 0)
                 document.getElementById("manage-btn").classList.remove("hidden");
-            // Trade only available in hotseat/online against another human or any mode with 2+ humans
             if (activePlayers().some(p => p.id !== cp.id && !p.isAI))
                 document.getElementById("trade-btn").classList.remove("hidden");
             document.getElementById("end-btn").classList.remove("hidden");
@@ -590,25 +513,6 @@ function renderBankSupply() {
     if (t) t.textContent = bankHotels;
 }
 
-// ── 10. DEBUG OVERLAY ─────────────────────────
-let debugVisible = false;
-document.getElementById("board-wrap").addEventListener("dblclick", () => {
-    debugVisible = !debugVisible;
-    const layer = document.getElementById("debug-layer");
-    layer.classList.toggle("hidden", !debugVisible);
-    if (debugVisible && layer.children.length === 0) {
-        // Draw numbered dots at every computed SPACE_POS
-        SPACE_POS.forEach((sp, id) => {
-            const dot = document.createElement("div");
-            dot.className  = "dbg-dot";
-            dot.style.left = `${sp.x}%`;
-            dot.style.top  = `${sp.y}%`;
-            dot.textContent= id;
-            layer.appendChild(dot);
-        });
-    }
-});
-
 // ── 11. DICE ──────────────────────────────────
 async function animateDice() {
     const d1 = document.getElementById("die1");
@@ -618,7 +522,7 @@ async function animateDice() {
     for (let i = 0; i < 14; i++) {
         d1.src = DICE_FACES[Math.floor(Math.random() * 6)];
         d2.src = DICE_FACES[Math.floor(Math.random() * 6)];
-        await sleep(70);
+        await sleep(75);
     }
     d1.classList.remove("rolling");
     d2.classList.remove("rolling");
@@ -629,7 +533,7 @@ async function animateDice() {
     const dbl = diceVal[0] === diceVal[1];
     document.getElementById("dice-sum").textContent   = sum;
     document.getElementById("dice-label").textContent = dbl ? `⚡ DOUBLES  (${diceVal[0]}+${diceVal[1]})` : `${diceVal[0]} + ${diceVal[1]}`;
-    SystemUI.playSound("click");
+    new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
 }
 
 function rollDiceValues() {
@@ -640,23 +544,19 @@ function rollDiceValues() {
 // ── 12. MOVEMENT ──────────────────────────────
 async function movePlayer(player, steps) {
     for (let i = 0; i < steps; i++) {
-        const prev = player.position;
         player.position = (player.position + 1) % 40;
         renderTokens();
-        SystemUI.playSound("click");
-        // Passing GO (but not landing on it on this step yet)
+        new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
         if (player.position === 0 && i < steps - 1) {
             player.money += 200;
             logP(player, "passed GO — +$200 ✓", "good");
         }
-        await sleep(180);
+        await sleep(380); 
     }
-    // Landing on GO
     if (player.position === 0) {
         player.money += 200;
         logP(player, "landed on GO — +$200 ✓", "good");
     }
-    // Bounce landing animation
     const tok = document.getElementById(`token-p${player.id}`);
     if (tok) { tok.classList.add("bounce"); setTimeout(() => tok.classList.remove("bounce"), 500); }
 }
@@ -667,7 +567,7 @@ async function startTurn() {
     renderAll();
     const cp = currentPlayer();
     if (cp.isAI) {
-        await sleep(900);
+        await sleep(1800); 
         await aiDoTurn(cp);
     }
 }
@@ -683,16 +583,14 @@ async function doRoll() {
 
     await animateDice();
 
-    // ── Jail logic ─────────────────────────────
     if (cp.inJail) {
         if (dbl) {
             cp.inJail = false; cp.jailTurns = 0;
-            doublesRolled = 0; // doubles from jail don't chain
+            doublesRolled = 0;
             logP(cp, `rolled doubles — freed from jail!`, "good");
         } else {
             cp.jailTurns++;
             if (cp.jailTurns >= 3) {
-                // 3rd failed roll: forced to pay $50
                 cp.money -= 50; cp.inJail = false; cp.jailTurns = 0;
                 logP(cp, `3rd failed jail roll — paid $50 bail, rolling ${sum}`, "bad");
             } else {
@@ -703,7 +601,6 @@ async function doRoll() {
             }
         }
     } else {
-        // ── Not in jail ────────────────────────
         if (dbl) {
             doublesRolled++;
             if (doublesRolled >= 3) {
@@ -719,25 +616,18 @@ async function doRoll() {
     }
 
     logP(cp, `rolled ${diceVal[0]}+${diceVal[1]} = ${sum}${dbl ? " ⚡ DOUBLES" : ""}`);
-
     await movePlayer(cp, sum);
-
     phase = "landed";
     renderAll();
     await landOnSpace(cp, sum);
 }
 
-// ── 14. SPACE HANDLERS ────────────────────────
 async function landOnSpace(player, diceTotal) {
     const sid   = player.position;
     const space = BOARD[sid];
-
     logP(player, `landed on <b>${space.name}</b>`);
 
     switch (space.type) {
-        case "go":       /* handled during movement */               break;
-        case "jail":     /* just visiting — nothing happens */       break;
-        case "parking":  /* house rule: nothing (no free parking jackpot) */ break;
         case "gotojail": await handleGoToJail(player);               break;
         case "tax":      await handleTax(player, space);             break;
         case "chance":   await handleCard(player, diceTotal, "chance"); break;
@@ -757,7 +647,7 @@ async function landOnSpace(player, diceTotal) {
 async function handleGoToJail(player) {
     sendToJail(player);
     logP(player, "⛓️ GO TO JAIL!", "bad");
-    await sleep(700);
+    await sleep(1000);
 }
 
 function sendToJail(player) {
@@ -765,14 +655,14 @@ function sendToJail(player) {
     player.inJail    = true;
     player.jailTurns = 0;
     renderTokens();
-    SystemUI.playSound("lose");
+    new Audio('../../system/audio/defeat.mp3').play().catch(e=>{});
 }
 
 async function handleTax(player, space) {
     logP(player, `paid ${space.name} — -$${space.amount}`, "bad");
     await chargePlayer(player, space.amount, null);
     renderPlayerCards();
-    await sleep(400);
+    await sleep(800);
 }
 
 async function handleCard(player, diceTotal, type) {
@@ -797,7 +687,6 @@ function showCardModal(type, card) {
         deco.textContent    = type === "chance" ? "?" : "📦";
         text.textContent    = card.text;
 
-        // Show the monetary effect prominently
         if (card.action === "gain")       effect.textContent = `+$${card.amount}`;
         else if (card.action === "lose")  effect.textContent = `-$${card.amount}`;
         else if (card.action === "jail")  effect.textContent = "⛓️ JAIL";
@@ -813,7 +702,7 @@ function showCardModal(type, card) {
             resolve();
         };
         btn.addEventListener("click", done);
-        if (currentPlayer().isAI) setTimeout(done, 1800);
+        if (currentPlayer().isAI) setTimeout(done, 2500);
     });
 }
 
@@ -822,19 +711,18 @@ async function applyCard(player, card, diceTotal) {
         case "goto": {
             const oldPos = player.position;
             if (card.passGo && card.target < oldPos) {
-                // Passing GO
                 player.money += 200;
                 logP(player, "passed GO — +$200", "good");
             }
             player.position = card.target;
             renderTokens();
-            await sleep(400);
+            await sleep(800);
             await landOnSpace(player, diceTotal);
             break;
         }
         case "back3": {
             player.position = (player.position - 3 + 40) % 40;
-            renderTokens(); await sleep(400);
+            renderTokens(); await sleep(800);
             logP(player, `moved back 3 to ${BOARD[player.position].name}`);
             await landOnSpace(player, diceTotal);
             break;
@@ -867,11 +755,10 @@ async function applyCard(player, card, diceTotal) {
         }
         case "nearest_rr": {
             const rrs    = [5, 15, 25, 35];
-            // Find the next railroad clockwise from current position
             const target = rrs.find(r => r > player.position) ?? rrs[0];
             if (target <= player.position) { player.money += 200; logP(player, "passed GO — +$200","good"); }
             player.position = target;
-            renderTokens(); await sleep(400);
+            renderTokens(); await sleep(800);
             logP(player, `moved to nearest railroad: ${BOARD[target].name}`);
             await handlePropertyLand(player, target, diceTotal, card.doubleRent || false);
             break;
@@ -880,9 +767,9 @@ async function applyCard(player, card, diceTotal) {
             const utils  = [12, 28];
             const target = utils.find(u => u > player.position) ?? utils[0];
             player.position = target;
-            renderTokens(); await sleep(400);
+            renderTokens(); await sleep(800);
             logP(player, `moved to nearest utility: ${BOARD[target].name}`);
-            await handlePropertyLand(player, target, diceTotal, false);
+            handlePropertyLand(player, target, diceTotal, false);
             break;
         }
         case "repairs": {
@@ -901,13 +788,11 @@ async function applyCard(player, card, diceTotal) {
     renderAll();
 }
 
-// ── 15. PROPERTY LANDING ──────────────────────
 async function handlePropertyLand(player, sid, diceTotal, forceDoubleRent) {
     const space = BOARD[sid];
     const owner = getOwner(sid);
 
     if (!owner) {
-        // Unowned — offer to buy
         if (player.money >= space.price) {
             await offerBuy(player, sid);
         } else {
@@ -933,16 +818,13 @@ function showRentOverlay(amount, owner, spaceName) {
         document.getElementById("rent-owner-name").textContent= owner.name;
         document.getElementById("rent-space-name").textContent= spaceName;
         document.getElementById("rent-overlay").classList.remove("hidden");
-
-        // Auto-dismiss after 1.8s (long enough to read, not so long it blocks the game)
         setTimeout(() => {
             document.getElementById("rent-overlay").classList.add("hidden");
             resolve();
-        }, 1800);
+        }, 2200);
     });
 }
 
-// ── 16. BUY / AUCTION ─────────────────────────
 function offerBuy(player, sid) {
     return new Promise(resolve => {
         const space = BOARD[sid];
@@ -957,7 +839,6 @@ function offerBuy(player, sid) {
         document.getElementById("buy-price-tag").textContent = `$${space.price}`;
         document.getElementById("buy-afford-note").textContent= `Your cash: $${player.money.toLocaleString()}`;
 
-        // Fill rent table — hide house rows for non-color-group properties
         const hasHouses = !!space.rent;
         document.getElementById("br-house-row").style.display = hasHouses ? "" : "none";
         for (let i = 0; i <= 5; i++) {
@@ -968,7 +849,6 @@ function offerBuy(player, sid) {
         if (hEl) hEl.textContent = hasHouses ? `$${space.houseCost}` : "—";
 
         document.getElementById("buy-modal").classList.remove("hidden");
-
         const buyBtn  = document.getElementById("btn-buy");
         const passBtn = document.getElementById("btn-pass");
 
@@ -983,7 +863,7 @@ function offerBuy(player, sid) {
             player.money -= space.price;
             player.properties.push(sid);
             logP(player, `bought ${space.name} for $${space.price}`, "good");
-            SystemUI.playSound("win");
+            new Audio('../../system/audio/victory.mp3').play().catch(e=>{});
             renderAll();
             resolve();
         };
@@ -999,7 +879,7 @@ function offerBuy(player, sid) {
         passBtn.addEventListener("click", onPass);
 
         if (player.isAI) {
-            setTimeout(() => aiDecideBuy(player, sid) ? onBuy() : onPass(), 700);
+            setTimeout(() => aiDecideBuy(player, sid) ? onBuy() : onPass(), 1500);
         }
     });
 }
@@ -1010,7 +890,7 @@ function startAuction(sid) {
         const hex   = space.group ? GROUP_HEX[space.group] : GROUP_HEX.railroad;
 
         let bid      = 10;
-        let leaderId = null; // null = no one has bid yet
+        let leaderId = null;
         let folded   = [];
         let timeLeft = 15;
         let timer    = null;
@@ -1023,7 +903,6 @@ function startAuction(sid) {
         document.getElementById("auction-folded-row").textContent     = "";
         document.getElementById("auction-modal").classList.remove("hidden");
 
-        // AI players each bid once upfront
         activePlayers().forEach(p => {
             if (!p.isAI) return;
             const maxWilling = Math.floor(space.price * (aiDifficulty === "hard" ? 0.85 : aiDifficulty === "medium" ? 0.65 : 0.45));
@@ -1046,7 +925,6 @@ function startAuction(sid) {
 
         const bidUp  = document.getElementById("btn-bid-up");
         const bidOut = document.getElementById("btn-bid-out");
-
         const humanId = players.find(p => !p.isAI)?.id;
 
         const onBid = () => {
@@ -1054,7 +932,7 @@ function startAuction(sid) {
             const human = players.find(p => p.id === humanId);
             if (!human || human.money < bid + 10) return;
             bid += 10; leaderId = humanId;
-            timeLeft = 12; // reset timer on new bid
+            timeLeft = 12;
             document.getElementById("auction-bid-amt").textContent     = `$${bid}`;
             document.getElementById("auction-leader-name").textContent = human.name;
         };
@@ -1078,14 +956,13 @@ function startAuction(sid) {
             bidUp.removeEventListener("click", onBid);
             bidOut.removeEventListener("click", onFold);
             document.getElementById("auction-modal").classList.add("hidden");
-
             if (leaderId !== null) {
                 const winner = players.find(p => p.id === leaderId);
                 if (winner && winner.money >= bid) {
                     winner.money -= bid;
                     winner.properties.push(sid);
                     logP(winner, `won auction for ${space.name} at $${bid}`, "good");
-                    SystemUI.playSound("win");
+                    new Audio('../../system/audio/victory.mp3').play().catch(e=>{});
                 }
             } else {
                 log(`${space.name} returned to bank — no bids`);
@@ -1099,7 +976,6 @@ function startAuction(sid) {
     });
 }
 
-// ── 17. PAYING / BANKRUPTCY ───────────────────
 async function chargePlayer(player, amount, recipient) {
     if (player.money >= amount) {
         player.money -= amount;
@@ -1107,13 +983,10 @@ async function chargePlayer(player, amount, recipient) {
         renderPlayerCards();
         return;
     }
-    // Try to raise funds by auto-mortgaging cheapest properties
     await raiseFunds(player, amount);
-
     const actual = Math.min(player.money, amount);
     player.money -= actual;
     if (recipient) recipient.money += actual;
-
     if (actual < amount) {
         await declareBankrupt(player, recipient);
     }
@@ -1121,7 +994,6 @@ async function chargePlayer(player, amount, recipient) {
 }
 
 async function raiseFunds(player, needed) {
-    // Auto-mortgage cheapest unbuilt properties first
     const mortgageable = player.properties
         .filter(sid => !player.mortgaged.includes(sid) && !(player.houses[sid] > 0) && !player.hotels[sid])
         .sort((a, b) => BOARD[a].mortgage - BOARD[b].mortgage);
@@ -1137,19 +1009,16 @@ async function raiseFunds(player, needed) {
 async function declareBankrupt(player, creditor) {
     player.bankrupt = true;
     logP(player, "is BANKRUPT 💸", "bad");
-    SystemUI.playSound("lose");
+    new Audio('../../system/audio/defeat.mp3').play().catch(e=>{});
 
     if (creditor) {
         player.properties.forEach(sid => creditor.properties.push(sid));
         creditor.money += Math.max(0, player.money);
-        // Return buildings to bank
         player.properties.forEach(sid => {
             bankHouses += player.houses[sid] || 0;
             if (player.hotels[sid]) bankHotels++;
         });
-        logP(creditor, `received all of ${player.name}'s assets`, "good");
     } else {
-        // Return all buildings to bank
         player.properties.forEach(sid => {
             bankHouses += player.houses[sid] || 0;
             if (player.hotels[sid]) bankHotels++;
@@ -1158,16 +1027,10 @@ async function declareBankrupt(player, creditor) {
 
     player.properties = []; player.houses = {}; player.hotels = {};
     player.mortgaged  = []; player.money  = 0;
-
     renderAll();
-    await sleep(800);
-
+    await sleep(1000);
     if (checkWinCondition()) return;
-
-    // If the bankrupt player was the current turn holder, skip to next
-    if (turnIdx === player.idx) {
-        await endTurn();
-    }
+    if (turnIdx === player.idx) { await endTurn(); }
 }
 
 function checkWinCondition() {
@@ -1179,13 +1042,11 @@ function checkWinCondition() {
     return false;
 }
 
-// ── 18. BUILD / MANAGE MODAL ──────────────────
 function openManageModal() {
     const player = currentPlayer();
     const list   = document.getElementById("manage-list");
     list.innerHTML = "";
 
-    // Collect which groups the player has properties in
     const ownedGroups = {};
     player.properties.forEach(sid => {
         const sp  = BOARD[sid];
@@ -1203,10 +1064,8 @@ function openManageModal() {
     Object.entries(ownedGroups).forEach(([grp, sids]) => {
         const mono  = hasMonopoly(player, grp);
         const color = GROUP_HEX[grp] || "#888";
-
         const groupEl = document.createElement("div");
         groupEl.className = "mg-group";
-
         let hdr = `<div class="mg-group-hdr">
             <div class="mg-group-dot" style="background:${color}"></div>
             <div class="mg-group-name">${grp.toUpperCase()}</div>
@@ -1221,7 +1080,6 @@ function openManageModal() {
             const mortgaged = player.mortgaged.includes(sid);
             const houseTxt  = hotel ? "🏨 Hotel" : houses > 0 ? `🏠×${houses}` : "—";
 
-            // Build conditions
             const canBuild  = mono && sp.type === "property" && !mortgaged && !hotel && houses < 4
                 && player.money >= sp.houseCost
                 && canBuildEven(player, grp, sid)
@@ -1248,11 +1106,9 @@ function openManageModal() {
                 </div>`;
             groupEl.appendChild(row);
         });
-
         list.appendChild(groupEl);
     });
 
-    // Wire up buttons
     list.querySelectorAll(".build-btn").forEach(btn => {
         btn.addEventListener("click", () => {
             const sid = parseInt(btn.dataset.sid);
@@ -1262,7 +1118,7 @@ function openManageModal() {
             p.houses[sid] = (p.houses[sid] || 0) + 1;
             bankHouses--;
             logP(p, `built a house on ${sp.name}`, "good");
-            SystemUI.playSound("win");
+            new Audio('../../system/audio/victory.mp3').play().catch(e=>{});
             openManageModal(); renderAll();
         });
     });
@@ -1272,13 +1128,12 @@ function openManageModal() {
             const sid = parseInt(btn.dataset.sid);
             const sp  = BOARD[sid];
             const p   = currentPlayer();
-            // Return the 4 houses to the bank, deduct hotel cost
             bankHouses += 4; bankHotels--;
             delete p.houses[sid];
             p.hotels[sid] = true;
             p.money -= sp.houseCost;
             logP(p, `built a hotel on ${sp.name}`, "good");
-            SystemUI.playSound("win");
+            new Audio('../../system/audio/victory.mp3').play().catch(e=>{});
             openManageModal(); renderAll();
         });
     });
@@ -1290,8 +1145,7 @@ function openManageModal() {
             const p   = currentPlayer();
             if (p.hotels[sid]) {
                 p.hotels[sid] = false; bankHotels++;
-                p.houses[sid] = 4;     // hotel → 4 houses
-                // Sell one of those houses
+                p.houses[sid] = 4;
                 p.houses[sid]--; bankHouses++;
                 p.money += Math.floor(sp.houseCost / 2);
                 logP(p, `sold hotel on ${sp.name} → 3 houses`);
@@ -1323,16 +1177,13 @@ function openManageModal() {
             openManageModal(); renderAll();
         });
     });
-
     document.getElementById("manage-modal").classList.remove("hidden");
 }
 
-// ── 19. PROPERTY DEED MODAL ───────────────────
 function openDeedModal(sid) {
     const space = BOARD[sid];
     const owner = getOwner(sid);
     const hex   = space.group ? GROUP_HEX[space.group] : GROUP_HEX[space.type] || "#888";
-
     document.getElementById("deed-color-bar").style.background = hex;
     document.getElementById("deed-type-lbl").textContent =
         space.type === "railroad" ? "RAILROAD DEED"
@@ -1350,16 +1201,14 @@ function openDeedModal(sid) {
     const hEl = document.getElementById("dr-h");
     if (hEl) hEl.textContent = hasTiers ? `$${space.houseCost}` : "—";
 
-    // Status line — mortgage / current buildings
     let status = "";
     if (owner) {
         if (owner.mortgaged.includes(sid)) status = "⚠️ MORTGAGED";
         else if (owner.hotels[sid])        status = "🏨 Hotel";
-        else if ((owner.houses[sid] || 0) > 0) status = `🏠 ${"House".repeat(owner.houses[sid])} ×${owner.houses[sid]}`;
+        else if ((owner.houses[sid] || 0) > 0) status = `🏠 ×${owner.houses[sid]}`;
         else if (hasMonopoly(owner, space.group)) status = "✓ Monopoly (rent ×2)";
     }
     document.getElementById("deed-status").textContent = status;
-
     document.getElementById("deed-modal").classList.remove("hidden");
 }
 
@@ -1367,22 +1216,196 @@ document.getElementById("deed-close-btn").addEventListener("click", () => {
     document.getElementById("deed-modal").classList.add("hidden");
 });
 
-// ── 20. TRADE SYSTEM ──────────────────────────
-/*
- * In hotseat mode: both players share the screen, so the trade system
- * shows a two-step dialog — proposer configures the offer, then we
- * "hand the screen to" the target player to accept/reject.
- *
- * In AI mode: AI always auto-evaluates and responds.
- */
+async function endTurn() {
+    const cp = currentPlayer();
+    if (doublesRolled > 0 && !cp.inJail && !cp.bankrupt) {
+        logP(cp, "rolled doubles — gets another turn!");
+        phase = "roll"; renderAll();
+        if (cp.isAI) { await sleep(1500); await aiDoTurn(cp); }
+        return;
+    }
+    doublesRolled = 0;
+    let next = (turnIdx + 1) % players.length;
+    let guard = 0;
+    while (players[next].bankrupt && guard++ < players.length) {
+        next = (next + 1) % players.length;
+    }
+    turnIdx = next;
+    if (gameMode === "online") pushOnlineState();
+    await sleep(500);
+    await startTurn();
+}
+
+function endGame(winner) {
+    phase = "gameover";
+    new Audio('../../system/audio/victory.mp3').play().catch(e=>{});
+    document.getElementById("go-emoji").textContent   = winner ? "🏆" : "🤝";
+    document.getElementById("go-title").textContent   = winner ? `${winner.name.toUpperCase()} WINS!` : "GAME OVER";
+    document.getElementById("go-stats").innerHTML = players.map(p =>
+        `${p.bankrupt ? "💀" : "✓"} ${p.name}: $${p.money.toLocaleString()}`
+    ).join("<br>");
+    document.getElementById("gameover-modal").classList.remove("hidden");
+}
+
+async function aiDoTurn(player) {
+    if (player.inJail) {
+        if (player.jailFreeCards > 0) {
+            player.jailFreeCards--;
+            player.inJail = false; player.jailTurns = 0;
+            logP(player, "used Get Out of Jail Free card", "good");
+        } else if (player.money >= 150 && (player.jailTurns >= 1 || aiDifficulty === "hard")) {
+            player.money -= 50;
+            player.inJail = false; player.jailTurns = 0;
+            logP(player, "paid $50 bail");
+        }
+    }
+    await doRoll();
+}
+
+async function aiEndTurn(player) {
+    if (aiDifficulty !== "easy") {
+        for (const [group, g] of Object.entries(GROUPS)) {
+            if (!hasMonopoly(player, group)) continue;
+            if (group === "railroad" || group === "utility") continue;
+            for (const sid of g.spaces) {
+                if (player.mortgaged.includes(sid)) continue;
+                if (player.hotels[sid]) continue;
+                const houses = player.houses[sid] || 0;
+                if (houses < 4 && bankHouses > 0
+                    && player.money >= BOARD[sid].houseCost * 1.8
+                    && canBuildEven(player, group, sid)) {
+                    player.houses[sid] = houses + 1;
+                    player.money -= BOARD[sid].houseCost;
+                    bankHouses--;
+                    logP(player, `built a house on ${BOARD[sid].name}`);
+                }
+            }
+        }
+    }
+    await sleep(1200);
+    await endTurn();
+}
+
+function aiDecideBuy(player, sid) {
+    const space = BOARD[sid];
+    if (player.money < space.price) return false;
+    const chance = aiDifficulty === "easy" ? 0.75 : 1.0;
+    return Math.random() < chance;
+}
+
+function startGame() {
+    phase = "idle"; doublesRolled = 0; turnIdx = 0;
+    gameLog = []; chanceIdx = 0; chestIdx = 0;
+    bankHouses = 32; bankHotels = 12;
+    const total = playerCount;
+    players = [];
+    if (gameMode === "ai") {
+        players.push(createPlayer(0, p1Name, false));
+        for (let i = 1; i < total; i++) players.push(createPlayer(i, `AI ${i}`, true));
+    } else {
+        for (let i = 0; i < total; i++) {
+            players.push(createPlayer(i, i === 0 ? p1Name : `Player ${i + 1}`, false));
+        }
+    }
+    document.getElementById("start-screen").classList.add("hidden");
+    document.getElementById("game-area").classList.remove("hidden");
+    renderAll();
+    startTurn();
+}
+
+document.getElementById("roll-btn").addEventListener("click", async () => {
+    if (phase !== "roll") return;
+    document.getElementById("roll-btn").disabled = true;
+    await doRoll();
+    document.getElementById("roll-btn").disabled = false;
+});
+
+document.getElementById("end-btn").addEventListener("click", async () => {
+    if (phase !== "build") return;
+    await endTurn();
+});
+
+document.getElementById("start-btn").addEventListener("click", startGame);
+
+document.getElementById("start-settings").addEventListener("click", e => {
+    const chip = e.target.closest(".ss-chip");
+    if (!chip) return;
+    const group = chip.dataset.group;
+    const val   = chip.dataset.val;
+    document.querySelectorAll(`.ss-chip[data-group="${group}"]`).forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    if (group === "count") playerCount = parseInt(val);
+    else if (group === "ai-diff") aiDifficulty = val;
+    else if (group === "cash") startingCash = parseInt(val);
+});
+
+// ── 28. SAVE / LOAD LOGIC ─────────────────────
+document.getElementById("btn-save-game")?.addEventListener("click", () => {
+    new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
+    if (gameMode === "online") {
+        alert("Online games are saved automatically to the server.");
+        return;
+    }
+    const saveData = {
+        players, turnIdx, doublesRolled, phase, diceVal, gameLog,
+        bankHouses, bankHotels, chanceIdx, chestIdx,
+        gameMode, aiDifficulty, playerCount, startingCash
+    };
+    localStorage.setItem("monopoly_save_state", JSON.stringify(saveData));
+    log("SYSTEM: Game state saved locally.", "highlight");
+});
+
+document.getElementById("btn-load-game")?.addEventListener("click", () => {
+    new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
+    if (gameMode === "online") {
+        alert("Cannot load local saves in online mode.");
+        return;
+    }
+    const saved = localStorage.getItem("monopoly_save_state");
+    if (!saved) {
+        alert("No saved game found!");
+        return;
+    }
+    try {
+        const data = JSON.parse(saved);
+        players = data.players;
+        turnIdx = data.turnIdx;
+        doublesRolled = data.doublesRolled;
+        phase = data.phase;
+        diceVal = data.diceVal;
+        gameLog = data.gameLog || [];
+        bankHouses = data.bankHouses;
+        bankHotels = data.bankHotels;
+        chanceIdx = data.chanceIdx;
+        chestIdx = data.chestIdx;
+        gameMode = data.gameMode;
+        aiDifficulty = data.aiDifficulty;
+        playerCount = data.playerCount;
+        startingCash = data.startingCash;
+
+        document.getElementById("start-screen").classList.add("hidden");
+        document.getElementById("game-area").classList.remove("hidden");
+
+        renderAll();
+        if (phase === "moving" || phase === "landed") phase = "roll";
+        
+        log("SYSTEM: Game state loaded.", "highlight");
+        if (phase === "roll") startTurn();
+    } catch (e) {
+        alert("Error loading game.");
+        console.error(e);
+    }
+});
+
+// ── 29. TRADING SYSTEM ──
 let tradeState = { targetId: null, offerSids: [], wantSids: [] };
 
 function openTradeModal() {
     const cp = currentPlayer();
     tradeState = { targetId: null, offerSids: [], wantSids: [] };
 
-    // Populate target player pills
     const pills = document.getElementById("trade-target-pills");
+    if (!pills) return;
     pills.innerHTML = "";
     activePlayers().filter(p => p.id !== cp.id).forEach(p => {
         const btn = document.createElement("button");
@@ -1399,11 +1422,8 @@ function openTradeModal() {
         pills.appendChild(btn);
     });
 
-    // Pre-select the first available target
     const firstTarget = activePlayers().find(p => p.id !== cp.id);
-    if (firstTarget) {
-        pills.firstChild?.click();
-    }
+    if (firstTarget) pills.firstChild?.click();
 
     document.getElementById("trade-offer-cash").value = 0;
     document.getElementById("trade-want-cash").value  = 0;
@@ -1440,32 +1460,24 @@ function populateTradeCols(proposer, target) {
 
     proposer.properties.forEach(sid => offerDiv.appendChild(makePropBtn(sid, "offer")));
     target.properties.forEach(sid   => wantDiv.appendChild(makePropBtn(sid, "want")));
-
-    if (proposer.properties.length === 0)
-        offerDiv.innerHTML = `<div style="color:var(--muted);font-size:0.6rem;padding:4px">No properties to offer</div>`;
-    if (target.properties.length === 0)
-        wantDiv.innerHTML  = `<div style="color:var(--muted);font-size:0.6rem;padding:4px">Target has no properties</div>`;
 }
 
-document.getElementById("trade-send-btn").addEventListener("click", () => {
+document.getElementById("trade-send-btn")?.addEventListener("click", () => {
     const cp     = currentPlayer();
     const target = players.find(p => p.id === tradeState.targetId);
-    if (!target) { log("Select a trade partner first.", "bad"); return; }
+    if (!target) return;
 
     const offerCash = parseInt(document.getElementById("trade-offer-cash").value) || 0;
     const wantCash  = parseInt(document.getElementById("trade-want-cash").value)  || 0;
 
-    if (offerCash > cp.money) {
-        log("You don't have enough cash to offer that.", "bad"); return;
-    }
+    if (offerCash > cp.money) return;
 
     document.getElementById("trade-modal").classList.add("hidden");
 
     if (target.isAI) {
-        // AI evaluates: accept if the deal is roughly fair in their favour
         const offerVal = tradeState.offerSids.reduce((s, id) => s + (BOARD[id].price || 0), offerCash);
         const wantVal  = tradeState.wantSids.reduce((s, id)  => s + (BOARD[id].price || 0), wantCash);
-        const aiAccepts= offerVal >= wantVal * (aiDifficulty === "easy" ? 0.7 : aiDifficulty === "medium" ? 0.9 : 1.05);
+        const aiAccepts= offerVal >= wantVal * 0.9;
         if (aiAccepts) {
             executeTrade(cp, target, tradeState.offerSids, tradeState.wantSids, offerCash, wantCash);
             log(`${target.name} accepted the trade!`, "good");
@@ -1475,13 +1487,8 @@ document.getElementById("trade-send-btn").addEventListener("click", () => {
         return;
     }
 
-    // Hotseat: show response modal to the target player
     pendingTrade = { proposer: cp, target, offerSids: [...tradeState.offerSids], wantSids: [...tradeState.wantSids], offerCash, wantCash };
     showTradeResponseModal(pendingTrade);
-});
-
-document.getElementById("trade-cancel-btn").addEventListener("click", () => {
-    document.getElementById("trade-modal").classList.add("hidden");
 });
 
 function showTradeResponseModal(trade) {
@@ -1498,7 +1505,7 @@ function showTradeResponseModal(trade) {
     document.getElementById("trade-response-modal").classList.remove("hidden");
 }
 
-document.getElementById("trade-accept-btn").addEventListener("click", () => {
+document.getElementById("trade-accept-btn")?.addEventListener("click", () => {
     document.getElementById("trade-response-modal").classList.add("hidden");
     if (!pendingTrade) return;
     const { proposer, target, offerSids, wantSids, offerCash, wantCash } = pendingTrade;
@@ -1507,7 +1514,7 @@ document.getElementById("trade-accept-btn").addEventListener("click", () => {
     pendingTrade = null;
 });
 
-document.getElementById("trade-reject-btn").addEventListener("click", () => {
+document.getElementById("trade-reject-btn")?.addEventListener("click", () => {
     document.getElementById("trade-response-modal").classList.add("hidden");
     if (pendingTrade) {
         log(`${pendingTrade.target.name} rejected the trade.`, "bad");
@@ -1519,7 +1526,6 @@ function executeTrade(proposer, target, offerSids, wantSids, offerCash, wantCash
     offerSids.forEach(sid => {
         proposer.properties = proposer.properties.filter(s => s !== sid);
         target.properties.push(sid);
-        // Clear buildings — trades transfer bare property
         delete proposer.houses[sid]; delete proposer.hotels[sid];
         proposer.mortgaged = proposer.mortgaged.filter(s => s !== sid);
     });
@@ -1531,153 +1537,67 @@ function executeTrade(proposer, target, offerSids, wantSids, offerCash, wantCash
     });
     proposer.money -= offerCash; target.money  += offerCash;
     target.money   -= wantCash;  proposer.money += wantCash;
-
-    const offPropTxt = offerSids.map(s => BOARD[s].name).join(", ") || "cash only";
-    logP(proposer, `traded ${offPropTxt}${offerCash ? ` +$${offerCash}` : ""} → ${target.name}`, "highlight");
-    SystemUI.playSound("win");
     renderAll();
 }
 
-// ── 21. AI LOGIC ──────────────────────────────
-function aiDecideBuy(player, sid) {
-    const space = BOARD[sid];
-    if (player.money < space.price) return false;
-    const chance = aiDifficulty === "easy" ? 0.75 : 1.0; // easy AI skips ~25%
-    return Math.random() < chance;
-}
+document.getElementById("trade-btn")?.addEventListener("click", openTradeModal);
+document.getElementById("trade-cancel-btn")?.addEventListener("click", () => {
+    document.getElementById("trade-modal").classList.add("hidden");
+});
 
-async function aiDoTurn(player) {
-    // Jail: pay bail or use card if we've been here at least 1 turn
-    if (player.inJail) {
-        if (player.jailFreeCards > 0) {
-            player.jailFreeCards--;
-            player.inJail = false; player.jailTurns = 0;
-            logP(player, "used Get Out of Jail Free card", "good");
-        } else if (player.money >= 50 && (player.jailTurns >= 1 || aiDifficulty === "hard")) {
-            player.money -= 50;
-            player.inJail = false; player.jailTurns = 0;
-            logP(player, "paid $50 bail");
-        }
-        // Otherwise try to roll doubles
-    }
-    await doRoll();
-}
-
-async function aiEndTurn(player) {
-    // Build houses when holding monopoly (medium/hard AI only)
-    if (aiDifficulty !== "easy") {
-        outer:
-        for (const [group, g] of Object.entries(GROUPS)) {
-            if (!hasMonopoly(player, group)) continue;
-            if (group === "railroad" || group === "utility") continue;
-            for (const sid of g.spaces) {
-                if (player.mortgaged.includes(sid)) continue;
-                if (player.hotels[sid]) continue;
-                const houses = player.houses[sid] || 0;
-                if (houses < 4 && bankHouses > 0
-                    && player.money >= BOARD[sid].houseCost * 1.5
-                    && canBuildEven(player, group, sid)) {
-                    player.houses[sid] = houses + 1;
-                    player.money -= BOARD[sid].houseCost;
-                    bankHouses--;
-                    logP(player, `built a house on ${BOARD[sid].name}`);
-                }
-            }
-        }
-    }
-    await sleep(500);
-    await endTurn();
-}
-
-// ── 22. TURN FLOW ─────────────────────────────
-async function endTurn() {
+// ── MISSING EVENT LISTENERS ───────────────
+document.getElementById("bail-btn").addEventListener("click", async () => {
     const cp = currentPlayer();
+    if (!cp.inJail || cp.isAI) return;
+    if (cp.money < 50) { log("Not enough money to pay bail!", "bad"); return; }
+    cp.money -= 50;
+    cp.inJail = false; cp.jailTurns = 0;
+    logP(cp, "paid $50 bail and is free!", "good");
+    document.getElementById("bail-btn").classList.add("hidden");
+    document.getElementById("card-btn").classList.add("hidden");
+    await doRoll();
+});
 
-    // Doubles let the same player roll again
-    if (doublesRolled > 0 && !cp.inJail && !cp.bankrupt) {
-        logP(cp, "rolled doubles — gets another turn!");
-        phase = "roll"; renderAll();
-        if (cp.isAI) { await sleep(700); await aiDoTurn(cp); }
-        return;
-    }
+document.getElementById("card-btn").addEventListener("click", async () => {
+    const cp = currentPlayer();
+    if (!cp.inJail || cp.jailFreeCards < 1 || cp.isAI) return;
+    cp.jailFreeCards--;
+    cp.inJail = false; cp.jailTurns = 0;
+    logP(cp, "used Get Out of Jail Free card!", "good");
+    document.getElementById("bail-btn").classList.add("hidden");
+    document.getElementById("card-btn").classList.add("hidden");
+    await doRoll();
+});
 
-    doublesRolled = 0;
+document.getElementById("manage-btn").addEventListener("click", () => {
+    openManageModal();
+});
 
-    // Find the next non-bankrupt player
-    let next = (turnIdx + 1) % players.length;
-    let guard = 0;
-    while (players[next].bankrupt && guard++ < players.length) {
-        next = (next + 1) % players.length;
-    }
-    turnIdx = next;
+document.getElementById("manage-close-btn").addEventListener("click", () => {
+    document.getElementById("manage-modal").classList.add("hidden");
+});
 
-    if (gameMode === "online") pushOnlineState();
+document.getElementById("deed-close-btn").addEventListener("click", () => {
+    document.getElementById("deed-modal").classList.add("hidden");
+});
 
-    await sleep(280);
-    await startTurn();
-}
+document.getElementById("btn-play-again").addEventListener("click", () => {
+    document.getElementById("gameover-modal").classList.add("hidden");
+    document.getElementById("game-area").classList.add("hidden");
+    document.getElementById("start-screen").classList.remove("hidden");
+});
 
-// ── 23. GAME OVER ─────────────────────────────
-function endGame(winner) {
-    phase = "gameover";
-    SystemUI.playSound(winner ? "win" : "lose");
-
-    document.getElementById("go-emoji").textContent   = winner ? "🏆" : "🤝";
-    document.getElementById("go-title").textContent   = winner ? `${winner.name.toUpperCase()} WINS!` : "GAME OVER";
-    document.getElementById("go-subtitle").textContent= winner ? "Last player standing!" : "All players bankrupt.";
-
-    document.getElementById("go-stats").innerHTML = players.map(p =>
-        `${p.bankrupt ? "💀" : "✓"} ${p.name}: $${p.money.toLocaleString()} · ${p.properties.length} props`
-    ).join("<br>");
-
-    document.getElementById("gameover-modal").classList.remove("hidden");
-}
-
-// ── 24. START GAME ────────────────────────────
-function startGame() {
-    phase = "idle"; doublesRolled = 0; turnIdx = 0;
-    gameLog = []; chanceIdx = 0; chestIdx = 0;
-    bankHouses = 32; bankHotels = 12;
-    pendingTrade = null;
-
-    const total = gameMode === "online" ? 2 : playerCount;
-    players = [];
-
-    if (gameMode === "ai") {
-        players.push(createPlayer(0, p1Name, false));
-        for (let i = 1; i < total; i++) players.push(createPlayer(i, `AI ${i}`, true));
-    } else if (gameMode === "hotseat") {
-        for (let i = 0; i < total; i++) {
-            const name = i === 0 ? p1Name : `Player ${i + 1}`;
-            players.push(createPlayer(i, name, false));
-        }
-    } else {
-        // Online: P1 = self, P2 = opponent
-        players.push(createPlayer(0, p1Name, false));
-        players.push(createPlayer(1, "Opponent", false));
-    }
-
-    document.getElementById("start-screen").classList.add("hidden");
-    document.getElementById("loading-screen").classList.add("hidden");
-    document.getElementById("game-area").classList.remove("hidden");
-
-    renderAll();
-    log(`🎲 GAME STARTED — ${players.map(p=>p.name).join(" vs ")}`);
-
-    startTurn();
-}
-
-// ── 25. ONLINE MULTIPLAYER ────────────────────
+// ── v2LOBBY / ONLINE MULTIPLAYER ──────────
 SystemUI.v2Lobby.setup({
     onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
         isHost = true; myId = 1; chatStarted = false;
         seats = [
-            { type:"human", name:SystemUI.getPlayerName() },
-            { type:"ai",    name:"Waiting for opponent…" }
+            { type: "human", name: SystemUI.getPlayerName() },
+            { type: "ai",    name: "Waiting for opponent…"  }
         ];
         window.dbSet(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), {
-            status:"waiting", p1Name, seats
+            status: "waiting", p1Name, seats
         }).then(() => {
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToOnlineRoom();
@@ -1689,11 +1609,11 @@ SystemUI.v2Lobby.setup({
                 if (snap.exists() && snap.val().status === "waiting") {
                     currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
                     const data = snap.val();
-                    const updSeats = data.seats ? [...data.seats]
-                        : [{type:"human",name:data.p1Name||"P1"},{type:"ai",name:"Slot 2"}];
-                    updSeats[1] = { type:"human", name:SystemUI.getPlayerName() };
+                    const updatedSeats = data.seats ? [...data.seats]
+                        : [{ type:"human", name: data.p1Name || "Player 1" }, { type:"ai", name:"Slot 2" }];
+                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
                     window.dbUpdate(window.dbRef(window.db, `mono_rooms/${code}`), {
-                        p2Name: p1Name, seats: updSeats
+                        p2Name: p1Name, seats: updatedSeats
                     });
                     SystemUI.v2Lobby.showRoomPhase(code, false);
                     listenToOnlineRoom();
@@ -1704,19 +1624,17 @@ SystemUI.v2Lobby.setup({
     },
     onLeave: () => {
         gameMode = "ai";
-        const el = document.getElementById("sys-mono-mode");
-        if (el) el.value = "ai";
+        document.getElementById("sys-mono-mode").value = "ai";
         localStorage.setItem("mono_mode", "ai");
         SystemUI.stopChat(); chatStarted = false;
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), { status:"playing" });
+        window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), { status: "playing" });
     },
     onClose: () => {
         if (gameMode === "online" && phase === "idle") {
             gameMode = "ai";
-            const el = document.getElementById("sys-mono-mode");
-            if (el) el.value = "ai";
+            document.getElementById("sys-mono-mode").value = "ai";
             localStorage.setItem("mono_mode", "ai");
         }
     }
@@ -1753,97 +1671,22 @@ function listenToOnlineRoom() {
 function pushOnlineState() {
     if (!currentRoomId) return;
     window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), {
-        gameState: JSON.stringify({ players, turnIdx, doublesRolled, phase, diceVal, chanceIdx, chestIdx, bankHouses, bankHotels })
+        gameState: JSON.stringify({
+            players, turnIdx, doublesRolled, phase, diceVal,
+            chanceIdx, chestIdx, bankHouses, bankHotels
+        })
     });
 }
 
-function syncOnlineState(raw) {
+function syncOnlineState(stateJson) {
     try {
-        const s = typeof raw === "string" ? JSON.parse(raw) : raw;
+        const s = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
         if (s.turnIdx !== undefined && players[s.turnIdx]?.id !== myId) {
             players = s.players; turnIdx = s.turnIdx; doublesRolled = s.doublesRolled;
-            phase = s.phase; diceVal = s.diceVal; chanceIdx = s.chanceIdx; chestIdx = s.chestIdx;
+            phase = s.phase; diceVal = s.diceVal;
+            chanceIdx = s.chanceIdx; chestIdx = s.chestIdx;
             bankHouses = s.bankHouses; bankHotels = s.bankHotels;
             renderAll();
         }
-    } catch(e) { console.error("Sync error:", e); }
+    } catch (e) { console.error("Sync error:", e); }
 }
-
-// ── 26. EVENT LISTENERS ───────────────────────
-document.getElementById("roll-btn").addEventListener("click", async () => {
-    if (phase !== "roll") return;
-    const cp = currentPlayer();
-    if (cp.isAI) return;
-    if (gameMode === "online" && cp.id !== myId) return;
-    document.getElementById("roll-btn").disabled = true;
-    await doRoll();
-    document.getElementById("roll-btn").disabled = false;
-});
-
-document.getElementById("bail-btn").addEventListener("click", async () => {
-    const cp = currentPlayer();
-    if (!cp.inJail || cp.isAI) return;
-    if (cp.money < 50) { log("Not enough cash to pay bail!", "bad"); return; }
-    cp.money -= 50; cp.inJail = false; cp.jailTurns = 0;
-    logP(cp, "paid $50 bail — freed from jail!", "good");
-    document.getElementById("bail-btn").classList.add("hidden");
-    document.getElementById("card-btn").classList.add("hidden");
-    await doRoll();
-});
-
-document.getElementById("card-btn").addEventListener("click", async () => {
-    const cp = currentPlayer();
-    if (!cp.inJail || cp.jailFreeCards < 1 || cp.isAI) return;
-    cp.jailFreeCards--; cp.inJail = false; cp.jailTurns = 0;
-    logP(cp, "used Get Out of Jail Free card!", "good");
-    document.getElementById("bail-btn").classList.add("hidden");
-    document.getElementById("card-btn").classList.add("hidden");
-    await doRoll();
-});
-
-document.getElementById("manage-btn").addEventListener("click", openManageModal);
-document.getElementById("manage-close-btn").addEventListener("click", () => {
-    document.getElementById("manage-modal").classList.add("hidden");
-});
-
-document.getElementById("trade-btn").addEventListener("click", openTradeModal);
-
-document.getElementById("end-btn").addEventListener("click", async () => {
-    if (phase !== "build") return;
-    const cp = currentPlayer();
-    if (cp.isAI) return;
-    if (gameMode === "online" && cp.id !== myId) return;
-    await endTurn();
-});
-
-document.getElementById("btn-play-again").addEventListener("click", () => {
-    document.getElementById("gameover-modal").classList.add("hidden");
-    document.getElementById("game-area").classList.add("hidden");
-    document.getElementById("start-screen").classList.remove("hidden");
-});
-
-// ── 27. START-SCREEN WIRING ───────────────────
-document.getElementById("start-btn").addEventListener("click", () => {
-    if (gameMode === "online") { SystemUI.v2Lobby.show(); return; }
-    startGame();
-});
-
-document.getElementById("start-settings").addEventListener("click", e => {
-    const chip = e.target.closest(".ss-chip");
-    if (!chip) return;
-    const group = chip.dataset.group;
-    const val   = chip.dataset.val;
-
-    document.querySelectorAll(`.ss-chip[data-group="${group}"]`).forEach(c => c.classList.remove("active"));
-    chip.classList.add("active");
-
-    if      (group === "count")   { playerCount  = parseInt(val); localStorage.setItem("mono_pcount", val); }
-    else if (group === "ai-diff") { aiDifficulty = val;           localStorage.setItem("mono_ai_diff", val); }
-    else if (group === "cash")    { startingCash = parseInt(val); localStorage.setItem("mono_cash", val); }
-});
-
-// Show/hide AI row based on mode (runs once on load)
-setTimeout(() => {
-    const aiRow = document.getElementById("ss-ai-row");
-    if (aiRow) aiRow.style.display = gameMode === "ai" ? "" : "none";
-}, 15);
