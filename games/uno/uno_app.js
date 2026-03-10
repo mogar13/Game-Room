@@ -276,12 +276,16 @@ function renderHand() {
     
     cardsToAnimateP1 = 0; 
     
-    if (myHand.length === 2 && isMyTurn()) { 
+    // Show UNO button when holding exactly 1 card AND haven't called yet.
+    // IMPORTANT: never reset calledUno here - Firebase re-renders this constantly
+    // in multiplayer, so resetting it here was causing the false penalty bug.
+    if (myHand.length === 1 && isMyTurn() && !calledUno) { 
         document.getElementById("uno-btn").classList.remove("hidden"); 
-        calledUno = false; 
-    } else if (myHand.length !== 1) { 
-        document.getElementById("uno-btn").classList.add("hidden"); 
-        calledUno = false; 
+    } else { 
+        document.getElementById("uno-btn").classList.add("hidden");
+        // Only reset calledUno when the hand actually grows back above 1
+        // (e.g. drew a penalty card). Not on every render.
+        if (myHand.length > 1) calledUno = false;
     }
 }
 
@@ -375,21 +379,28 @@ function renderTable() {
     if (p2Label) p2Label.innerHTML = `${p2Name}: <span id="p2-card-count">${oppHandCount}</span> cards`;
 }
 
+let _prevWasMyTurn = null; // tracks last render state so toast only fires on transition
+
 function updateTurnBanner() {
     const banner = document.getElementById("turn-banner");
     if (!banner) return;
     
     banner.classList.remove("hidden");
+    const mine = isMyTurn();
     
-    if (isMyTurn()) { 
+    if (mine) { 
         banner.innerText = "⭐ YOUR TURN"; 
-        banner.style.color = "#2ecc71"; 
+        banner.style.color = "#2ecc71";
+        // Only show the toast when transitioning TO my turn (not on re-renders)
+        if (_prevWasMyTurn === false) showTurnToast();
     } else { 
         const turnIdx = currentTurn - 1;
         const isBot = seats[turnIdx] && seats[turnIdx].type === 'ai';
         banner.innerText = isBot ? "🤖 AI IS THINKING..." : "⏳ OPPONENT'S TURN"; 
         banner.style.color = "#e74c3c"; 
     }
+    
+    _prevWasMyTurn = mine;
 }
 
 function resetGame() {
@@ -511,34 +522,40 @@ function handleActionCard(card, player) {
         logMove("SYSTEM", `${player === 1 ? p2Name : p1Name} is skipped!`, true); 
     }
 
-    if (player === 1 && myHand.length === 1 && !calledUno) { 
+    // Penalty fires when playing your LAST card (hand=0) without having called UNO.
+    // Previously this checked hand=1, but since we now show the button AT hand=1,
+    // the check must move to hand=0 — the moment you actually try to win.
+    if (player === 1 && myHand.length === 0 && !calledUno) { 
         playCustomSound('lose'); 
         logMove("SYSTEM", `${p1Name} forgot to yell UNO! +2 Penalty.`, true); 
-        alert("You didn't yell UNO! Draw 2 penalty."); 
+        showPenaltyToast();
         drawCardsFor(1, 2);
+        renderHand(); 
+        renderTable();
+        calledUno = false;
     }
 
     if (myHand.length === 0) { 
         playCustomSound('win'); 
         logMove("SYSTEM", `${p1Name} WINS!`, true); 
-        alert("YOU WIN THE ROUND!"); 
+        showResultModal("🎉 YOU WIN!", "#2ecc71");
         
         if (gameMode === 'online' && window.db) {
             window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 
         }
         
-        resetGame(); 
+        setTimeout(resetGame, 2500);
         return; 
     } else if (oppHand.length === 0) { 
         playCustomSound('lose'); 
         logMove("SYSTEM", `${p2Name} WINS!`, true); 
-        alert(`${p2Name} WINS!`); 
+        showResultModal(`😞 ${p2Name} WINS!`, "#e74c3c");
         
         if (gameMode === 'online' && window.db) {
             window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 
         }
         
-        resetGame(); 
+        setTimeout(resetGame, 2500);
         return; 
     }
 
@@ -910,4 +927,102 @@ function syncFromFirebase(data) {
     } else if (data.status === "finished") { 
         resetGame(); 
     }
+}
+// ==========================================
+// 7. TOAST / MODAL HELPERS
+// ==========================================
+
+// YOUR TURN toast — slides in center-screen for 1.5s on turn transitions
+function showTurnToast() {
+    let toast = document.getElementById("uno-turn-toast");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "uno-turn-toast";
+        toast.innerText = "⭐  YOUR TURN!";
+        toast.style.cssText = [
+            "position:fixed", "top:50%", "left:50%",
+            "transform:translate(-50%,-50%) scale(0.75)",
+            "background:linear-gradient(135deg,#27ae60,#2ecc71)",
+            "color:#fff", "font-size:1.8rem", "font-weight:900",
+            "letter-spacing:3px", "padding:18px 44px",
+            "border-radius:18px", "z-index:9999",
+            "box-shadow:0 0 50px rgba(46,204,113,0.55)",
+            "opacity:0", "pointer-events:none",
+            "transition:opacity 0.22s ease, transform 0.22s cubic-bezier(0.175,0.885,0.32,1.275)"
+        ].join(";");
+        document.body.appendChild(toast);
+    }
+    clearTimeout(toast._t);
+    // Pop in
+    requestAnimationFrame(() => {
+        toast.style.opacity = "1";
+        toast.style.transform = "translate(-50%,-50%) scale(1)";
+    });
+    // Fade out after 1.5s
+    toast._t = setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translate(-50%,-50%) scale(0.75)";
+    }, 1500);
+}
+
+// Penalty toast — red flash
+function showPenaltyToast() {
+    let toast = document.getElementById("uno-penalty-toast");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "uno-penalty-toast";
+        toast.style.cssText = [
+            "position:fixed", "top:50%", "left:50%",
+            "transform:translate(-50%,-50%) scale(0.75)",
+            "background:linear-gradient(135deg,#c0392b,#e74c3c)",
+            "color:#fff", "font-size:1.4rem", "font-weight:900",
+            "letter-spacing:2px", "padding:16px 36px",
+            "border-radius:18px", "z-index:9999", "text-align:center",
+            "box-shadow:0 0 50px rgba(231,76,60,0.55)",
+            "opacity:0", "pointer-events:none",
+            "transition:opacity 0.22s ease, transform 0.22s cubic-bezier(0.175,0.885,0.32,1.275)"
+        ].join(";");
+        document.body.appendChild(toast);
+    }
+    toast.innerHTML = "🚫 FORGOT TO YELL UNO!<br><span style='font-size:0.9rem;opacity:0.9'>+2 Penalty Cards</span>";
+    clearTimeout(toast._t);
+    requestAnimationFrame(() => {
+        toast.style.opacity = "1";
+        toast.style.transform = "translate(-50%,-50%) scale(1)";
+    });
+    toast._t = setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translate(-50%,-50%) scale(0.75)";
+    }, 2200);
+}
+
+// Win/loss result overlay — replaces blocking alert()
+function showResultModal(msg, color) {
+    let modal = document.getElementById("uno-result-modal");
+    if (!modal) {
+        modal = document.createElement("div");
+        modal.id = "uno-result-modal";
+        modal.style.cssText = [
+            "position:fixed", "inset:0",
+            "background:rgba(0,0,0,0.78)", "backdrop-filter:blur(5px)",
+            "display:flex", "align-items:center", "justify-content:center",
+            "z-index:9998", "flex-direction:column", "gap:12px",
+            "transition:opacity 0.3s"
+        ].join(";");
+        document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+        <div style="font-size:2.4rem;font-weight:900;letter-spacing:4px;color:${color};
+                    text-shadow:0 0 30px ${color};text-align:center;padding:0 20px">
+            ${msg}
+        </div>
+        <div style="font-size:0.8rem;letter-spacing:3px;color:rgba(255,255,255,0.4);margin-top:4px">
+            NEXT ROUND STARTING…
+        </div>`;
+    modal.style.opacity = "1";
+    modal.style.display = "flex";
+    setTimeout(() => {
+        modal.style.opacity = "0";
+        setTimeout(() => { modal.style.display = "none"; }, 300);
+    }, 2200);
 }

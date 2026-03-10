@@ -1,53 +1,278 @@
+/* ============================================================
+   RPS ARENA — rps_style.css
+   The Game Shack | Casino OS
+   ============================================================ */
+
 * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
 
 body {
   background: radial-gradient(circle at center, #1e272e 0%, #050505 100%);
-  color: white; font-family: 'Segoe UI', sans-serif;
-  height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+  color: white;
+  font-family: 'Segoe UI', sans-serif;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-#game-container { 
-  flex-grow: 1; display: flex; flex-direction: column; align-items: center; padding: 20px; 
+#game-container {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
 }
 
-/* Flex-grow perfectly centers the hands in the available space */
-#arena { 
-  width: 100%; flex-grow: 1; display: flex; flex-direction: column; 
-  align-items: center; justify-content: center; gap: 30px; position: relative; 
+/* ── ONLINE SCOREBOARD ─────────────────────────────────────── */
+#online-scoreboard {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 10px 20px;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.score-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.score-val {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: #2ecc71;
+  line-height: 1;
+}
+
+.score-ties-val {
+  color: #f1c40f;
+}
+
+.score-opp-val {
+  color: #e74c3c;
+}
+
+.score-lbl {
+  font-size: 0.58rem;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.4);
+  margin-top: 3px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+  text-align: center;
+}
+
+/* ── ARENA ─────────────────────────────────────────────────── */
+#arena {
+  width: 100%;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  position: relative;
+}
+
+/* ── STREAK COUNTER (AI mode) ──────────────────────────────── */
+#streak-counter {
+  position: absolute;
+  top: -10px;
+  left: 0;
+  background: rgba(0,0,0,0.6);
+  padding: 5px 12px;
+  border-radius: 10px;
+  color: #f1c40f;
+  font-weight: bold;
+  z-index: 5;
+  border: 1px solid #f1c40f;
+  font-size: 0.9rem;
+}
+
+/* ── HAND CONTAINERS ───────────────────────────────────────── */
+.hand-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
 .hand-box {
-  width: 140px; height: 140px; background: rgba(255,255,255,0.05);
-  border: 3px solid #34495e; border-radius: 20px; display: flex; 
-  align-items: center; justify-content: center; transition: all 0.3s ease;
+  width: 140px;
+  height: 140px;
+  background: rgba(255,255,255,0.05);
+  border: 3px solid #34495e;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  position: relative;   /* needed for the locked-in overlay */
+  overflow: hidden;
 }
-.hand-box img { width: 100px; height: auto; transition: transform 0.2s; }
-#cpu-img { transform: rotate(180deg) scaleX(-1); }
 
-.label { margin-top: 10px; font-weight: bold; color: #7f8c8d; letter-spacing: 2px; text-align: center; display: block;}
+.hand-box img {
+  width: 100px;
+  height: auto;
+  transition: transform 0.2s;
+}
 
-.shaking { animation: shake 0.5s ease-in-out 3; }
+/* CPU image faces "down" toward the player */
+#cpu-img {
+  transform: rotate(180deg) scaleX(-1);
+}
+
+.label {
+  font-weight: bold;
+  color: #7f8c8d;
+  letter-spacing: 2px;
+  text-align: center;
+  display: block;
+  font-size: 0.75rem;
+}
+
+/* ── OPPONENT LOCKED-IN OVERLAY ────────────────────────────── */
+/* Shows "🤫" over the cpu box when opponent has picked but reveal is pending */
+#opp-locked-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 30, 40, 0.88);
+  border-radius: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.8rem;
+  animation: pulse-lock 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-lock {
+  0%, 100% { opacity: 0.9; }
+  50%       { opacity: 0.65; }
+}
+
+/* Status text below opponent's box */
+.opp-status-text {
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  color: #2ecc71;
+  font-weight: 700;
+}
+
+/* ── RESULT OVERLAY ────────────────────────────────────────── */
+#result-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  text-align: center;
+  pointer-events: none;
+}
+
+#status-text {
+  font-size: 2.6rem;
+  text-shadow: 0 0 24px rgba(241,196,15,0.8);
+  color: #f1c40f;
+  margin: 0;
+  animation: pop-in 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pop-in {
+  from { transform: scale(0.5); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+/* ── SHAKE ANIMATION ───────────────────────────────────────── */
+.shaking {
+  animation: shake 0.5s ease-in-out 3;
+}
+
 @keyframes shake {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-30px); }
+  50%       { transform: translateY(-28px); }
 }
 
-#result-overlay {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  z-index: 10; text-align: center; pointer-events: none;
+/* ── CONTROLS ──────────────────────────────────────────────── */
+#controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 20px;
+  gap: 14px;
 }
-#status-text { font-size: 3rem; text-shadow: 0 0 20px rgba(241, 196, 15, 0.8); color: #f1c40f; margin: 0;}
 
-#controls { width: 100%; display: flex; flex-direction: column; align-items: center; padding-bottom: 20px; }
-#action-zone { display: flex; gap: 20px; }
+#action-zone {
+  display: flex;
+  gap: 16px;
+}
 
+/* ── CHOICE BUTTONS ────────────────────────────────────────── */
 .choice-btn {
-  width: 80px; height: 80px; border-radius: 15px; border: none;
-  background: #3498db; cursor: pointer; transition: 0.1s;
-  display: flex; align-items: center; justify-content: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  border: none;
+  background: #2980b9;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
-.choice-btn img { width: 50px; }
-.choice-btn:active:not(:disabled) { transform: scale(0.9); }
-.choice-btn:disabled { background: #2c3e50; opacity: 0.3; cursor: not-allowed; }
 
-.hidden { display: none; }
+.choice-btn img {
+  width: 46px;
+}
+
+.choice-label {
+  font-size: 0.5rem;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.8);
+}
+
+.choice-btn:hover:not(:disabled) {
+  background: #3498db;
+  transform: translateY(-3px);
+}
+
+.choice-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.choice-btn:disabled {
+  background: #2c3e50;
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── WAITING MESSAGE (online mode) ─────────────────────────── */
+#waiting-msg {
+  font-size: 0.82rem;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.5);
+  font-weight: 700;
+  animation: blink 1.4s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+
+/* ── UTILITY ───────────────────────────────────────────────── */
+.hidden { display: none !important; }

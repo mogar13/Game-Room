@@ -8,24 +8,42 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#111111">
   <meta name="color-scheme" content="dark">
-  <title>RPS Casino</title>
-  <link rel="stylesheet" href="../../system/system_ui.css"> 
+  <title>RPS Arena</title>
+  <link rel="stylesheet" href="../../system/system_ui.css">
   <link rel="stylesheet" href="rps_style.css">
 </head>
 <body>
 
   <div id="game-container">
-    
+
+    <div id="online-scoreboard" class="hidden">
+      <div class="score-cell">
+        <div class="score-val" id="score-my-wins">0</div>
+        <div class="score-lbl" id="score-my-name">YOU</div>
+      </div>
+      <div class="score-cell">
+        <div class="score-val score-ties-val" id="score-ties">0</div>
+        <div class="score-lbl">TIES</div>
+      </div>
+      <div class="score-cell">
+        <div class="score-val score-opp-val" id="score-opp-wins">0</div>
+        <div class="score-lbl" id="score-opp-name">OPP</div>
+      </div>
+    </div>
+
     <div id="arena">
-      <div id="streak-counter" style="position:absolute; top:-10px; left:0px; background:rgba(0,0,0,0.6); padding:5px 10px; border-radius:10px; color:#f1c40f; font-weight:bold; z-index:5; border: 1px solid #f1c40f; font-size: 0.9rem;">
+
+      <div id="streak-counter">
         🔥 Streak: <span id="streak-val">0</span>
       </div>
 
       <div class="hand-container">
-        <span class="label">CPU</span>
+        <span class="label" id="opp-label">CPU</span>
         <div class="hand-box" id="cpu-hand">
           <img src="../../system/images/icons/rock.png" id="cpu-img">
+          <div id="opp-locked-overlay" class="hidden">🤫</div>
         </div>
+        <div id="opp-status" class="opp-status-text hidden"></div>
       </div>
 
       <div id="result-overlay" class="hidden">
@@ -38,20 +56,55 @@
         </div>
         <span class="label">YOU</span>
       </div>
+
     </div>
 
     <div id="controls">
-      <div id="os-betting-rack" style="width: 100%; max-width: 400px; margin-bottom: 20px;"></div>
+
+      <div id="os-betting-rack" style="width:100%;max-width:400px;margin-bottom:20px;"></div>
 
       <div id="action-zone">
-        <button class="choice-btn" id="rock" disabled><img src="../../system/images/icons/rock.png"></button>
-        <button class="choice-btn" id="paper" disabled><img src="../../system/images/icons/paper.png"></button>
-        <button class="choice-btn" id="scissors" disabled><img src="../../system/images/icons/scissors.png"></button>
+        <button class="choice-btn" id="rock"     disabled>
+          <img src="../../system/images/icons/rock.png">
+          <span class="choice-label">ROCK</span>
+        </button>
+        <button class="choice-btn" id="paper"    disabled>
+          <img src="../../system/images/icons/paper.png">
+          <span class="choice-label">PAPER</span>
+        </button>
+        <button class="choice-btn" id="scissors" disabled>
+          <img src="../../system/images/icons/scissors.png">
+          <span class="choice-label">SCISSORS</span>
+        </button>
       </div>
+
+      <div id="waiting-msg" class="hidden">⏳ Waiting for opponent…</div>
+
     </div>
   </div>
 
-  <script src="../../system/system_ui.js"></script> 
+  <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+      import { getDatabase, ref, set, onValue, update, get, child } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+      
+      const firebaseConfig = {
+        apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
+        databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com",
+        authDomain: "game-room-26e34.firebaseapp.com",
+        projectId: "game-room-26e34",
+        storageBucket: "game-room-26e34.firebasestorage.app",
+        messagingSenderId: "769541427914",
+        appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
+      };
+      
+      const app = initializeApp(firebaseConfig);
+      window.db = getDatabase(app);
+      window.dbRef = ref; window.dbSet = set; window.dbOnValue = onValue;
+      window.dbUpdate = update; window.dbGet = get; window.dbChild = child;
+  </script>
+  
+  <script src="../../system/player_name.js"></script>
+  <script src="../../system/system_ui.js"></script>
   <script src="rps_app.js"></script>
 </body>
 </html>

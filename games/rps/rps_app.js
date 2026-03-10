@@ -1,128 +1,524 @@
-// ==========================================
-// 1. INITIALIZE CASINO OS
-// ==========================================
+// ============================================================
+// RPS ARENA — rps_app.js
+// The Game Shack | Casino OS
+// Modes: vs CPU (betting + streak) | Online (v2Lobby, simultaneous)
+// ============================================================
+
+// ── 1. OS INIT & STATE ───────────────────────────────────────
+let gameMode = "ai";
+let myId     = 1;
+let isHost   = false;
+let chatStarted  = false;
+let currentRoomId = null;
+let seats    = [];
+let roomListener = null;
+
+// Online-round tracking — prevents the host from resolving the same round twice
+// if the Firebase listener fires multiple times for one update batch.
+let lastResolvedRound = 0;
+// Prevents the same result being shown twice on the client side.
+let lastSeenResultRound = 0;
+let revealTimer = null;
+
+let p1Name = (typeof SystemUI.getPlayerName === "function") ? SystemUI.getPlayerName() : "You";
+let p2Name = "CPU";
+
+// AI-mode state
+let winStreak  = parseInt(localStorage.getItem("rps_streak")) || 0;
+let currentBet = 0;
+let isAnimating = false;
+
+// Online-mode state — null means "not chosen this round yet"
+let myOnlineChoice = null;
+
 SystemUI.init({
     gameName: "RPS ARENA",
     rules: `
-        <ul style="text-align: left; line-height: 1.6; font-size: 0.95rem; margin-bottom: 20px; color: #ddd; padding-left: 20px;">
+        <ul style="text-align:left;line-height:1.7;font-size:0.95rem;margin-bottom:20px;color:#ddd;padding-left:20px;">
             <li><strong>The Basics:</strong> Rock crushes Scissors. Scissors cut Paper. Paper covers Rock.</li>
-            <li><strong>Payouts:</strong> Beating the CPU pays 1:1 (Double your bet).</li>
-            <li><strong>Ties:</strong> A tie results in a push (Bet returned).</li>
+            <li><strong>vs CPU — Payouts:</strong> Win pays 1:1 (double your bet). Ties return your bet.</li>
+            <li><strong>Online:</strong> Both players choose simultaneously — no peeking! First to see both choices wins the round.</li>
         </ul>
-    `
+    `,
+    hudDropdowns: [
+        {
+            id: "sys-rps-mode",
+            options: [
+                { value: "ai",     label: "🤖 vs CPU"  },
+                { value: "online", label: "🌐 Online"   }
+            ]
+        }
+    ]
 });
 
-document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
-    if(confirm("Reset your RPS win streak?")) {
+// ── 2. DOM SHORTCUTS ─────────────────────────────────────────
+const playerImg    = document.getElementById("player-img");
+const cpuImg       = document.getElementById("cpu-img");
+const playerBox    = document.getElementById("player-hand");
+const cpuBox       = document.getElementById("cpu-hand");
+const statusText   = document.getElementById("status-text");
+const resultOverlay = document.getElementById("result-overlay");
+const oppLockedOverlay = document.getElementById("opp-locked-overlay");
+const oppStatusEl  = document.getElementById("opp-status");
+const waitingMsg   = document.getElementById("waiting-msg");
+
+// ── 3. STARTUP ───────────────────────────────────────────────
+// Boot instantly instead of waiting for Firebase so the local game works offline
+setTimeout(initRPS, 150);
+
+function initRPS() {
+    const modeEl = document.getElementById("sys-rps-mode");
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", e => {
+            gameMode = e.target.value;
+            // Close the settings modal if open
+            const sys = document.getElementById("sys-modal");
+            if (sys) sys.classList.add("sys-hidden");
+
+            if (gameMode === "online") {
+                SystemUI.v2Lobby.show();
+                enterOnlineUI();
+            } else {
+                SystemUI.v2Lobby.hide();
+                SystemUI.stopChat();
+                chatStarted = false;
+                if (roomListener) { roomListener(); roomListener = null; }
+                enterAIUI();
+            }
+        });
+    }
+
+    // Set up betting rack using Casino OS globally defined method
+    SystemUI.setupBetting("os-betting-rack", {
+        onBet: val => {
+            if (isAnimating || gameMode !== "ai") return;
+            if (SystemUI.money >= val) {
+                SystemUI.money -= val;
+                currentBet += val;
+                resultOverlay.classList.add("hidden"); // Hides the "PLACE BET" text once they start betting
+                refreshAIUI();
+            } else {
+                alert("Not enough cash!");
+            }
+        },
+        onClear: () => {
+            if (isAnimating || gameMode !== "ai") return;
+            SystemUI.money += currentBet;
+            currentBet = 0;
+            refreshAIUI();
+        }
+    });
+
+    enterAIUI();  // default mode on load
+    refreshAIUI();
+}
+
+// ── 4. MODE LAYOUT HELPERS ───────────────────────────────────
+function enterAIUI() {
+    document.getElementById("streak-counter").style.display   = "";
+    document.getElementById("online-scoreboard").style.display = "none";
+    document.getElementById("os-betting-rack").style.display  = "";
+    oppStatusEl.classList.add("hidden");
+    waitingMsg.classList.add("hidden");
+    oppLockedOverlay.classList.add("hidden");
+    document.getElementById("opp-label").innerText = "CPU";
+    cpuImg.src = "../../system/images/icons/rock.png";
+    resultOverlay.classList.add("hidden");
+    // CPU image faces down (rotated in CSS); player image faces up
+    cpuImg.style.opacity = "1";
+    refreshAIUI();
+}
+
+function enterOnlineUI() {
+    document.getElementById("streak-counter").style.display    = "none";
+    document.getElementById("online-scoreboard").style.display = "";
+    document.getElementById("os-betting-rack").style.display   = "none";
+    waitingMsg.classList.add("hidden");
+    oppLockedOverlay.classList.add("hidden");
+    resultOverlay.classList.add("hidden");
+    playerImg.src = "../../system/images/icons/rock.png";
+    cpuImg.src    = "../../system/images/icons/rock.png";
+    // Disable all choice buttons until the room is live
+    document.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
+    myOnlineChoice = null;
+}
+
+// ── 5. AI MODE ───────────────────────────────────────────────
+document.getElementById("sys-reset-game-btn")?.addEventListener("click", () => {
+    if (confirm("Reset your RPS win streak?")) {
         localStorage.removeItem("rps_streak");
         window.location.reload();
     }
 });
 
-// ==========================================
-// 2. CORE LOGIC & OS BETTING
-// ==========================================
-let winStreak = parseInt(localStorage.getItem("rps_streak")) || 0;
-let currentBet = 0;
-let isAnimating = false;
-
-const playerImg = document.getElementById("player-img");
-const cpuImg = document.getElementById("cpu-img");
-const playerBox = document.getElementById("player-hand");
-const cpuBox = document.getElementById("cpu-hand");
-const statusText = document.getElementById("status-text");
-const resultOverlay = document.getElementById("result-overlay");
-
-SystemUI.setupBetting("os-betting-rack", {
-    onBet: function(val) {
-        if (isAnimating) return;
-        if (SystemUI.money >= val) { 
-            SystemUI.money -= val;
-            currentBet += val;
-            updateUI();
-        } else {
-            alert("Not enough cash!");
-        }
-    },
-    onClear: function() {
-        if (isAnimating) return;
-        SystemUI.money += currentBet; // Refund
-        currentBet = 0;
-        updateUI();
+function refreshAIUI() {
+    if (gameMode !== "ai") return;
+    
+    if (typeof SystemUI.updateMoneyDisplay === "function") {
+        SystemUI.updateMoneyDisplay();
     }
-});
-
-function updateUI() {
-    SystemUI.updateMoneyDisplay(); 
-    SystemUI.updateBetDisplay(currentBet); 
+    if (typeof SystemUI.updateBetDisplay === "function") {
+        SystemUI.updateBetDisplay(currentBet);
+    }
+    
     document.getElementById("streak-val").innerText = winStreak;
-    document.querySelectorAll(".choice-btn").forEach(btn => btn.disabled = (currentBet === 0 || isAnimating));
+    // Buttons enabled only when a bet is placed and no animation is running
+    document.querySelectorAll(".choice-btn").forEach(b => {
+        b.disabled = (currentBet === 0 || isAnimating);
+    });
 }
 
-// ==========================================
-// 3. ANIMATION AND ROUND RESOLUTION
-// ==========================================
-document.querySelectorAll(".choice-btn").forEach(btn => {
-    btn.addEventListener("click", () => startThrow(btn.id));
-});
-
-function startThrow(playerChoice) {
-    if (currentBet === 0) return;
-    
+function startAIThrow(choice) {
     isAnimating = true;
     resultOverlay.classList.add("hidden");
-    
-    // FIXED: Point to system folder during animation
+
+    // Both hands show rock during the "shake" animation
     playerImg.src = "../../system/images/icons/rock.png";
-    cpuImg.src = "../../system/images/icons/rock.png";
+    cpuImg.src    = "../../system/images/icons/rock.png";
 
     playerBox.classList.add("shaking");
     cpuBox.classList.add("shaking");
-
-    updateUI(); 
-    SystemUI.enableBetting(false); 
+    refreshAIUI();
 
     setTimeout(() => {
         playerBox.classList.remove("shaking");
         cpuBox.classList.remove("shaking");
-        resolveGame(playerChoice);
+        resolveAIRound(choice);
     }, 1500);
 }
 
-function resolveGame(playerChoice) {
-    const choices = ["rock", "paper", "scissors"];
-    const cpuChoice = choices[Math.floor(Math.random() * 3)];
-    
-    // FIXED: Point to system folder for final reveal
+function resolveAIRound(playerChoice) {
+    const options   = ["rock", "paper", "scissors"];
+    const cpuChoice = options[Math.floor(Math.random() * 3)];
+
     playerImg.src = `../../system/images/icons/${playerChoice}.png`;
-    cpuImg.src = `../../system/images/icons/${cpuChoice}.png`;
+    cpuImg.src    = `../../system/images/icons/${cpuChoice}.png`;
 
     if (playerChoice === cpuChoice) {
-        statusText.innerText = "TIE!";
-        SystemUI.playSound('tie'); // OS Audio
-        SystemUI.money += currentBet; 
-    } else if (
-        (playerChoice === "rock" && cpuChoice === "scissors") ||
-        (playerChoice === "paper" && cpuChoice === "rock") ||
-        (playerChoice === "scissors" && cpuChoice === "paper")
-    ) {
-        statusText.innerText = "YOU WIN!";
-        SystemUI.playSound('win'); // OS Audio
-        SystemUI.money += (currentBet * 2); 
+        statusText.innerText = "TIE! 🤝";
+        SystemUI.playSound("tie");
+        SystemUI.money += currentBet; // push — bet returned
+        // Streak resets on a tie is a common house rule; keep it
+        winStreak = 0;
+    } else if (beats(playerChoice, cpuChoice)) {
+        statusText.innerText = "YOU WIN! 🎉";
+        SystemUI.playSound("win");
+        SystemUI.money += currentBet * 2;
         winStreak++;
     } else {
-        statusText.innerText = "CPU WINS!";
-        SystemUI.playSound('lose'); // OS Audio
+        statusText.innerText = "CPU WINS! 💀";
+        SystemUI.playSound("lose");
         winStreak = 0;
     }
 
     resultOverlay.classList.remove("hidden");
-    currentBet = 0;
+    currentBet  = 0;
     isAnimating = false;
-    
+
     localStorage.setItem("rps_streak", winStreak);
-    updateUI();
-    SystemUI.enableBetting(true); 
+    refreshAIUI();
+
+    // Reset the board to default after the result has been shown
+    // Leaves the text visible as a prompt for the user to place their next bet
+    setTimeout(() => {
+        if (gameMode === "ai" && currentBet === 0 && !isAnimating) {
+            statusText.innerText = "PLACE BET";
+            playerImg.src = "../../system/images/icons/rock.png";
+            cpuImg.src    = "../../system/images/icons/rock.png";
+        }
+    }, 2200);
 }
 
-updateUI();
+// ── 6. CHOICE BUTTON HANDLER ─────────────────────────────────
+document.querySelectorAll(".choice-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+        if (gameMode === "ai") {
+            if (currentBet === 0 || isAnimating) return;
+            startAIThrow(btn.id);
+        } else {
+            // Online mode: once per round
+            if (myOnlineChoice !== null) return;
+            lockInOnlineChoice(btn.id);
+        }
+    });
+});
+
+// ── 7. ONLINE MULTIPLAYER ────────────────────────────────────
+//
+// Architecture note: RPS is *simultaneous*, not turn-based. Both players write
+// their choice to Firebase independently. The HOST watches for both choices to
+// appear, then computes result, updates scores, and transitions to "revealing".
+// After the reveal animation plays, Host transitions back to "choosing" and clears choices.
+//
+// Firebase room structure:
+//   rps_rooms/{id}/
+//     status:        "waiting" | "choosing" | "revealing"
+//     seats:         [{type,name}, {type,name}]
+//     round:         number          (increments each round)
+//     p1Choice:      "" | "rock" | "paper" | "scissors"
+//     p2Choice:      "" | "rock" | "paper" | "scissors"
+//     scores:        { p1: 0, p2: 0, ties: 0 }
+//     lastResult:    { p1Choice, p2Choice, winner, round }
+
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        isHost = true; myId = 1; chatStarted = false;
+        
+        seats = [
+            { type:"human", name:SystemUI.getPlayerName() },
+            { type:"ai",    name:"Waiting for opponent…" }
+        ];
+
+        window.dbSet(window.dbRef(window.db, `rps_rooms/${currentRoomId}`), {
+            status: "waiting", 
+            p1Name: SystemUI.getPlayerName(), 
+            seats: seats,
+            round: 1, 
+            p1Choice: "", 
+            p2Choice: "", 
+            scores: { p1: 0, p2: 0, ties: 0 }
+        }).then(() => {
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+            listenToRoom();
+        });
+    },
+
+    onJoin: (code) => {
+        window.dbGet(window.dbChild(window.dbRef(window.db), `rps_rooms/${code}`))
+            .then(snap => {
+                if (snap.exists() && snap.val().status === "waiting") {
+                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+                    
+                    const data = snap.val();
+                    const updSeats = data.seats ? [...data.seats] : [{type:"human",name:data.p1Name||"P1"},{type:"ai",name:"Slot 2"}];
+                    updSeats[1] = { type:"human", name:SystemUI.getPlayerName() };
+                    
+                    window.dbUpdate(window.dbRef(window.db, `rps_rooms/${code}`), {
+                        p2Name: SystemUI.getPlayerName(), 
+                        seats: updSeats
+                    }).then(() => {
+                        SystemUI.v2Lobby.showRoomPhase(code, false);
+                        listenToRoom();
+                    });
+                } else {
+                    SystemUI.v2Lobby.showError("ROOM NOT FOUND OR GAME ALREADY STARTED");
+                }
+            });
+    },
+
+    onLeave: () => {
+        gameMode = "ai";
+        if (roomListener) { roomListener(); roomListener = null; }
+        SystemUI.stopChat();
+        chatStarted = false;
+        enterAIUI();
+        refreshAIUI();
+    },
+
+    // Host taps "Start Game" in the lobby to begin the first round
+    onStart: () => {
+        window.dbUpdate(window.dbRef(window.db, `rps_rooms/${currentRoomId}`), {
+            status: "choosing"
+        });
+    },
+
+    onClose: () => {
+        if (gameMode === "online") {
+            gameMode = "ai";
+            const el = document.getElementById("sys-rps-mode");
+            if (el) el.value = "ai";
+            enterAIUI();
+            refreshAIUI();
+        }
+    }
+});
+
+function listenToRoom() {
+    roomListener = window.dbOnValue(
+        window.dbRef(window.db, "rps_rooms/" + currentRoomId),
+        snap => {
+            const data = snap.val();
+            if (!data) return;
+
+            seats = data.seats || [];
+            SystemUI.v2Lobby.renderSeats(seats);
+
+            // Hide lobby and start chat if we move into active gameplay
+            if (data.status === "choosing" || data.status === "revealing") {
+                SystemUI.v2Lobby.hide();
+                if (!chatStarted) {
+                    chatStarted = true;
+                    SystemUI.playSound("win");
+                    SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+                }
+
+                // Update opponent label with their real name
+                p2Name = (myId === 1 ? seats[1]?.name : seats[0]?.name) || "Opponent";
+                document.getElementById("opp-label").innerText = p2Name;
+                document.getElementById("score-opp-name").innerText = p2Name.toUpperCase();
+                document.getElementById("score-my-name").innerText = (p1Name || "You").toUpperCase();
+            }
+
+            if (data.status === "choosing") {
+                // HOST resolution: both choices present AND this round is unresolved
+                if (data.p1Choice && data.p2Choice && isHost) {
+                    resolveOnlineRound(data);
+                    return; // don't render while writing resolution
+                }
+                renderChoosingState(data);
+            } else if (data.status === "revealing") {
+                // Show round result (deduplicated by round number so animation doesn't repeat)
+                if (data.lastResult && data.lastResult.round > lastSeenResultRound) {
+                    lastSeenResultRound = data.lastResult.round;
+                    showOnlineResult(data.lastResult, data);
+                }
+            }
+        }
+    );
+}
+
+function lockInOnlineChoice(choice) {
+    myOnlineChoice = choice;
+
+    // Animate the "shake" — hide actual choice during throw
+    playerImg.src = "../../system/images/icons/rock.png";
+    playerBox.classList.add("shaking");
+
+    // Disable buttons so you can't change your mind
+    document.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
+
+    setTimeout(() => {
+        playerBox.classList.remove("shaking");
+        // Reveal OUR choice immediately locally (opponent's stays hidden until reveal state)
+        playerImg.src = `../../system/images/icons/${choice}.png`;
+        waitingMsg.classList.remove("hidden");
+    }, 600);
+
+    // Write our choice to Firebase
+    const field = myId === 1 ? "p1Choice" : "p2Choice";
+    window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + currentRoomId), {
+        [field]: choice
+    });
+}
+
+// Called only by the host when both choices are in — writes the resolution to trigger 'revealing' state
+function resolveOnlineRound(data) {
+    const p1c = data.p1Choice;
+    const p2c = data.p2Choice;
+    const scores = Object.assign({ p1: 0, p2: 0, ties: 0 }, data.scores);
+
+    let winner;
+    if (p1c === p2c) {
+        winner = "tie"; scores.ties++;
+    } else if (beats(p1c, p2c)) {
+        winner = "p1";  scores.p1++;
+    } else {
+        winner = "p2";  scores.p2++;
+    }
+
+    // Switch to revealing state. We don't wipe the choices yet, we let clients animate.
+    window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + currentRoomId), {
+        status: "revealing",
+        scores,
+        lastResult: { p1Choice: p1c, p2Choice: p2c, winner, round: data.round || 1 }
+    });
+}
+
+function renderChoosingState(data) {
+    // Update the scoreboard at the top
+    if (data.scores) {
+        const s = data.scores;
+        document.getElementById("score-my-wins").innerText  = myId === 1 ? s.p1 : s.p2;
+        document.getElementById("score-opp-wins").innerText = myId === 1 ? s.p2 : s.p1;
+        document.getElementById("score-ties").innerText     = s.ties;
+    }
+
+    const myField  = myId === 1 ? data.p1Choice : data.p2Choice;
+    const oppField = myId === 1 ? data.p2Choice : data.p1Choice;
+
+    // Both choices cleared → new round starting
+    if (!myField) {
+        myOnlineChoice = null;
+        resultOverlay.classList.add("hidden");
+        oppLockedOverlay.classList.add("hidden");
+        oppStatusEl.classList.add("hidden");
+        waitingMsg.classList.add("hidden");
+        playerImg.src = "../../system/images/icons/rock.png";
+        cpuImg.src    = "../../system/images/icons/rock.png";
+        document.querySelectorAll(".choice-btn").forEach(b => b.disabled = false);
+    } else {
+        // Edge case: I refreshed the page and I already have a choice in the DB for this round
+        myOnlineChoice = myField;
+        waitingMsg.classList.remove("hidden");
+        document.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
+        playerImg.src = `../../system/images/icons/${myField}.png`;
+    }
+
+    // Opponent has locked in but we don't know their choice yet
+    if (oppField) {
+        oppLockedOverlay.classList.remove("hidden");
+        oppStatusEl.classList.remove("hidden");
+        oppStatusEl.innerText = "✅ Locked in!";
+    }
+}
+
+function showOnlineResult(result, data) {
+    const myChoice  = myId === 1 ? result.p1Choice : result.p2Choice;
+    const oppChoice = myId === 1 ? result.p2Choice : result.p1Choice;
+
+    document.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
+    waitingMsg.classList.add("hidden");
+
+    // Animate both hands shaking to the reveal
+    cpuBox.classList.add("shaking");
+    playerBox.classList.add("shaking");
+
+    setTimeout(() => {
+        cpuBox.classList.remove("shaking");
+        playerBox.classList.remove("shaking");
+        playerImg.src = `../../system/images/icons/${myChoice}.png`;
+        cpuImg.src    = `../../system/images/icons/${oppChoice}.png`;
+        oppLockedOverlay.classList.add("hidden");
+        oppStatusEl.classList.add("hidden");
+
+        if (result.winner === "tie") {
+            statusText.innerText = "TIE! 🤝";
+            SystemUI.playSound("tie");
+        } else if (
+            (result.winner === "p1" && myId === 1) ||
+            (result.winner === "p2" && myId === 2)
+        ) {
+            statusText.innerText = "YOU WIN! 🎉";
+            SystemUI.playSound("win");
+        } else {
+            statusText.innerText = "THEY WIN! 💀";
+            SystemUI.playSound("lose");
+        }
+
+        resultOverlay.classList.remove("hidden");
+
+        // The Host waits for the result to show, then resets the DB for the next round
+        if (isHost) {
+            clearTimeout(revealTimer);
+            revealTimer = setTimeout(() => {
+                window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + currentRoomId), {
+                    status: "choosing",
+                    p1Choice: "",
+                    p2Choice: "",
+                    round: (data.round || 1) + 1
+                });
+            }, 3000);
+        }
+
+    }, 600);
+}
+
+// ── 8. UTILITY ───────────────────────────────────────────────
+// Returns true if `a` beats `b` in standard RPS rules
+function beats(a, b) {
+    return (a === "rock"     && b === "scissors") ||
+           (a === "paper"    && b === "rock")     ||
+           (a === "scissors" && b === "paper");
+}
