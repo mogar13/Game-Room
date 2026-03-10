@@ -1000,16 +1000,83 @@ body {
 /* ── UTILITY ─────────────────────────────────── */
 .hidden { display: none !important; }
 
-/* ── MOBILE ──────────────────────────────────── */
-@media (max-width: 540px) {
-    #side-panel { width: 130px; padding: 6px; }
-    .die { width: 30px; height: 30px; font-size: 0.95rem; }
-    #start-title { font-size: 2.6rem; letter-spacing: 5px; }
-    .clue-card { width: 38px; height: 46px; }
-    .clue-card .card-icon { font-size: 0.95rem; }
-}
-
-@media (max-width: 380px) {
-    #side-panel { width: 110px; }
-    #bottom-bar { min-height: 54px; }
+/* ── MOBILE (FULLY REWRITTEN) ────────────────── */
+@media (max-width: 600px) {
+    #game-container { 
+        height: 100dvh; 
+        overflow-y: auto; 
+        display: flex; 
+        flex-direction: column; 
+        padding-top: 48px; 
+        padding-bottom: 0;
+    }
+    
+    #main-area { 
+        flex-direction: column; 
+        overflow-y: visible; 
+        height: auto; 
+        flex: 0 0 auto; 
+    }
+    
+    #board-wrap { 
+        width: 100vw; 
+        display: flex; 
+        justify-content: center; 
+        padding: 4px;
+        margin-bottom: 10px;
+    }
+    
+    #side-panel { 
+        width: 100%; 
+        border-left: none; 
+        border-top: 1px solid var(--border); 
+        padding: 15px 10px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        overflow: visible;
+    }
+    
+    #turn-block, #player-list, #action-btns, #dice-row {
+        grid-column: 1 / -1;
+    }
+    
+    #dice-row { margin-bottom: 8px; }
+    
+    .die { 
+        width: 44px; 
+        height: 44px; 
+        font-size: 1.3rem; 
+    }
+    
+    #action-btns { 
+        flex-direction: row; 
+        flex-wrap: wrap; 
+        gap: 8px;
+    }
+    
+    #action-btns button, #roll-btn { 
+        flex: 1 1 45%; 
+        min-height: 54px; 
+        font-size: 0.9rem; 
+    }
+    
+    #start-title { 
+        font-size: 2.6rem; 
+        letter-spacing: 5px; 
+        text-align: center; 
+    }
+    
+    #bottom-bar { 
+        position: sticky; 
+        bottom: 0; 
+        z-index: 100; 
+        border-top: 2px solid var(--gold); 
+        box-shadow: 0 -4px 15px rgba(0,0,0,0.8);
+    }
+    
+    .clue-card { 
+        width: 44px; 
+        height: 56px; 
+    }
 }

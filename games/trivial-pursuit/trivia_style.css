@@ -435,8 +435,12 @@ body {
 #next-result-label.wrong-lbl   { color: var(--red);   }
 
 #next-correct-ans {
-    font-size: 0.78rem;
-    color: var(--muted);
+    font-size: 0.82rem;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 8px 14px;
     line-height: 1.5;
     min-height: 18px;
 }
@@ -626,7 +630,7 @@ body {
 
 #game-over-breakdown {
     font-size: 0.72rem;
-    color: rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.55);
     margin-bottom: 22px;
     line-height: 2;
 }
@@ -668,6 +672,67 @@ body {
 }
 
 #btn-exit-game:hover { color: rgba(255,255,255,0.45); }
+
+/* ── START SCREEN SETTINGS PANEL ────────────── */
+#start-settings {
+    width: 100%;
+    max-width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ss-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ss-label {
+    font-size: 0.52rem;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--muted);
+}
+
+/* Pills container — wraps onto multiple lines for categories */
+.ss-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ss-chip {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: transparent;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    line-height: 1;
+}
+
+.ss-chip:hover {
+    border-color: var(--teal);
+    color: var(--teal);
+    background: var(--teal-faint);
+}
+
+.ss-chip.active {
+    border-color: var(--teal);
+    background: var(--teal);
+    color: #000;
+}
 
 /* ── UTILITY ─────────────────────────────────── */
 .hidden { display: none !important; }

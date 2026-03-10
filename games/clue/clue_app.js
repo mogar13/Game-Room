@@ -47,12 +47,12 @@ document.getElementById("sys-clue-mode").addEventListener("change", e => {
 
 // ── 2. GAME CONSTANTS ────────────────────────
 const SUSPECTS = [
-    { id: "scarlett", name: "Miss Scarlett",    color: "#e74c3c", icon: "💃", start: [7, 24]  },
-    { id: "mustard",  name: "Col. Mustard",     color: "#f39c12", icon: "🎩", start: [0, 17]  },
-    { id: "white",    name: "Mrs. White",        color: "#ecf0f1", icon: "👩", start: [9, 0]   },
-    { id: "green",    name: "Mr. Green",         color: "#27ae60", icon: "🕵️", start: [14, 0]  },
-    { id: "peacock",  name: "Mrs. Peacock",      color: "#2980b9", icon: "🦚", start: [23, 6]  },
-    { id: "plum",     name: "Prof. Plum",        color: "#8e44ad", icon: "🎓", start: [23, 19] }
+    { id: "scarlett", name: "Miss Scarlett",    color: "#e74c3c", icon: "💃", start: [7, 22]  },
+    { id: "mustard",  name: "Col. Mustard",     color: "#f39c12", icon: "🎩", start: [17, 22] },
+    { id: "white",    name: "Mrs. White",        color: "#ecf0f1", icon: "👩", start: [5, 8]   },
+    { id: "green",    name: "Mr. Green",         color: "#27ae60", icon: "🕵️", start: [14, 5]  },
+    { id: "peacock",  name: "Mrs. Peacock",      color: "#2980b9", icon: "🦚", start: [5, 16]  },
+    { id: "plum",     name: "Prof. Plum",        color: "#8e44ad", icon: "🎓", start: [19, 9]  }
 ];
 
 const WEAPONS = [
@@ -87,10 +87,10 @@ const SECRET_PASSAGES = {
 // ── 3. BOARD DEFINITION ──────────────────────
 /*
  * 24×24 grid. Each cell is one of:
- *   'W'  = wall (impassable, outer wall / solid block)
- *   'C'  = corridor (walkable)
- *   'D'  = door (entry/exit to a room — walkable)
- *   room id string = room floor (walkable when already in room or entering through door)
+ * 'W'  = wall (impassable, outer wall / solid block)
+ * 'C'  = corridor (walkable)
+ * 'D'  = door (entry/exit to a room — walkable)
+ * room id string = room floor (walkable when already in room or entering through door)
  *
  * Rows 0-23 (top to bottom), Cols 0-23 (left to right).
  * Board based on the classic Clue/Cluedo layout.
@@ -146,18 +146,37 @@ const ROOM_LABELS = {
 };
 
 // ── 4. BFS PATHFINDING ───────────────────────
-/*
- * BFS (Breadth-First Search) finds the shortest path on an unweighted grid.
- *
- * How it works:
- * 1. Start from the player's current cell.
- * 2. Expand outward level by level (each level = 1 step).
- * 3. Stop expanding a branch once it exceeds the remaining move budget.
- * 4. Collect all reachable corridor + door cells within N steps.
- * 5. If a door is reached, the whole room it belongs to becomes reachable.
- *
- * Returns a Set of "row,col" strings representing valid destination cells.
- */
+function getAdjacentRooms(r, c) {
+    const dirs = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+    const rooms = [];
+    for (const [nr, nc] of dirs) {
+        if (nr < 0 || nr >= 24 || nc < 0 || nc >= 24) continue;
+        const t = BOARD_MAP[nr][nc];
+        if (isRoomId(t) && !rooms.includes(t)) rooms.push(t);
+    }
+    return rooms;
+}
+
+// Given a door cell, find which room it's adjacent to (fallback)
+function getAdjacentRoom(r, c) {
+    const rooms = getAdjacentRooms(r, c);
+    return rooms.length > 0 ? rooms[0] : null; 
+}
+
+// Get all door cells that are adjacent to a room
+function getDoorCellsForRoom(roomId) {
+    const doors = [];
+    for (let r = 0; r < 24; r++) {
+        for (let c = 0; c < 24; c++) {
+            if (BOARD_MAP[r][c] !== D) continue;
+            if (getAdjacentRooms(r, c).includes(roomId)) {
+                doors.push([r, c]);
+            }
+        }
+    }
+    return doors;
+}
+
 function getReachableCells(startRow, startCol, steps, currentRoomId) {
     const reachable = new Set();
     const visited   = new Map(); // "r,c" → min steps used
@@ -194,8 +213,9 @@ function getReachableCells(startRow, startCol, steps, currentRoomId) {
 
         // If we stepped into a door, the whole room is reachable (stop here)
         if (cellType === D) {
-            const roomId = getAdjacentRoom(r, c);
-            if (roomId) { reachable.add(`room:${roomId}`); continue; }
+            const adjacentRooms = getAdjacentRooms(r, c);
+            adjacentRooms.forEach(rid => reachable.add(`room:${rid}`));
+            continue;
         }
 
         // If we stepped into a room tile (from a door in prev step), mark room
@@ -231,31 +251,6 @@ function isRoomId(val) {
     return [KI,BA,CO,BI,LI,ST,HA,LO,DI].includes(val);
 }
 
-// Given a door cell, find which room it's adjacent to
-function getAdjacentRoom(r, c) {
-    const dirs = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
-    for (const [nr, nc] of dirs) {
-        if (nr < 0 || nr >= 24 || nc < 0 || nc >= 24) continue;
-        const t = BOARD_MAP[nr][nc];
-        if (isRoomId(t)) return t;
-    }
-    return null;
-}
-
-// Get all door cells that are adjacent to a room
-function getDoorCellsForRoom(roomId) {
-    const doors = [];
-    for (let r = 0; r < 24; r++) {
-        for (let c = 0; c < 24; c++) {
-            if (BOARD_MAP[r][c] !== D) continue;
-            if (getAdjacentRoom(r, c) === roomId) {
-                doors.push([r, c]);
-            }
-        }
-    }
-    return doors;
-}
-
 // Get the room a player is currently in (null if in corridor)
 function getRoomAt(r, c) {
     const t = BOARD_MAP[r][c];
@@ -277,16 +272,25 @@ let notesData    = {}; // notes[playerIdx][itemId] = '' | 'x' | 'check' | '?'
 let selectedSuspect = null;
 let selectedWeapon  = null;
 let selectedRoom    = null;
+let resultModalCallback = null; // Global callback to fix sync issues with the result modal
 
 // ── 6. BOARD RENDERING ───────────────────────
 function calcCellSize() {
     const mainArea  = document.getElementById("main-area");
     const sidePanel = document.getElementById("side-panel");
-    const available = Math.min(
-        mainArea.clientHeight,
-        mainArea.clientWidth - sidePanel.clientWidth - 4
-    );
-    return Math.floor(available / 24);
+    
+    // UPDATED FOR MOBILE: Ignore side panel on mobile so board spans full width
+    let available;
+    if (window.innerWidth <= 600) {
+        available = mainArea.clientWidth - 8; 
+    } else {
+        available = Math.min(
+            mainArea.clientHeight,
+            mainArea.clientWidth - sidePanel.clientWidth - 4
+        );
+    }
+    
+    return Math.floor(Math.max(10, available) / 24);
 }
 
 function renderBoard() {
@@ -447,9 +451,10 @@ function onCellClick(e) {
 
     // Moving into a corridor or door cell
     if (type === C || type === D) {
-        const adjacentRoom = getAdjacentRoom(r, c);
-        if (adjacentRoom && reachableSet.has(`room:${adjacentRoom}`)) {
-            movePlayerToRoom(currentTurn, adjacentRoom);
+        const adjacentRooms = getAdjacentRooms(r, c);
+        const validRoom = adjacentRooms.find(rid => reachableSet.has(`room:${rid}`));
+        if (validRoom) {
+            movePlayerToRoom(currentTurn, validRoom);
         } else {
             movePlayerToCorridor(currentTurn, r, c);
         }
@@ -980,9 +985,12 @@ function processCardShown(showingPlayer, cardId, toPlayer) {
     // Update notes: mark card as safe for showing player
     autoMarkNotepad(cardId, showingPlayer, "check");
 
+    if (cardId && players[toPlayer].isAI) {
+        aiLearnCard(cardId);
+    }
+
     // Show result only to the suggestion maker
     if (toPlayer === myPlayerIndex) {
-        const info = window.cardInfo[cardId];
         showResultModal(showingPlayer, cardId);
     } else {
         // Other players just see "a card was shown"
@@ -1016,13 +1024,32 @@ function showResultModal(showingPlayer, cardId) {
         body.innerHTML    = `<p style="text-align:center;color:var(--muted);margin:12px 0;font-style:italic;">${players[showingPlayer].name} showed a card to the suggester.</p>`;
     }
 
+    resultModalCallback = () => {
+        gamePhase = "suggesting";
+        updateActionButtons();
+
+        if (players[currentTurn].isAI) {
+            setTimeout(() => {
+                if (aiReadyToAccuse()) {
+                    const acc = buildAIAccusation();
+                    resolveAccusation(currentTurn, acc.suspect, acc.weapon, acc.room);
+                } else {
+                    endTurn();
+                }
+            }, 500);
+        }
+    };
+
     modal.classList.remove("hidden");
 }
 
 document.getElementById("result-modal-ok").addEventListener("click", () => {
     document.getElementById("result-modal").classList.add("hidden");
-    gamePhase = "suggesting";
-    updateActionButtons();
+    if (resultModalCallback) {
+        const cb = resultModalCallback;
+        resultModalCallback = null;
+        cb();
+    }
 });
 
 // ── 15. ACCUSATION FLOW ──────────────────────
@@ -1076,16 +1103,10 @@ function resolveAccusation(playerIdx, suspectId, weaponId, roomId) {
                 They may still prove or disprove suggestions, but cannot win.
             </p>
         `;
-        modal.classList.remove("hidden");
-        document.getElementById("result-modal-ok").onclick = () => {
-            modal.classList.add("hidden");
-            document.getElementById("result-modal-ok").onclick = () => {
-                modal.classList.add("hidden");
-                gamePhase = "suggesting";
-                updateActionButtons();
-            };
+        resultModalCallback = () => {
             endTurn();
         };
+        modal.classList.remove("hidden");
 
         // Check if all human players are eliminated
         const remaining = players.filter(p => !p.eliminated && !p.isAI);
@@ -1131,17 +1152,6 @@ function endGame(winnerIdx) {
 }
 
 // ── 17. AI BRAIN ─────────────────────────────
-/*
- * AI Deduction Logic:
- * 1. The AI maintains its own notepad (suspectNotes, weaponNotes, roomNotes).
- * 2. When it witnesses a card shown (or holds one), it marks it as "safe".
- * 3. When making a suggestion, it picks from the "unknown" pool —
- *    preferring items it hasn't seen disproved yet.
- * 4. When making an accusation, it only does so if it has narrowed each
- *    category to exactly one unknown.
- * 5. Movement: prioritises rooms it hasn't visited with unknown cards.
- */
-
 let aiSuspectsSeen = {}; // cardId → true if AI knows it's safe
 let aiWeaponsSeen  = {};
 let aiRoomsSeen    = {};
@@ -1208,17 +1218,6 @@ function aiTakeTurn() {
             const t2 = setTimeout(() => {
                 const aiSuggestion = buildAISuggestion(p.inRoom);
                 makeSuggestion(currentTurn, aiSuggestion.suspect, aiSuggestion.weapon, p.inRoom);
-
-                // After suggestion resolves, try to accuse if ready
-                const t3 = setTimeout(() => {
-                    if (aiReadyToAccuse()) {
-                        const acc = buildAIAccusation();
-                        resolveAccusation(currentTurn, acc.suspect, acc.weapon, acc.room);
-                    } else {
-                        endTurn();
-                    }
-                }, 2000);
-                aiTimers.push(t3);
             }, 1000);
             aiTimers.push(t2);
         } else {
@@ -1289,6 +1288,17 @@ document.getElementById("notepad-toggle-btn").addEventListener("click", () =>
 document.getElementById("notepad-close").addEventListener("click", () =>
     document.getElementById("notepad-overlay").classList.add("hidden"));
 
+document.querySelectorAll(".secret-passage").forEach(el => {
+    el.addEventListener("click", () => {
+        if (gamePhase !== "moving" || !isMyTurn()) return;
+        const p = players[currentTurn];
+        const spRoomId = el.id.replace("sp-", "");
+        if (p.inRoom === spRoomId && SECRET_PASSAGES[p.inRoom]) {
+            useSecretPassage(currentTurn);
+        }
+    });
+});
+
 document.getElementById("start-btn").addEventListener("click", () => {
     const activeBtn = document.querySelector(".count-btn.active");
     const count     = activeBtn ? parseInt(activeBtn.dataset.count) : 4;
@@ -1324,7 +1334,7 @@ function generateRoomCode() {
     return code;
 }
 
-document.getElementById("btn-create-room").addEventListener("click", () => {
+document.getElementById("btn-create-room")?.addEventListener("click", () => {
     SystemUI.playSound('click');
     currentRoomId = generateRoomCode();
     isHost = true; myId = 1; myPlayerIndex = 0; chatStarted = false;
@@ -1339,7 +1349,7 @@ document.getElementById("btn-create-room").addEventListener("click", () => {
     });
 });
 
-document.getElementById("btn-join-room").addEventListener("click", () => {
+document.getElementById("btn-join-room")?.addEventListener("click", () => {
     SystemUI.playSound('click');
     const code = document.getElementById("join-room-input").value.toUpperCase().trim();
 
@@ -1435,12 +1445,11 @@ function syncFromFirebase(data) {
     } catch (e) { console.error("Sync error:", e); }
 }
 
-document.getElementById("lobby-close-btn").addEventListener("click", () => lobbyUI.classList.add("hidden"));
-document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
+document.getElementById("lobby-close-btn")?.addEventListener("click", () => lobbyUI.classList.add("hidden"));
+document.getElementById("btn-cancel-lobby")?.addEventListener("click", () => {
     gameMode = "ai";
     document.getElementById("sys-clue-mode").value = "ai";
     localStorage.setItem("clue_mode", "ai");
     lobbyUI.classList.add("hidden");
     SystemUI.stopChat(); chatStarted = false;
 });
-

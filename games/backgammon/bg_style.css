@@ -164,7 +164,12 @@ body {
    MOBILE RESPONSIVENESS
    ============================================= */
 @media (max-width: 768px), (max-height: 750px) {
-  #bg-board { grid-template-columns: 1fr 25px 1fr 50px; height: 55vh; min-height: 380px; border-width: 6px; }
+  #bg-board { 
+      grid-template-columns: 1fr 25px 1fr 50px; 
+      height: 55vh; 
+      min-height: 380px; 
+      border-width: 6px; 
+  }
   .checker { margin-top: -35%; }
   .bottom .point .checker { margin-bottom: -35%; }
   .bar-zone .checker { margin-top: -30%; }
@@ -176,9 +181,65 @@ body {
   .off-label { font-size: 0.45rem; }
 }
 
-@media (max-height: 600px) {
-  #bg-board { height: 48vh; min-height: 300px; }
-  .checker { margin-top: -45%; }
+/* --- DEDICATED PHONE LAYOUT (Edge-to-Edge & Fat Buttons) --- */
+@media (max-width: 580px) {
+  #game-container {
+      padding-top: 48px;
+      justify-content: flex-start;
+      gap: 10px;
+  }
+  
+  #bg-board { 
+      width: 100vw; /* Edge-to-edge for maximum point width */
+      max-width: 100vw;
+      border-width: 4px;
+      border-radius: 0;
+      grid-template-columns: 1fr 20px 1fr 45px; /* Shrunk the bar and tray to give points more room */
+      height: 50vh; 
+      min-height: 350px;
+  }
+  
+  /* Squeeze checkers more heavily so they fit the vertical space without clipping */
+  .checker { margin-top: -45%; width: 90%; }
   .bottom .point .checker { margin-bottom: -45%; }
+  .bar-zone .checker { margin-top: -40%; }
+  
+  #action-zone {
+      flex: 1; /* Automatically fills the bottom half of the screen */
+      justify-content: center;
+      padding: 15px 15px calc(15px + env(safe-area-inset-bottom));
+  }
+  
+  /* Fat, tappable buttons for thumbs */
+  .action-btn {
+      width: 100%;
+      max-width: 340px;
+      min-height: 54px;
+      font-size: 1rem;
+      letter-spacing: 1px;
+  }
+  
+  #dice-area {
+      gap: 15px;
+      margin-bottom: 5px;
+  }
+  
+  .die {
+      width: 45px;
+      height: 45px;
+  }
+  
+  .off-zone-container {
+      padding: 5px 2px;
+  }
+}
+
+/* Extreme short screens (landscape phones) */
+@media (max-height: 600px) {
+  #bg-board { height: 45vh; min-height: 280px; }
+  .checker { margin-top: -55%; }
+  .bottom .point .checker { margin-bottom: -55%; }
   .die { width: 35px; height: 35px; }
+  #action-zone { padding: 10px; gap: 6px; }
+  .action-btn { min-height: 44px; }
 }

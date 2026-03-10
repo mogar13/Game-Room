@@ -475,13 +475,46 @@ html, body {
 }
 #btn-exit-game:hover { color: #8a7a6a; }
 
-/* ── MOBILE ──────────────────────────────── */
-@media (max-width: 480px) {
-    :root { --bs: min(calc(100vw - 22px), calc(100dvh - 230px)); }
-    #game-container { padding-top: 52px; gap: 4px; }
-    .rlbl, .flbl { font-size: 0.65rem; }
+/* ── MOBILE (FULLY REWRITTEN) ────────────── */
+@media (max-width: 600px) {
+    /* Maximize board size edge-to-edge with 6px padding on sides */
+    :root { --bs: min(calc(100vw - 12px), calc(100dvh - 200px)); }
+    
+    #game-container { 
+        padding-top: 50px; 
+        gap: 12px; 
+        justify-content: flex-start;
+    }
+    
+    .player-bar { 
+        width: 100%; 
+        max-width: var(--bs); 
+        padding: 0; 
+    }
+    
+    #history-panel { 
+        width: 100%; 
+        max-width: var(--bs); 
+    }
+    
+    #history-list { 
+        max-height: 85px; 
+    }
+    
+    .rlbl, .flbl { 
+        font-size: 0.65rem; 
+    }
+
+    /* Fat buttons for thumbs */
+    #btn-new-game {
+        padding: 12px 30px;
+        font-size: 1rem;
+        width: 100%;
+        max-width: var(--bs);
+        background: rgba(255,255,255,0.05);
+    }
 }
 
 @media (max-width: 360px) {
-    :root { --bs: min(calc(100vw - 14px), calc(100dvh - 220px)); }
+    :root { --bs: min(calc(100vw - 8px), calc(100dvh - 220px)); }
 }

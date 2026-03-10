@@ -12,6 +12,11 @@ let chatStarted = false;
 let currentRoomId = null;
 let myId    = 1;
 let isHost  = false;
+let seats   = [];
+
+// Settings that live on the start screen
+let selectedCategory = localStorage.getItem("trivia_category") || "";   // "" = any
+let aiDifficulty     = localStorage.getItem("trivia_ai_diff")  || "medium";
 
 let p1Name = SystemUI.getPlayerName();
 let p2Name = "AI";
@@ -44,20 +49,26 @@ setTimeout(() => {
     gameMode = document.getElementById("sys-trivia-mode").value;
     totalQs  = parseInt(document.getElementById("sys-trivia-qs").value);
     updateNames();
+    buildStartSettings(); // wire up the category / question count / AI-level pills
 }, 10);
 
 document.getElementById("sys-trivia-mode").addEventListener("change", e => {
     gameMode = e.target.value;
     localStorage.setItem("trivia_mode", gameMode);
     document.getElementById("sys-modal").classList.add("sys-hidden");
+
     if (gameMode === "online") {
-        document.getElementById("multiplayer-lobby").classList.remove("hidden");
+        SystemUI.v2Lobby.show();
     } else {
-        document.getElementById("multiplayer-lobby").classList.add("hidden");
+        SystemUI.v2Lobby.hide();
         SystemUI.stopChat();
         chatStarted = false;
         updateNames();
     }
+
+    // Show / hide the AI-level row depending on whether there's an AI to configure
+    const aiRow = document.getElementById("ss-ai-row");
+    if (aiRow) aiRow.style.display = (gameMode === "ai") ? "" : "none";
 });
 
 document.getElementById("sys-trivia-qs").addEventListener("change", e => {
@@ -134,9 +145,12 @@ async function resetToken() {
 }
 
 async function fetchQuestions(amount) {
-    // Build URL — always request a mix of multiple + boolean
+    // Build URL — apply category filter if the player chose one on the start screen
     let url = `https://opentdb.com/api.php?amount=${amount}`;
-    if (sessionToken) url += `&token=${sessionToken}`;
+    if (sessionToken)     url += `&token=${sessionToken}`;
+    if (selectedCategory) url += `&category=${selectedCategory}`;
+    // We intentionally omit a difficulty filter so each game stays mixed —
+    // the AI difficulty setting controls the AI opponent, not the questions.
 
     const res  = await fetch(url);
     const data = await res.json();
@@ -200,7 +214,7 @@ async function fetchQuestions(amount) {
  * In AI mode, player vs AI takes turns answering the same question.
  */
 const POINTS = { easy: 100, medium: 200, hard: 300 };
-const TIME_LIMIT = 15; // seconds per question
+const TIME_LIMIT = 20; // seconds per question (was 15 — bumped so players have time to read)
 
 function calcPoints(difficulty, timeLeft) {
     const base  = POINTS[difficulty] || 100;
@@ -276,8 +290,8 @@ function updateTimerUI() {
     val.textContent = timeLeft;
 
     bar.classList.remove("warning", "danger");
-    if (timeLeft <= 5)  bar.classList.add("danger");
-    else if (timeLeft <= 8) bar.classList.add("warning");
+    if (timeLeft <= 6)  bar.classList.add("danger");
+    else if (timeLeft <= 10) bar.classList.add("warning");
 }
 
 function handleTimeout() {
@@ -605,43 +619,76 @@ function resetAnswerButtons() {
 
 // ── 10. AI BRAIN ──────────────────────────────
 /*
- * AI difficulty tiers by question difficulty:
- *   easy:   88% correct
- *   medium: 68% correct
- *   hard:   45% correct
+ * Two independent axes control the AI opponent:
  *
- * AI response time is randomised to feel human:
- *   1.5s – 4.5s per question (slower = more suspense)
+ * AI DIFFICULTY (set by the player on the start screen):
+ *   Controls how fast the AI buzzes in AND how often it gets things right.
+ *   "Easy"   → slow (10–18 s) and poor accuracy — you have time to think
+ *   "Medium" → moderate (6–13 s) and reasonable accuracy — competitive
+ *   "Hard"   → fast (3–7 s) and sharp accuracy — you must read quickly
+ *
+ * QUESTION DIFFICULTY (easy / medium / hard from OpenTDB):
+ *   Applies an additional accuracy penalty so the AI struggles more on
+ *   hard questions regardless of its difficulty setting — this keeps
+ *   hard questions feeling genuinely harder.
+ *
+ * Crucially, the AI delay is always LESS than TIME_LIMIT (20 s) so the
+ * AI fires before the timeout.  On Easy AI the window is 2–10 s after
+ * the AI answers — on Hard it's only 13–17 s after the question appears.
+ *
+ * If the player answers before the AI timer fires, the AI never runs at
+ * all (the `answered` guard stops it), so answering fast rewards you.
  */
-const AI_ACCURACY = { easy: 0.88, medium: 0.68, hard: 0.45 };
+
+// Outer key = AI difficulty setting; inner key = question difficulty
+const AI_ACCURACY = {
+    easy:   { easy: 0.40, medium: 0.28, hard: 0.18 },
+    medium: { easy: 0.72, medium: 0.55, hard: 0.38 },
+    hard:   { easy: 0.90, medium: 0.75, hard: 0.55 }
+};
+
+// [minDelay ms, maxDelay ms] — always kept under TIME_LIMIT (20 000 ms)
+const AI_DELAY = {
+    easy:   [10000, 18000],   // 10–18 s: slow, you'll almost always answer first
+    medium: [ 6000, 13000],   //  6–13 s: competitive, you need to be reasonably quick
+    hard:   [ 3000,  7000]    //  3–7 s:  fast, you need to read the question quickly
+};
 
 function scheduleAiAnswer(q) {
     if (aiTimer) clearTimeout(aiTimer);
-    const delay    = 1500 + Math.random() * 3000;
-    const accuracy = AI_ACCURACY[q.difficulty] || 0.65;
+
+    const [minMs, maxMs] = AI_DELAY[aiDifficulty] || AI_DELAY.medium;
+    const delay    = minMs + Math.random() * (maxMs - minMs);
+    const accuracy = (AI_ACCURACY[aiDifficulty] || AI_ACCURACY.medium)[q.difficulty] || 0.55;
 
     aiTimer = setTimeout(() => {
+        // Player might have already answered — bail out if so
         if (answered || gamePhase !== "playing") return;
 
-        const aiCorrect  = Math.random() < accuracy;
-        const aiAnswer   = aiCorrect
+        const aiCorrect = Math.random() < accuracy;
+        const aiAnswer  = aiCorrect
             ? q.correct
             : q.answers.filter(a => a !== q.correct)[
                 Math.floor(Math.random() * (q.answers.length - 1))
               ];
 
-        const aiTimeLeft = timeLeft; // capture remaining time when AI "answers"
+        const aiTimeLeft = timeLeft; // snapshot of remaining time when AI fires
 
         answered = true;
         stopTimer();
 
         const pts = aiCorrect ? calcPoints(q.difficulty, aiTimeLeft) : 0;
-        if (aiCorrect) { scores.p2 += pts; streaks.p2++; streaks.p1 = 0; SystemUI.playSound('lose'); }
-        else           { streaks.p2 = 0;                                  SystemUI.playSound('win'); }
+        if (aiCorrect) {
+            scores.p2 += pts; streaks.p2++; streaks.p1 = 0;
+            SystemUI.playSound('lose');
+        } else {
+            streaks.p2 = 0;
+            SystemUI.playSound('win');
+        }
 
         renderScores();
         revealAnswers(aiAnswer);
-        showResultBanner(!aiCorrect, 0); // show from P1's perspective (false = you survived)
+        showResultBanner(!aiCorrect, 0); // from P1's perspective: !aiCorrect = "you survived"
 
         setTimeout(() => {
             showNextOverlay(aiCorrect, q.correct, pts, aiCorrect ? 2 : null);
@@ -736,48 +783,159 @@ document.getElementById("btn-play-again").addEventListener("click", () => {
     }
 });
 
-// ── 15. FIREBASE ONLINE ──────────────────────
-const lobbyUI = document.getElementById("multiplayer-lobby");
+// ── 15. START-SCREEN SETTINGS PANEL ──────────
+/*
+ * OPENTDB category IDs. We offer the most popular categories as chips
+ * on the start screen. Blank string = no filter (any category).
+ */
+const OPENTDB_CATEGORIES = [
+    { id: "",   label: "🌐 Any"         },
+    { id: "9",  label: "📚 General"     },
+    { id: "11", label: "🎬 Film"        },
+    { id: "12", label: "🎵 Music"       },
+    { id: "14", label: "📺 TV"          },
+    { id: "15", label: "🎮 Video Games" },
+    { id: "17", label: "🔬 Science"     },
+    { id: "18", label: "💻 Computers"   },
+    { id: "21", label: "⚽ Sports"      },
+    { id: "22", label: "🌍 Geography"   },
+    { id: "23", label: "📜 History"     },
+    { id: "27", label: "🐾 Animals"     },
+];
 
-function generateRoomCode() {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let code = "";
-    for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
-    return code;
-}
+function buildStartSettings() {
+    // Build the category chips dynamically (so we only maintain the data array)
+    const catWrap = document.getElementById("ss-category-pills");
+    if (catWrap) {
+        OPENTDB_CATEGORIES.forEach(cat => {
+            const btn = document.createElement("button");
+            btn.className    = "ss-chip" + (cat.id === selectedCategory ? " active" : "");
+            btn.dataset.group = "category";
+            btn.dataset.val   = cat.id;
+            btn.textContent   = cat.label;
+            catWrap.appendChild(btn);
+        });
+    }
 
-document.getElementById("btn-create-room").addEventListener("click", () => {
-    SystemUI.playSound('click');
-    currentRoomId = generateRoomCode();
-    isHost = true; myId = 1; chatStarted = false;
+    // Restore the saved question-count and AI-difficulty selections
+    syncPillGroup("qs",      String(totalQs));
+    syncPillGroup("ai-diff", aiDifficulty);
 
-    window.dbSet(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-        status: "waiting", players: 1, p1Name: p1Name, phase: "idle", questionIndex: 0
-    }).then(() => {
-        document.getElementById("room-code-display").classList.remove("hidden");
-        document.getElementById("host-room-id").innerText = currentRoomId;
-        document.getElementById("btn-create-room").disabled = true;
-        listenToRoom();
-    });
-});
+    // Hide the AI-level row when not playing against the AI
+    const aiRow = document.getElementById("ss-ai-row");
+    if (aiRow) aiRow.style.display = (gameMode === "ai") ? "" : "none";
 
-document.getElementById("btn-join-room").addEventListener("click", () => {
-    SystemUI.playSound('click');
-    const code = document.getElementById("join-room-input").value.toUpperCase().trim();
-    if (code.length !== 4) { document.getElementById("lobby-error-msg").textContent = "Code must be 4 characters."; return; }
+    // Single delegated listener handles all three pill groups
+    const panel = document.getElementById("start-settings");
+    if (!panel) return;
+    panel.addEventListener("click", e => {
+        const chip = e.target.closest(".ss-chip");
+        if (!chip) return;
+        const group = chip.dataset.group;
+        const val   = chip.dataset.val;
 
-    window.dbGet(window.dbChild(window.dbRef(window.db), `trivia_rooms/${code}`)).then(snapshot => {
-        if (snapshot.exists() && snapshot.val().players === 1) {
-            currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-            window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-                players: 2, p2Name: p1Name, status: "playing"
-            });
-            lobbyUI.classList.add("hidden");
-            listenToRoom();
-        } else {
-            document.getElementById("lobby-error-msg").textContent = "Room not found or already full.";
+        // Deselect every chip in the same group, then activate the clicked one
+        panel.querySelectorAll(`.ss-chip[data-group="${group}"]`)
+             .forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+
+        if (group === "category") {
+            selectedCategory = val;
+            localStorage.setItem("trivia_category", val);
+            // Switching categories should get fresh questions, so clear the token
+            sessionToken = null;
+            localStorage.removeItem("trivia_token");
+
+        } else if (group === "qs") {
+            totalQs = parseInt(val);
+            localStorage.setItem("trivia_qs", val);
+            // Keep the HUD dropdown in sync so they always agree
+            const drop = document.getElementById("sys-trivia-qs");
+            if (drop) drop.value = val;
+
+        } else if (group === "ai-diff") {
+            aiDifficulty = val;
+            localStorage.setItem("trivia_ai_diff", val);
         }
     });
+}
+
+// Mark the correct chip active without rebuilding the whole panel
+function syncPillGroup(group, val) {
+    document.querySelectorAll(`.ss-chip[data-group="${group}"]`).forEach(c => {
+        c.classList.toggle("active", c.dataset.val === val);
+    });
+}
+
+// ── 16. ONLINE MULTIPLAYER (v2 Lobby drop-in) ─
+SystemUI.v2Lobby.setup({
+    onHost: () => {
+        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
+        isHost = true; myId = 1; chatStarted = false;
+
+        seats = [
+            { type: "human", name: SystemUI.getPlayerName() },
+            { type: "ai",    name: "Waiting for player…"    }
+        ];
+
+        window.dbSet(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
+            status: "waiting", p1Name: p1Name,
+            phase: "idle", questionIndex: 0, seats
+        }).then(() => {
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+            listenToRoom();
+        });
+    },
+
+    onJoin: (code) => {
+        window.dbGet(window.dbChild(window.dbRef(window.db), `trivia_rooms/${code}`))
+            .then(snap => {
+                if (snap.exists() && snap.val().status === "waiting") {
+                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+
+                    const data = snap.val();
+                    // Overwrite the placeholder seat-2 with the joining player
+                    const updatedSeats = data.seats
+                        ? [...data.seats]
+                        : [{ type: "human", name: data.p1Name || "Player 1" },
+                           { type: "ai",    name: "Slot 2" }];
+                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
+
+                    window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
+                        p2Name: p1Name, seats: updatedSeats
+                        // NOTE: status stays "waiting" until the host clicks Start
+                    });
+                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                    listenToRoom();
+                } else {
+                    SystemUI.v2Lobby.showError("ROOM NOT FOUND OR ALREADY STARTED");
+                }
+            });
+    },
+
+    onLeave: () => {
+        gameMode = "ai"; p2Name = "AI";
+        document.getElementById("sys-trivia-mode").value = "ai";
+        localStorage.setItem("trivia_mode", "ai");
+        SystemUI.stopChat(); chatStarted = false;
+        updateNames();
+    },
+
+    onStart: () => {
+        // Host pressed Start — both players will see status become "playing"
+        window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
+            status: "playing"
+        });
+    },
+
+    onClose: () => {
+        if (gameMode === "online" && gamePhase !== "playing") {
+            gameMode = "ai"; p2Name = "AI";
+            document.getElementById("sys-trivia-mode").value = "ai";
+            localStorage.setItem("trivia_mode", "ai");
+            updateNames();
+        }
+    }
 });
 
 function listenToRoom() {
@@ -786,9 +944,15 @@ function listenToRoom() {
         const data = snapshot.val();
         if (!data) return;
 
+        // Keep the lobby seat list current while waiting
+        if (data.seats) {
+            seats = data.seats;
+            SystemUI.v2Lobby.renderSeats(seats);
+        }
+
         if (data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true;
-            lobbyUI.classList.add("hidden");
+            SystemUI.v2Lobby.hide();
             if (!chatStarted) {
                 chatStarted = true;
                 SystemUI.playSound('win');
@@ -800,10 +964,10 @@ function listenToRoom() {
             if (isHost) {
                 startGame();
             } else {
-                // Guest shows loading screen — waits for host's question push
+                // Guest waits while host fetches questions and pushes them
                 document.getElementById("start-screen").classList.add("hidden");
                 document.getElementById("loading-screen").classList.remove("hidden");
-                document.getElementById("loading-text").textContent = "WAITING FOR HOST...";
+                document.getElementById("loading-text").textContent = "WAITING FOR HOST…";
                 document.getElementById("loading-sub").textContent  = "Game starts soon";
             }
             return;
@@ -816,7 +980,6 @@ function listenToRoom() {
 function pushGameState() {
     if (gameMode !== "online" || !currentRoomId) return;
 
-    // Host pushes the full question bank (serialized) + current state
     const payload = {
         phase:         gamePhase,
         questionIndex: currentQIndex,
@@ -825,7 +988,6 @@ function pushGameState() {
         status:        gamePhase === "gameover" ? "finished" : "playing"
     };
 
-    // Only host pushes questions (guest doesn't have them yet initially)
     if (isHost && questions.length > 0) {
         payload.questions = JSON.stringify(questions);
     }
@@ -834,7 +996,6 @@ function pushGameState() {
 }
 
 function submitOnlineAnswer(answer, tLeft) {
-    // Both players write their answer — host resolves
     const field = myId === 1 ? "p1Answer" : "p2Answer";
     window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
         [field]: answer,
@@ -854,13 +1015,12 @@ function syncFromFirebase(data) {
         } catch(e) { console.error("Failed to parse questions:", e); return; }
     }
 
-    // Sync scores
     if (data.scores) {
         scores = data.scores;
         renderScores();
     }
 
-    // Advance to new question
+    // Host advanced to a new question
     if (data.questionIndex !== undefined &&
         data.questionIndex !== currentQIndex &&
         data.phase === "playing" &&
@@ -873,16 +1033,15 @@ function syncFromFirebase(data) {
         return;
     }
 
-    // Handle answer resolution (host resolves both players' answers)
+    // Host resolves both answers when both are in
     if (isHost && data.p1Answer && data.p2Answer && !answered) {
         answered = true;
         stopTimer();
 
-        const q       = questions[currentQIndex];
-        const p1Cor   = data.p1Answer === q.correct;
-        const p2Cor   = data.p2Answer === q.correct;
+        const q     = questions[currentQIndex];
+        const p1Cor = data.p1Answer === q.correct;
+        const p2Cor = data.p2Answer === q.correct;
 
-        // Whoever answered correctly first (higher timeLeft) scores
         let scorer = null;
         if (p1Cor && p2Cor) {
             scorer = (data.p1AnswerTime || 0) >= (data.p2AnswerTime || 0) ? 1 : 2;
@@ -890,20 +1049,17 @@ function syncFromFirebase(data) {
         else if (p2Cor)   { scorer = 2; }
 
         const pts = scorer ? calcPoints(q.difficulty, data[`p${scorer}AnswerTime`] || 0) : 0;
-        if (scorer === 1) { scores.p1 += pts; streaks.p1++; streaks.p2 = 0; }
+        if (scorer === 1)      { scores.p1 += pts; streaks.p1++; streaks.p2 = 0; }
         else if (scorer === 2) { scores.p2 += pts; streaks.p2++; streaks.p1 = 0; }
-        else { streaks.p1 = 0; streaks.p2 = 0; }
+        else                   { streaks.p1 = 0; streaks.p2 = 0; }
 
-        // Push resolved state
         window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
             resolvedCorrect: !!(scorer),
             resolvedScorer:  scorer || 0,
             resolvedPts:     pts,
             resolvedAnswer:  data[scorer === 1 ? "p1Answer" : "p2Answer"] || "",
-            scores:          scores,
-            streaks:         streaks,
-            p1Answer:        null,
-            p2Answer:        null,
+            scores, streaks,
+            p1Answer: null, p2Answer: null,
         });
 
         revealAnswers(myId === 1 ? data.p1Answer : data.p2Answer);
@@ -912,7 +1068,7 @@ function syncFromFirebase(data) {
         setTimeout(() => showNextOverlay(!!(scorer), q.correct, pts, scorer), 1000);
     }
 
-    // Guest: wait for host to push resolved state
+    // Guest: wait for the host's resolved state
     if (!isHost && data.resolvedScorer !== undefined && data.resolvedScorer !== null && !answered) {
         answered = true;
         stopTimer();
@@ -936,16 +1092,6 @@ function syncFromFirebase(data) {
 
     if (data.status === "finished") endGame();
 }
-
-document.getElementById("lobby-close-btn").addEventListener("click", () => lobbyUI.classList.add("hidden"));
-document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
-    gameMode = "ai"; p2Name = "AI";
-    document.getElementById("sys-trivia-mode").value = "ai";
-    localStorage.setItem("trivia_mode", "ai");
-    lobbyUI.classList.add("hidden");
-    SystemUI.stopChat(); chatStarted = false;
-    updateNames();
-});
 
 // ── BOOT ─────────────────────────────────────
 updateNames();

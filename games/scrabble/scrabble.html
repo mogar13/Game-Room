@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrabble — The Game Shack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=Libre+Baskerville:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../system/system_ui.css">
+    <link rel="stylesheet" href="scrabble_style.css">
+</head>
+<body>
+    <div id="game-wrap">
+
+        <div id="board-area">
+            <div id="board-container">
+                <div id="board"></div>
+                </div>
+        </div>
+
+        <div id="side-panel">
+
+            <div id="score-block">
+                <div id="p1-score-block" class="player-score active-player">
+                    <div class="ps-name" id="p1-name">Player 1</div>
+                    <div class="ps-score" id="p1-score">0</div>
+                    <div class="ps-label">POINTS</div>
+                </div>
+                <div id="p2-score-block" class="player-score">
+                    <div class="ps-name" id="p2-name">Player 2</div>
+                    <div class="ps-score" id="p2-score">0</div>
+                    <div class="ps-label">POINTS</div>
+                </div>
+            </div>
+
+            <div id="turn-block">
+                <div id="turn-label">YOUR TURN</div>
+                <div id="turn-sub">Place tiles on the board</div>
+            </div>
+
+            <div id="bag-block">
+                <div id="bag-count">98</div>
+                <div id="bag-label">TILES IN BAG</div>
+            </div>
+
+            <div id="word-preview" class="hidden">
+                <div id="word-preview-text"></div>
+                <div id="word-preview-score">+0</div>
+            </div>
+
+            <div id="action-btns">
+                <button id="btn-play"     class="action-btn primary">PLAY WORD</button>
+                <button id="btn-exchange" class="action-btn">EXCHANGE</button>
+                <button id="btn-pass"     class="action-btn">PASS</button>
+                <button id="btn-recall"   class="action-btn">RECALL TILES</button>
+            </div>
+
+            <div id="game-controls" style="display:flex; gap:5px; margin-top:4px;">
+                <button id="btn-save-game" class="action-btn" style="flex:1; font-size:0.65rem; padding:8px;">💾 SAVE</button>
+                <button id="btn-load-game" class="action-btn" style="flex:1; font-size:0.65rem; padding:8px;">📂 LOAD</button>
+            </div>
+
+            <div id="last-play" class="hidden">
+                <div id="last-play-label">LAST PLAY</div>
+                <div id="last-play-word"></div>
+                <div id="last-play-score"></div>
+            </div>
+
+            <div id="play-log"></div>
+
+        </div></div><div id="rack-area">
+        <div id="rack-inner">
+            <div id="rack"></div>
+        </div>
+        <div id="exchange-zone" class="hidden">
+            <div id="exchange-label">SELECT TILES TO EXCHANGE — click to toggle</div>
+            <div id="exchange-actions">
+                <button id="btn-exchange-confirm" class="action-btn primary">EXCHANGE SELECTED</button>
+                <button id="btn-exchange-cancel"  class="action-btn">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="blank-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-title">CHOOSE LETTER</div>
+            <div class="modal-subtitle">Select the letter for your blank tile</div>
+            <div id="blank-letter-grid"></div>
+        </div>
+    </div>
+
+    <div id="game-over-modal" class="hidden">
+        <div class="game-over-box">
+            <div id="game-over-emoji">🏆</div>
+            <div id="game-over-title">GAME OVER</div>
+            <div id="game-over-msg"></div>
+            <button id="btn-play-again">PLAY AGAIN</button>
+            <button id="btn-exit-game" onclick="window.location.reload()">EXIT</button>
+        </div>
+    </div>
+
+    <div id="start-screen">
+        <div id="start-logo">
+            <div id="start-tiles">
+                <span class="start-tile">S</span>
+                <span class="start-tile">C</span>
+                <span class="start-tile">R</span>
+                <span class="start-tile">A</span>
+                <span class="start-tile">B</span>
+                <span class="start-tile">B</span>
+                <span class="start-tile">L</span>
+                <span class="start-tile">E</span>
+            </div>
+            <div id="start-sub">THE WORD GAME</div>
+        </div>
+        <div id="setup-panel">
+            <div class="setup-row">
+                <span class="setup-label">OPPONENT</span>
+                <div id="opponent-row">
+                    <button class="opp-btn active" data-mode="ai">🤖 vs AI</button>
+                    <button class="opp-btn" data-mode="hotseat">👥 Hotseat</button>
+                    <button class="opp-btn" data-mode="online">🌐 Online</button>
+                </div>
+            </div>
+            <div class="setup-row" id="difficulty-row">
+                <span class="setup-label">DIFFICULTY</span>
+                <div id="difficulty-btns">
+                    <button class="diff-btn" data-diff="easy">EASY</button>
+                    <button class="diff-btn active" data-diff="medium">MEDIUM</button>
+                    <button class="diff-btn" data-diff="hard">HARD</button>
+                </div>
+            </div>
+        </div>
+        <button id="start-btn">START GAME</button>
+    </div>
+
+    <script src="../../system/player_name.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <script src="../../system/system_ui.js"></script>
+    <script src="scrabble_app.js"></script>
+</body>
+</html>

@@ -99,7 +99,7 @@ body {
 .sys-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* =========================================
-   MOBILE RESPONSIVENESS
+   MOBILE RESPONSIVENESS (FULLY REWRITTEN)
    ========================================= */
 @media screen and (max-width: 800px) {
   body {
@@ -107,31 +107,54 @@ body {
     height: auto !important; 
     min-height: 100dvh;
     overflow-y: auto !important; 
-    justify-content: flex-start;
+    display: block; /* Disables flex centering so natural scrolling works from the top */
   }
 
   #game-container {
     display: flex; flex-direction: column; align-items: center;
     justify-content: flex-start; height: auto; min-height: 100%;
-    width: 100vw; padding-top: 10px; padding-bottom: 30px; box-sizing: border-box;
+    width: 100vw; padding: 60px 10px 40px; box-sizing: border-box; /* 60px top padding for Casino OS HUD */
   }
 
-  #game-header { margin-top: 0; margin-bottom: 5px; display: flex; flex-direction: column; align-items: center; width: 100%; }
-  #status-display { font-size: 1rem; margin-bottom: 5px; }
+  #game-header { 
+    margin-top: 0; margin-bottom: 10px; display: flex; flex-direction: column; align-items: center; width: 100%; 
+  }
+  
+  #status-display { 
+    font-size: 1.1rem; margin-bottom: 5px; text-align: center; 
+  }
 
-  #ship-selector { padding: 5px; margin-bottom: 5px; width: 95%; max-width: 380px; gap: 5px; }
-  .ship-grid, .tool-grid { gap: 4px; }
-  .tool-btn, .ship-btn { padding: 5px 8px; font-size: 0.7rem; }
+  #ship-selector { 
+    padding: 12px; margin-bottom: 15px; width: 100%; max-width: 420px; gap: 10px; 
+  }
+  
+  .ship-grid, .tool-grid { gap: 6px; }
+  
+  .tool-btn, .ship-btn { 
+    padding: 10px 8px; font-size: 0.8rem; flex: 1 1 auto; text-align: center; 
+  }
 
-  .boards-container { flex-direction: column; gap: 5px; margin-bottom: 5px; align-items: center; }
-  h3 { text-align: center; font-size: 0.8rem; margin-bottom: 2px; }
+  .boards-container { 
+    flex-direction: column; gap: 25px; margin-bottom: 20px; align-items: center; width: 100%; 
+  }
+  
+  h3 { 
+    text-align: center; font-size: 1rem; margin-bottom: 6px; color: #f1c40f; letter-spacing: 2px; 
+  }
 
   .board {
-    --cell-size: min(8.5vw, 3vh);
-    --gap: 1px;
-    padding: 2px;
+    /* Mathematically scales the 10x10 board to perfectly fit 95% of any phone screen */
+    --cell-size: calc((100vw - 30px) / 10 - 2px); 
+    --gap: 2px;
+    padding: 4px;
+    border-width: 2px;
   }
 
-  .controls { margin-bottom: 0; margin-top: 15px; display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
-  .sys-btn { padding: 8px 15px; font-size: 0.8rem; }
+  .controls { 
+    margin-bottom: 0; margin-top: 5px; display: flex; flex-direction: column; width: 100%; max-width: 420px; gap: 10px; 
+  }
+  
+  .sys-btn { 
+    width: 100%; padding: 14px; font-size: 1rem; letter-spacing: 1px; min-height: 50px; 
+  }
 }

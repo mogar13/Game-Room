@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Monopoly</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../system/system_ui.css">
+    <link rel="stylesheet" href="monopoly_style.css">
+</head>
+<body>
+<div id="game-container">
+
+<!-- ── START SCREEN ─────────────────────────── -->
+<div id="start-screen">
+    <div class="ss-logo">🏦</div>
+    <h1 class="ss-title">MONOPOLY</h1>
+    <p class="ss-tagline">THE PROPERTY TRADING GAME</p>
+    <div id="start-settings">
+        <div class="ss-row">
+            <div class="ss-label">PLAYERS</div>
+            <div class="ss-pills">
+                <button class="ss-chip active" data-group="count" data-val="2">2</button>
+                <button class="ss-chip"        data-group="count" data-val="3">3</button>
+                <button class="ss-chip"        data-group="count" data-val="4">4</button>
+            </div>
+        </div>
+        <div class="ss-row" id="ss-ai-row">
+            <div class="ss-label">AI LEVEL</div>
+            <div class="ss-pills">
+                <button class="ss-chip"        data-group="ai-diff" data-val="easy">EASY</button>
+                <button class="ss-chip active" data-group="ai-diff" data-val="medium">MEDIUM</button>
+                <button class="ss-chip"        data-group="ai-diff" data-val="hard">HARD</button>
+            </div>
+        </div>
+        <div class="ss-row">
+            <div class="ss-label">STARTING CASH</div>
+            <div class="ss-pills">
+                <button class="ss-chip active" data-group="cash" data-val="1500">$1,500 STANDARD</button>
+                <button class="ss-chip"        data-group="cash" data-val="2000">$2,000 RICH</button>
+            </div>
+        </div>
+    </div>
+    <button id="start-btn">START GAME</button>
+</div>
+
+<!-- ── LOADING SCREEN ───────────────────────── -->
+<div id="loading-screen" class="hidden">
+    <div class="loading-spinner"></div>
+    <div id="loading-text">SETTING UP BOARD…</div>
+</div>
+
+<!-- ── GAME AREA ─────────────────────────────── -->
+<div id="game-area" class="hidden">
+
+    <div id="board-section">
+        <div id="board-wrap">
+            <img id="board-img" src="../../system/images/boards/monopoly-board.svg" alt="Monopoly Board" draggable="false">
+            <!-- Layers sit absolutely over the board image -->
+            <div id="ownership-layer"></div><!-- colored ownership rings per property -->
+            <div id="token-layer"></div>     <!-- player piece tokens -->
+            <div id="building-layer"></div>  <!-- house/hotel emoji markers -->
+            <div id="debug-layer" class="hidden"></div><!-- toggle with dblclick -->
+        </div>
+
+        <!-- Dice row + bank supply -->
+        <div id="dice-area">
+            <div id="dice-pair">
+                <img id="die1" class="die-img" src="../../system/images/dice/dieWhite_border1.png" alt="Die 1">
+                <img id="die2" class="die-img" src="../../system/images/dice/dieWhite_border1.png" alt="Die 2">
+            </div>
+            <div id="dice-info">
+                <div id="dice-sum">–</div>
+                <div id="dice-label">ROLL TO START</div>
+            </div>
+            <div id="bank-supply">
+                <div class="bank-item" title="Houses remaining in bank">🏠 <span id="bank-h-count">32</span></div>
+                <div class="bank-item" title="Hotels remaining in bank">🏨 <span id="bank-t-count">12</span></div>
+            </div>
+        </div>
+    </div><!-- /#board-section -->
+
+    <div id="info-section">
+        <div id="players-panel"><!-- player-card divs injected by JS --></div>
+        <div id="action-panel">
+            <div id="current-player-header">
+                <span id="cp-dot" class="cp-dot"></span>
+                <span id="cp-name">—</span>
+                <span id="cp-status"></span>
+            </div>
+            <div id="action-btns">
+                <button id="roll-btn"   class="act-btn primary">🎲 ROLL DICE</button>
+                <button id="bail-btn"   class="act-btn secondary hidden">PAY $50 BAIL</button>
+                <button id="card-btn"   class="act-btn secondary hidden">🃏 USE JAIL CARD</button>
+                <button id="manage-btn" class="act-btn secondary hidden">🏠 BUILD / MANAGE</button>
+                <button id="trade-btn"  class="act-btn secondary hidden">🤝 TRADE</button>
+                <button id="end-btn"    class="act-btn end hidden">END TURN →</button>
+            </div>
+        </div>
+        <div id="log-section">
+            <div class="log-hdr">GAME LOG</div>
+            <div id="log-entries"></div>
+        </div>
+    </div><!-- /#info-section -->
+
+</div><!-- /#game-area -->
+
+<!-- ══ MODALS ══════════════════════════════════ -->
+
+<!-- Rent notification — big dramatic pop -->
+<div id="rent-overlay" class="modal hidden">
+    <div class="rent-box">
+        <div id="rent-label">RENT DUE</div>
+        <div id="rent-amount">$200</div>
+        <div id="rent-to">to <span id="rent-owner-name">—</span></div>
+        <div id="rent-space-name">Boardwalk</div>
+    </div>
+</div>
+
+<!-- Buy property -->
+<div id="buy-modal" class="modal hidden">
+    <div class="modal-box">
+        <div id="buy-color-bar"></div>
+        <div class="modal-body">
+            <div id="buy-space-type">PROPERTY</div>
+            <div id="buy-name">Mediterranean Ave</div>
+            <div id="buy-price-tag">$60</div>
+            <table id="buy-rent-table">
+                <tr><td>Base rent</td><td id="br-0"></td></tr>
+                <tr><td>1 house</td> <td id="br-1"></td></tr>
+                <tr><td>2 houses</td><td id="br-2"></td></tr>
+                <tr><td>3 houses</td><td id="br-3"></td></tr>
+                <tr><td>4 houses</td><td id="br-4"></td></tr>
+                <tr><td>Hotel</td>   <td id="br-5"></td></tr>
+                <tr id="br-house-row"><td>House cost</td><td id="br-h"></td></tr>
+            </table>
+            <div id="buy-afford-note"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="btn-buy"  class="act-btn primary">BUY</button>
+            <button id="btn-pass" class="act-btn secondary">PASS → AUCTION</button>
+        </div>
+    </div>
+</div>
+
+<!-- Chance / Community Chest card -->
+<div id="card-modal" class="modal hidden">
+    <div class="modal-box card-modal-box" id="card-modal-box">
+        <div id="card-inner">
+            <div id="card-type-lbl">CHANCE</div>
+            <div id="card-deco">?</div>
+            <div id="card-text"></div>
+            <div id="card-effect"></div>
+        </div>
+        <button id="card-ok-btn" class="act-btn primary">OK</button>
+    </div>
+</div>
+
+<!-- Property deed inspector (click a prop pip in player card) -->
+<div id="deed-modal" class="modal hidden">
+    <div class="modal-box">
+        <div id="deed-color-bar"></div>
+        <div class="modal-body">
+            <div id="deed-type-lbl">TITLE DEED</div>
+            <div id="deed-name">Boardwalk</div>
+            <div id="deed-owner-row">Owner: <span id="deed-owner">Bank</span></div>
+            <table id="deed-rent-table">
+                <tr><td>Base rent</td><td id="dr-0"></td></tr>
+                <tr><td>1 house</td> <td id="dr-1"></td></tr>
+                <tr><td>2 houses</td><td id="dr-2"></td></tr>
+                <tr><td>3 houses</td><td id="dr-3"></td></tr>
+                <tr><td>4 houses</td><td id="dr-4"></td></tr>
+                <tr><td>Hotel</td>   <td id="dr-5"></td></tr>
+                <tr id="dr-house-row"><td>House cost</td><td id="dr-h"></td></tr>
+            </table>
+            <div id="deed-status"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="deed-close-btn" class="act-btn secondary">CLOSE</button>
+        </div>
+    </div>
+</div>
+
+<!-- Auction -->
+<div id="auction-modal" class="modal hidden">
+    <div class="modal-box">
+        <div id="auction-color-bar"></div>
+        <div class="modal-body">
+            <div class="modal-type-lbl">AUCTION</div>
+            <div id="auction-name">Mediterranean Ave</div>
+            <div id="auction-timer-ring"><span id="auction-countdown">15</span></div>
+            <div id="auction-bid-row">BID: <span id="auction-bid-amt">$0</span></div>
+            <div id="auction-leader-row">LEADER: <span id="auction-leader-name">—</span></div>
+            <div id="auction-folded-row"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="btn-bid-up"  class="act-btn primary">BID +$10</button>
+            <button id="btn-bid-out" class="act-btn secondary">FOLD</button>
+        </div>
+    </div>
+</div>
+
+<!-- Build / manage -->
+<div id="manage-modal" class="modal hidden">
+    <div class="modal-box manage-box">
+        <div class="modal-body">
+            <div class="modal-type-lbl">BUILD &amp; MANAGE</div>
+            <div id="manage-list"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="manage-close-btn" class="act-btn secondary">CLOSE</button>
+        </div>
+    </div>
+</div>
+
+<!-- Trade proposal (proposer fills this in) -->
+<div id="trade-modal" class="modal hidden">
+    <div class="modal-box trade-box">
+        <div class="modal-body">
+            <div class="modal-type-lbl">PROPOSE TRADE</div>
+            <div class="trade-target-row">
+                <span class="trade-section-lbl">WITH:</span>
+                <div id="trade-target-pills"></div>
+            </div>
+            <div id="trade-columns">
+                <div class="trade-col">
+                    <div class="trade-col-hdr offer-hdr">YOU OFFER</div>
+                    <div id="trade-offer-props" class="trade-props"></div>
+                    <div class="trade-cash-row">
+                        <span>+$</span>
+                        <input id="trade-offer-cash" type="number" min="0" step="10" value="0" autocomplete="off">
+                    </div>
+                </div>
+                <div class="trade-sep">⇄</div>
+                <div class="trade-col">
+                    <div class="trade-col-hdr want-hdr">YOU WANT</div>
+                    <div id="trade-want-props" class="trade-props"></div>
+                    <div class="trade-cash-row">
+                        <span>+$</span>
+                        <input id="trade-want-cash" type="number" min="0" step="10" value="0" autocomplete="off">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button id="trade-send-btn"   class="act-btn primary">SEND OFFER</button>
+            <button id="trade-cancel-btn" class="act-btn secondary">CANCEL</button>
+        </div>
+    </div>
+</div>
+
+<!-- Trade response (target player sees this) -->
+<div id="trade-response-modal" class="modal hidden">
+    <div class="modal-box">
+        <div class="modal-body" style="text-align:center">
+            <div class="modal-type-lbl">TRADE OFFER</div>
+            <div id="trade-resp-from"></div>
+            <div id="trade-resp-summary"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="trade-accept-btn" class="act-btn primary">ACCEPT</button>
+            <button id="trade-reject-btn" class="act-btn secondary">REJECT</button>
+        </div>
+    </div>
+</div>
+
+<!-- Game over -->
+<div id="gameover-modal" class="modal hidden">
+    <div class="modal-box" style="text-align:center">
+        <div id="go-emoji" style="font-size:3.5rem;padding:24px 0 8px">🏆</div>
+        <div id="go-title"></div>
+        <div id="go-subtitle"></div>
+        <div id="go-stats"></div>
+        <div class="modal-actions">
+            <button id="btn-play-again" class="act-btn primary">PLAY AGAIN</button>
+            <button id="btn-exit" class="act-btn secondary" onclick="window.location.reload()">EXIT</button>
+        </div>
+    </div>
+</div>
+
+</div><!-- /#game-container -->
+
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+<script src="../../system/player_name.js"></script>
+<script src="../../system/system_ui.js"></script>
+<script src="monopoly_app.js"></script>
+</body>
+</html>

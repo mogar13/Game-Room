@@ -368,22 +368,9 @@ body {
    RESPONSIVE — MOBILE & SMALL SCREENS
    ============================================= */
 @media (max-width: 768px), (max-height: 750px) {
-  #table {
-    border-bottom-width: 24px;
-    border-left-width: 24px;
-    border-right-width: 24px;
-  }
-
-  .card {
-    width: 52px; height: 76px;
-    font-size: 18px; margin-left: -26px;
-  }
-
   .table-text h1 { font-size: 0.95rem; letter-spacing: 2px; }
   .table-text h2 { font-size: 0.65rem; }
   .table-text h3 { font-size: 0.8rem; }
-
-  .score-bubble { min-width: 28px; height: 28px; font-size: 0.85rem; border-radius: 14px; }
 
   .dealer-tray { width: 140px; height: 20px; }
   .chip-rows   { width: 120px; height: 8px; }
@@ -392,10 +379,46 @@ body {
   .boxes-arc::before { width: 160px; height: 160px; }
   .boxes-arc::after  { width: 95px;  height: 95px; }
 
-  #action-zone { min-height: 130px; padding: 10px 12px; }
-  .action-btn  { padding: 12px; font-size: 0.95rem; }
-
   #table-stats-container { transform: scale(0.82); transform-origin: top left; }
+}
+
+/* DEDICATED PHONE FIXES */
+@media (max-width: 580px) {
+  #table {
+    border-bottom-width: 16px;
+    border-left-width: 12px;
+    border-right-width: 12px;
+    border-radius: 0 0 35% 35% / 0 0 25% 25%; /* Relaxed curve to prevent clipping */
+  }
+
+  .card {
+    width: 60px; height: 86px;
+    font-size: 20px; margin-left: -30px;
+  }
+  
+  #dealer-area { top: 30px; }
+  #player-area { bottom: 15%; }
+  
+  .score-bubble { min-width: 32px; height: 32px; font-size: 0.9rem; border-radius: 16px; top: calc(100% + 10px); }
+  
+  #action-zone { 
+    padding: 12px 10px calc(12px + env(safe-area-inset-bottom)); 
+    min-height: auto;
+  }
+  
+  .button-grid { gap: 8px; }
+  
+  /* Fat, highly tappable buttons */
+  .action-btn { 
+    padding: 16px 12px; 
+    font-size: 1rem; 
+    min-height: 56px; 
+  }
+  
+  #deal-btn {
+    min-height: 60px;
+    font-size: 1.1rem;
+  }
 }
 
 @media (max-height: 600px) {

@@ -80,6 +80,41 @@
             <span class="logo-title">TRIVIA<br>PURSUIT</span>
         </div>
         <div id="start-tagline">POWERED BY OPENTDB</div>
+
+        <!-- ── GAME SETTINGS ─────────────────────────── -->
+        <div id="start-settings">
+
+            <!-- Category row -->
+            <div class="ss-row">
+                <div class="ss-label">CATEGORY</div>
+                <div class="ss-pills" id="ss-category-pills">
+                    <!-- populated by JS -->
+                </div>
+            </div>
+
+            <!-- Questions row -->
+            <div class="ss-row">
+                <div class="ss-label">QUESTIONS</div>
+                <div class="ss-pills" id="ss-qs-pills">
+                    <button class="ss-chip" data-group="qs" data-val="5">5</button>
+                    <button class="ss-chip" data-group="qs" data-val="10">10</button>
+                    <button class="ss-chip" data-group="qs" data-val="15">15</button>
+                    <button class="ss-chip" data-group="qs" data-val="20">20</button>
+                </div>
+            </div>
+
+            <!-- AI level row — hidden in hotseat/online -->
+            <div class="ss-row" id="ss-ai-row">
+                <div class="ss-label">AI LEVEL</div>
+                <div class="ss-pills" id="ss-ai-pills">
+                    <button class="ss-chip" data-group="ai-diff" data-val="easy">EASY</button>
+                    <button class="ss-chip" data-group="ai-diff" data-val="medium">MEDIUM</button>
+                    <button class="ss-chip" data-group="ai-diff" data-val="hard">HARD</button>
+                </div>
+            </div>
+
+        </div><!-- /#start-settings -->
+
         <button id="start-btn">START GAME</button>
     </div>
 

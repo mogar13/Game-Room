@@ -254,7 +254,7 @@ body {
 }
 
 /* ── CONTROLS ────────────────────────────── */
-#controls { display: flex; justify-content: center; }
+#controls { display: flex; justify-content: center; width: 100%; }
 
 #start-game-btn {
     font-family: 'Bebas Neue', sans-serif;
@@ -308,8 +308,48 @@ body {
     line-height: 1.5;
 }
 
-/* ── MOBILE ──────────────────────────────── */
-@media (max-width: 480px) {
-    :root { --bs: min(calc(100vw - 14px), calc(100dvh - 215px)); }
-    #game-container { padding-top: 52px; gap: 6px; }
+/* ── MOBILE (FULLY REWRITTEN) ────────────── */
+@media (max-width: 580px) {
+    /* Push board to edges, leaving 8px total horizontal gap (4px each side) */
+    :root { --bs: min(calc(100vw - 8px), calc(100dvh - 180px)); }
+    
+    #game-container { 
+        padding-top: 50px; 
+        justify-content: flex-start; /* Prevents vertical squishing */
+        gap: 12px;
+    }
+    
+    #stats-bar { 
+        width: 100%; 
+        max-width: var(--bs); 
+        padding: 0 4px; 
+    }
+    
+    .stat-box { 
+        min-width: 0; 
+        flex: 1; /* Flex allows them to shrink evenly */
+        padding: 8px 4px; 
+    }
+    
+    .stat-score { font-size: 1.3rem; }
+    
+    #center-badge { 
+        min-width: 70px; 
+        font-size: 0.65rem; 
+        padding: 6px 8px; 
+    }
+    
+    #controls { 
+        width: 100%; 
+        padding: 0 4px; 
+    }
+    
+    /* Fat, tappable start button */
+    #start-game-btn { 
+        width: 100%; 
+        max-width: var(--bs); 
+        padding: 16px; 
+        font-size: 1.2rem; 
+        min-height: 54px; 
+    }
 }
