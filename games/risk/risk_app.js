@@ -761,6 +761,9 @@ function hideTooltip() {
 const INITIAL_TROOPS = { 2: 40, 3: 35, 4: 30, 5: 25, 6: 20 };
 
 function initGame(count, setup) {
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("risk");
+
     numPlayers = gameMode === "online" ? seats.length : count;
     setupMode  = setup;
     players    = [];
@@ -1700,6 +1703,12 @@ function endGame(winnerIdx) {
     
     if (winnerIdx === myPlayerIndex) SystemUI.playSound('victory.mp3');
     else SystemUI.playSound('defeat.mp3');
+
+    // AUDIT: Tracking final game result
+    if (typeof SystemStats !== 'undefined') {
+        if (winnerIdx === myPlayerIndex) SystemStats.recordWin("risk", 0);
+        else SystemStats.recordLoss("risk");
+    }
 
     if (gameMode === "online" && window.db) {
         window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {

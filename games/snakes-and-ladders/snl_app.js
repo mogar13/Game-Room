@@ -353,6 +353,11 @@ async function rollDice() {
     if (isMoving) return;
     if (gameMode === "online" && currentPlayer !== myId) return;
 
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined' && playerPositions[0] === 1 && playerPositions[1] === 1) {
+        SystemStats.recordGameStart("snl");
+    }
+
     isMoving = true;
     rollBtn.disabled = true;
     dieImg.classList.add("rolling");
@@ -447,6 +452,16 @@ function showWinner(message) {
     turnIndicator.innerText = message;
     turnIndicator.style.color = "#f1c40f";
     rollBtn.disabled = true;
+
+    // AUDIT: Tracking final result
+    if (typeof SystemStats !== 'undefined' && gameMode !== "local") {
+        if ((gameMode === "ai" && playerPositions[0] === 100) || (gameMode === "online" && playerPositions[myId-1] === 100)) {
+            SystemStats.recordWin("snl", 0);
+        } else {
+            SystemStats.recordLoss("snl");
+        }
+    }
+
     setTimeout(resetGame, 3000);
 }
 

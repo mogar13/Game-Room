@@ -109,6 +109,9 @@ function buildDeck() {
 function startGame() {
     if (gameMode === "online" && !isHost) return;
 
+    // AUDIT: Safely track play count
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("rummy");
+
     playSound('shuffle');
     document.getElementById("start-game-btn").classList.add("hidden");
     document.getElementById("sort-btn").classList.remove("hidden");
@@ -233,11 +236,15 @@ document.getElementById("discard-btn").addEventListener("click", () => {
 function checkWin(player) {
     if (myHand.length === 0) {
         gameState = "finished";
+        // AUDIT: Tracking win
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("rummy", 0);
         playSound('win');
         showGameOver(p1Name, "You emptied your hand first!");
         if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "finished", winner: p1Name });
     } else if (oppHandCount === 0 || oppHand.length === 0) {
         gameState = "finished";
+        // AUDIT: Tracking loss
+        if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("rummy");
         playSound('lose');
         showGameOver(p2Name, `${p2Name} emptied their hand first!`);
         if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "finished", winner: p2Name });
@@ -585,6 +592,8 @@ function syncFromFirebase(data) {
         renderBoard();
     } else if (data.status === "finished") {
         if(data.winner && data.winner !== p1Name) {
+            // AUDIT: Tracking final game result
+            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("rummy");
             showGameOver(data.winner, `${data.winner} emptied their hand first!`);
         }
     }

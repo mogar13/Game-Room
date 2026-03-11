@@ -162,6 +162,10 @@ function renderTileElement(tile, isBoard = false) {
 // ==========================================
 function startGame() {
     if (gameMode === "online" && !isHost) return; 
+
+    // AUDIT: Safely track play count via OS 2.0
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("dominoes");
+
     playDominoSound('draw');
     document.getElementById("start-game-btn").classList.add("hidden");
     document.getElementById("move-log-container").classList.remove("hidden");
@@ -342,6 +346,10 @@ function checkPassVisibility() {
 function checkWin(player) {
     if (myHand.length === 0) {
         gameState = "finished";
+        
+        // AUDIT: Safely track win via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("dominoes", 0);
+
         playDominoSound('win');
         logMove("SYSTEM", `${p1Name} EMPTIED THEIR HAND!`, true);
         alert("YOU WIN!");
@@ -349,6 +357,10 @@ function checkWin(player) {
         resetGame();
     } else if (oppHandCount === 0 || oppHand.length === 0) {
         gameState = "finished";
+
+        // AUDIT: Safely track loss via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("dominoes");
+
         playDominoSound('lose');
         logMove("SYSTEM", `${p2Name} EMPTIED THEIR HAND!`, true);
         alert(`${p2Name} WINS!`);

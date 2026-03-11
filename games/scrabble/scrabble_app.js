@@ -18,6 +18,7 @@ SystemUI.init({
     hudDropdowns: [
         {
             id: "sys-scrabble-mode",
+            label: "Mode",
             options: [
                 { value: "ai",      label: "🤖 vs AI"   },
                 { value: "hotseat", label: "👥 Hotseat"  },
@@ -755,6 +756,9 @@ async function checkWord(word) {
 
 // ── 13. GAME INIT ─────────────────────────────
 function initGame(mode, difficulty) {
+    // AUDIT: Safely track play count
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("scrabble");
+
     gameMode = mode;
     aiDifficulty = difficulty;
 
@@ -1005,6 +1009,16 @@ function checkGameOver() {
         ? `Both players scored ${players[0].score} points.`
         : `${winner.name} wins with ${winner.score} points!\n${loser.name}: ${loser.score} points`;
 
+    // AUDIT: Track final game result
+    if (typeof SystemStats !== 'undefined' && gameMode !== "hotseat") {
+        if (isTie) { /* Tie logic optional */ }
+        else if ((gameMode === "ai" && winner === players[0]) || (gameMode === "online" && winner.name === players[myId-1].name)) {
+            SystemStats.recordWin("scrabble", 0);
+        } else {
+            SystemStats.recordLoss("scrabble");
+        }
+    }
+
     new Audio('../../system/audio/victory.mp3').play().catch(e=>{});
     document.getElementById("game-over-modal").classList.remove("hidden");
     return true;
@@ -1021,26 +1035,26 @@ function checkGameOver() {
 
 const AI_WORDS = (
   "aa ab ad ae ag ah ai al am an ar as at aw ax ay ba be bi bo by da de do " +
-  "ea ed ef eh el em en er es et ex fa fe gi go ha he hi ho id if in is it " +
+  "ea ed ef eh el em en er es et ex fa fe fi gi go ha he hi ho id if in is it " +
   "jo ka ki la li lo ma me mi mo mu my na ne no nu ob od oe of oh oi ok om on " +
   "op or os ow ox oy pa pe pi po qi re sh si so ta te ti to ug uh um un up us " +
   "ut wo xi xu ya ye yo za " +
   "ace act add age ago aid aim air ale all amp and ant any ape apt arc are ark " +
   "arm art ash ask ate awe awl awn axe aye bad bag ban bar bat bay bed beg bet " +
-  "bid big bin bit boa bog bow box boy bud bug bun bus but bye cab can cap car " +
+  "bid big bin bit boa bog bow box boy bud bug bun bus but buy bye cab can cap car " +
   "cat cob cod cog cop cow cry cub cup cut dam day den dew die dig dim dip doe " +
   "dog dot dry dub dug duo ear eat ego elk elm emu end era eve ewe eye fad fan " +
   "far fat fax fed few fez fib fig fin fir fit fix fly foe fog for fox fry fun " +
-  "fur gab gap gas gel gem get gin gnu god got gum gun gut had ham has hat hay " +
+  "fur gab gap gas gel gem get gig gin gnu god got gum gun gut had ham has hat hay " +
   "hem her hew hey hid hip hit hob hoe hog hop hot hub hug hum hut ice ill imp " +
   "ink inn ion ire irk jab jam jar jaw jet jig job jog jot joy jug jut keg kid " +
   "kin kit lab lag lap law lay lea led leg let lid lip lit lob log lot low lug " +
-  "mad man map mar mat maw may men met mid mix mob mop mow mud mug nun oak oat " +
+  "mad man map mar mat maw may men met mew mid mix mob mod mom mop mow mud mug nun oak oat " +
   "odd ode off old opt orb ore our out owe owl own pal pan par pat paw pay pea " +
   "peg pet pie pig pin pit ply pod pop pot row rub rug rum rut rye sad sag sap " +
   "sat saw say sea set sew sir ski sky sob sod son sow spa spy sub sue sum sun " +
   "tab tan tap tar tax tee ten tie tin tip toe ton too top tow toy try tub tug " +
-  "urn use van vat vow wad wag war wax way web wed win wit woe won woo yak yam " +
+  "urn use van vat vow wad wag war was wax way web wed win wit woe won woo yak yam " +
   "yap yew zip zoo abs acre aged aims airs ales ally also alto aloe alms amps " +
   "bale ball band bane bang bank bare bark barn base bath bead beam bean bear " +
   "beat beef been beer bell belt best bill bind bite blob blow blue blur boar " +

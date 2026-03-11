@@ -353,6 +353,10 @@ function initGame() {
             }
             SystemUI.money -= config.cost;
             SystemUI.updateMoneyDisplay();
+            
+            // AUDIT: Tracking game start
+            if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("memory");
+
             SystemUI.playSound('shuffle');
             const cardSet = buildCardSet();
             window.dbUpdate(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), {
@@ -377,6 +381,10 @@ function initGame() {
 
     SystemUI.money -= config.cost;
     SystemUI.updateMoneyDisplay();
+    
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("memory");
+
     SystemUI.playSound('shuffle');
 
     cards = buildCardSet();
@@ -610,7 +618,8 @@ function syncOnlineState(data) {
                 });
             }
 
-            if (matched.every(m => m)) endGame();
+            if (matched.every(m => m)) { endGame(); return; }
+            
             updateTurnBanner();
             updatePlayerLabels();
             
@@ -678,10 +687,17 @@ function endGame() {
         if (scores[0] > scores[1]) {
             SystemUI.money += config.payout;
             SystemUI.updateMoneyDisplay();
+            
+            // AUDIT: Tracking win
+            if (typeof SystemStats !== 'undefined') SystemStats.recordWin("memory", config.payout);
+
             SystemUI.playSound('win');
             title = "You Win!";
             message = `You beat the AI ${scores[0]}-${scores[1]}! Won $${config.payout}!`;
         } else if (scores[1] > scores[0]) {
+            // AUDIT: Tracking loss
+            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("memory");
+
             SystemUI.playSound('lose');
             title = "AI Wins!";
             message = `AI beat you ${scores[1]}-${scores[0]}. Better luck next time!`;
@@ -709,6 +725,13 @@ function endGame() {
     } else {
         const iWon = (myId === 1 && scores[0] > scores[1]) || (myId === 2 && scores[1] > scores[0]);
         const isTie = scores[0] === scores[1];
+        
+        // AUDIT: Tracking win/loss online
+        if (typeof SystemStats !== 'undefined') {
+            if (iWon) SystemStats.recordWin("memory", config.payout);
+            else if (!isTie) SystemStats.recordLoss("memory");
+        }
+
         SystemUI.playSound(isTie ? 'tie' : iWon ? 'win' : 'lose');
         title = isTie ? "It's a Tie!" : iWon ? "You Win!" : "Opponent Wins!";
         message = `Final score: ${scores[0]}-${scores[1]}`;

@@ -1,66 +1,72 @@
-const SystemUI = {
-    money: parseInt(localStorage.getItem("blackjack_money")) || 5000,
-    isMuted: localStorage.getItem("casino_muted") === "true",
-    
-    audioTracks: {}, 
-    audioUnlocked: false, // Flag to track if audio has been unlocked
+/**
+ * CASINO OS - MAIN CONTROLLER (v2.0)
+ * Acts as the Event Hub and API wrapper for all games.
+ * Preserves 100% backward compatibility with V1 games.
+ */
 
-    preloadAudio: function() {
-        const basePath = "../../system/audio/";
-        this.audioTracks = {
-            chipTable: new Audio(basePath + 'chip-lay-3.ogg'),
-            chipStack: [
-                new Audio(basePath + 'chip-lay-1.ogg'),
-                new Audio(basePath + 'chip-lay-2.ogg')
-            ],
-            card: [
-                new Audio(basePath + 'card-slide-6.ogg'),
-                new Audio(basePath + 'cardPlace2.ogg')
-            ],
-            win: new Audio(basePath + 'victory.mp3'),
-            click: new Audio(basePath + 'click1.mp3'),
-            exit: new Audio(basePath + 'switch4.ogg'),
-            roulette: new Audio(basePath + 'roulette.mp3'),
-            lose: new Audio(basePath + 'lose.ogg'),
-            tie: new Audio(basePath + 'tie.ogg'),
-            shuffle: new Audio(basePath + 'shuffle.mp3')
-        };
+window.SystemUI = {
+    // ==========================================
+    // 1. EVENT SYSTEM (PUB/SUB)
+    // ==========================================
+    events: {},
+    
+    on: function(event, listener) {
+        if (!this.events[event]) this.events[event] = [];
+        this.events[event].push(listener);
+    },
+    
+    emit: function(event, data) {
+        if (this.events[event]) {
+            this.events[event].forEach(listener => listener(data));
+        }
     },
 
-    unlockAudio: function() {
-        if (this.audioUnlocked) return;
-        // Play and immediately pause a silent sound or a short click to unlock the context
-        if (this.audioTracks.click) {
-            this.audioTracks.click.volume = 0; // Mute for the unlock action
-            this.audioTracks.click.play().then(() => {
-                this.audioTracks.click.pause();
-                this.audioTracks.click.currentTime = 0;
-                this.audioTracks.click.volume = 1; // Restore volume
-                this.audioUnlocked = true;
-                console.log("Audio context unlocked.");
-            }).catch(e => console.log("Unlock failed:", e));
+    // ==========================================
+    // 2. BACKWARD COMPATIBILITY WRAPPERS
+    // ==========================================
+    
+    // Legacy games call SystemUI.money. This routes it to SystemProfile safely.
+    get money() {
+        return window.SystemProfile ? window.SystemProfile.getMoney() : parseInt(localStorage.getItem("blackjack_money")) || 5000;
+    },
+    
+    set money(val) {
+        if (window.SystemProfile) {
+            window.SystemProfile.setMoney(val);
+        } else {
+            localStorage.setItem("blackjack_money", val);
+        }
+    },
+
+    // Legacy games call SystemUI.isMuted. This routes to SystemAudio.
+    get isMuted() {
+        return window.SystemAudio ? window.SystemAudio.isMuted : localStorage.getItem("casino_muted") === "true";
+    },
+
+    set isMuted(val) {
+        if (window.SystemAudio) {
+            window.SystemAudio.isMuted = val;
+            window.SystemAudio.toggleMute(); // Keeps state synced
+        } else {
+            localStorage.setItem("casino_muted", val);
         }
     },
 
     playSound: function(type) {
-        if (this.isMuted) return;
-        
-        let sound = this.audioTracks[type];
-        if (!sound) return;
-
-        if (Array.isArray(sound)) {
-            let randomTrack = sound[Math.floor(Math.random() * sound.length)];
-            randomTrack.currentTime = 0;
-            randomTrack.play().catch(e => console.log("Audio play failed:", e));
-        } else {
-            sound.currentTime = 0;
-            sound.play().catch(e => console.log("Audio play failed:", e));
+        if (window.SystemAudio) {
+            window.SystemAudio.play(type);
         }
     },
 
-    init: function(config = {}) {
-        this.preloadAudio();
+    getPlayerName: function() {
+        return window.SystemProfile ? window.SystemProfile.getPlayerName() : (localStorage.getItem("casino_player_name") || "Player");
+    },
 
+    // ==========================================
+    // 3. CORE UI INITIALIZATION
+    // ==========================================
+
+    init: function(config = {}) {
         const dropdownsHTML = (config.hudDropdowns || []).map(d => `
             <select id="${d.id}" class="hud-dropdown" title="${d.label || ''}" autocomplete="off">
                 ${d.options.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
@@ -81,7 +87,7 @@ const SystemUI = {
                         <span id="sys-chat-badge"></span>
                     </button>
                     <button class="hud-btn" id="sys-btn-sound" title="Toggle Sound">
-                        <img src="../../system/images/icons/${this.isMuted ? 'mute' : 'sound'}.png" class="hud-icon">
+                        <img id="sys-sound-icon" src="../../system/images/icons/${this.isMuted ? 'mute' : 'sound'}.png" class="hud-icon">
                     </button>
                     <button class="hud-btn" id="sys-btn-menu" title="Menu">
                         <img src="../../system/images/icons/settings.png" class="hud-icon">
@@ -120,26 +126,28 @@ const SystemUI = {
         `;
 
         document.body.insertAdjacentHTML('afterbegin', hudHTML);
-        
-        // Add padding dynamically if not already applied
         document.body.classList.add('game-wrapper-padding');
 
         this.bindEvents();
 
         // Always default mode dropdowns to 'ai' on page load.
-        // setTimeout(0) fires AFTER the browser restores any cached select values (back-nav cache).
         setTimeout(() => {
             document.querySelectorAll('.hud-dropdown').forEach(sel => {
                 if ([...sel.options].some(o => o.value === 'ai')) sel.value = 'ai';
             });
         }, 0);
+
+        // Listen for internal profile changes to auto-update HUD
+        this.on("money_changed", (newAmount) => this.updateMoneyDisplay());
+        
+        // Listen for internal audio changes to auto-update Sound Icon
+        this.on("audio_muted_changed", (isMuted) => {
+            const iconImg = document.getElementById('sys-sound-icon');
+            if (iconImg) iconImg.src = `../../system/images/icons/${isMuted ? 'mute' : 'sound'}.png`;
+        });
     },
 
     bindEvents: function() {
-        // Attempt to unlock audio on the first click anywhere on the document
-        document.addEventListener('click', () => this.unlockAudio(), { once: true });
-        document.addEventListener('touchstart', () => this.unlockAudio(), { once: true });
-
         document.getElementById('sys-btn-home').addEventListener('click', () => {
             this.playSound('exit');
             setTimeout(() => {
@@ -148,13 +156,14 @@ const SystemUI = {
         });
 
         document.getElementById('sys-btn-sound').addEventListener('click', (e) => {
-            this.isMuted = !this.isMuted;
-            localStorage.setItem("casino_muted", this.isMuted);
-            let iconImg = e.target.tagName === 'IMG' ? e.target : e.target.querySelector('img');
-            if (iconImg) {
-                iconImg.src = `../../system/images/icons/${this.isMuted ? 'mute' : 'sound'}.png`;
+            if (window.SystemAudio) {
+                window.SystemAudio.toggleMute();
+            } else {
+                this.isMuted = !this.isMuted;
+                let iconImg = document.getElementById('sys-sound-icon');
+                if (iconImg) iconImg.src = `../../system/images/icons/${this.isMuted ? 'mute' : 'sound'}.png`;
+                if (!this.isMuted) this.playSound('click');
             }
-            if (!this.isMuted) this.playSound('click');
         });
 
         document.getElementById('sys-btn-menu').addEventListener('click', () => {
@@ -180,7 +189,6 @@ const SystemUI = {
     updateMoneyDisplay: function() {
         const moneyEl = document.getElementById("sys-money");
         if (moneyEl) moneyEl.innerText = this.money;
-        localStorage.setItem("blackjack_money", this.money);
 
         const refillBtn = document.getElementById("sys-bankrupt-refill");
         if (refillBtn) {
@@ -188,6 +196,16 @@ const SystemUI = {
             else refillBtn.classList.add("sys-hidden");
         }
     },
+
+    refillBankroll: function() {
+        this.money = 1000;
+        this.updateMoneyDisplay();
+        this.playSound('win');
+    },
+
+    // ==========================================
+    // 4. UNIVERSAL BETTING SYSTEM
+    // ==========================================
 
     setupBetting: function(containerId, options = {}) {
         const container = document.getElementById(containerId);
@@ -242,18 +260,8 @@ const SystemUI = {
         });
     },
 
-    refillBankroll: function() {
-        this.money = 1000;
-        this.updateMoneyDisplay();
-        this.playSound('win');
-    },
-
-    getPlayerName: function() {
-        return localStorage.getItem("casino_player_name") || "Player";
-    },
-
     // ==========================================
-    // V2 MULTIPLAYER LOBBY API (THE DROP-IN SYSTEM)
+    // 5. V2 MULTIPLAYER LOBBY API
     // ==========================================
     v2Lobby: {
         callbacks: {},
@@ -400,7 +408,7 @@ const SystemUI = {
     },
 
     // ==========================================
-    // IN-GAME CHAT
+    // 6. IN-GAME CHAT
     // ==========================================
     _chatRoomId: null,
     _chatPlayerName: null,
@@ -533,6 +541,10 @@ const SystemUI = {
         }
     },
 
+    // ==========================================
+    // 7. TABLE CHIP RENDERING
+    // ==========================================
+
     renderTableStacks: function(amount, containerId) {
         const container = document.getElementById(containerId);
         if(!container) return;
@@ -619,7 +631,6 @@ if (!document.getElementById("multiplayer-lobby")) {
     `;
     document.body.insertAdjacentHTML('beforeend', lobbyHTML);
 
-    // Copy button
     document.getElementById('btn-copy-code').addEventListener('click', function() {
         const code = document.getElementById('host-room-id').textContent.trim();
         if (!code) return;
@@ -628,7 +639,6 @@ if (!document.getElementById("multiplayer-lobby")) {
         setTimeout(() => { this.textContent = '📋 COPY'; }, 2000);
     });
 
-    // Cooldown on CREATE NEW ROOM
     document.getElementById('btn-create-room').addEventListener('click', function() {
         this.disabled = true;
         this.textContent = '⏳ CREATING...';
@@ -663,6 +673,7 @@ if (!document.getElementById("sys-chat-panel")) {
         if (e.key === 'Enter') { e.preventDefault(); SystemUI._sendMessage(); }
     });
 }
+
 const isMobileDevice = window.innerWidth <= 800 || /Mobi|Android/i.test(navigator.userAgent);
 if (isMobileDevice) {
     const goFullscreen = () => {
@@ -679,3 +690,56 @@ if (isMobileDevice) {
     document.addEventListener('touchstart', goFullscreen, { passive: true });
     document.addEventListener('click', goFullscreen, { passive: true });
 }
+
+// ==========================================
+// MODULE WIRING
+// The system modules (system_betting.js, system_lobby.js, etc.) load BEFORE
+// this file in every game page's <script> order. Their own compatibility
+// overrides all ran as no-ops because window.SystemUI didn't exist yet when
+// they executed. This block is the fix: it runs after window.SystemUI is
+// fully defined and wires each loaded module into SystemUI so the rest of
+// the codebase (games, hub, etc.) works through the same stable API.
+// ==========================================
+(function wireSystemModules() {
+    // -- Betting module --
+    if (window.SystemBetting) {
+        window.SystemUI.setupBetting   = function(id, opts) { window.SystemBetting.setup(id, opts); };
+        window.SystemUI.updateBetDisplay = function(amt)   { window.SystemBetting.updateDisplay(); };
+        window.SystemUI.enableBetting  = function(en)      { window.SystemBetting.enable(en); };
+    }
+
+    // -- Lobby module --
+    if (window.SystemLobby) {
+        window.SystemUI.v2Lobby = window.SystemLobby;
+    }
+
+    // -- Chat module --
+    if (window.SystemChat) {
+        window.SystemUI.startChat   = function(roomId, name) { window.SystemChat.startChat(roomId, name); };
+        window.SystemUI.stopChat    = function()             { window.SystemChat.stopChat(); };
+        window.SystemUI.openChat    = function()             { window.SystemChat.openChat(); };
+        window.SystemUI.closeChat   = function()             { window.SystemChat.closeChat(); };
+        window.SystemUI._sendMessage = function()            { window.SystemChat.sendMessage(); };
+        // Keep the _chatOpen flag in sync between SystemUI and SystemChat
+        Object.defineProperty(window.SystemUI, '_chatOpen', {
+            get: function() { return window.SystemChat.isOpen; },
+            set: function(val) { window.SystemChat.isOpen = val; },
+            configurable: true
+        });
+    }
+
+    // -- Stats module --
+    if (window.SystemStats) {
+        window.SystemUI.recordGameStart = function(id) { window.SystemStats.recordGameStart(id); };
+        window.SystemUI.recordWin       = function(id) { window.SystemStats.recordWin(id); };
+        window.SystemUI.recordLoss      = function(id) { window.SystemStats.recordLoss(id); };
+        window.SystemUI.recordTie       = function(id) { window.SystemStats.recordTie(id); };
+        window.SystemUI.getStats        = function(id) { return window.SystemStats.getStats(id); };
+    }
+
+    // -- Achievements module --
+    if (window.SystemAchievements) {
+        window.SystemUI.unlockAchievement = function(id) { window.SystemAchievements.unlock(id); };
+        window.SystemUI.getAchievements   = function()   { return window.SystemAchievements.getUnlocked(); };
+    }
+})();

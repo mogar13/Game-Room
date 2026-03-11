@@ -449,9 +449,13 @@ function endGame(winner, winCells) {
         if (winner === 1) {
             statusDisplay.textContent = "YOU WIN! 🏆";
             SystemUI.playSound("win");
+            // AUDIT: Safely track wins
+            if (typeof SystemStats !== 'undefined') SystemStats.recordWin("connect4", 0);
         } else {
             statusDisplay.textContent = "AI WINS!";
             SystemUI.playSound("lose");
+            // AUDIT: Safely track losses
+            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("connect4");
         }
     } else if (gameMode === "local") {
         statusDisplay.textContent = `PLAYER ${winner} WINS! 🏆`;
@@ -460,10 +464,14 @@ function endGame(winner, winCells) {
         if (winner === myPlayer) {
             statusDisplay.textContent = "YOU WIN! 🏆";
             SystemUI.playSound("win");
+            // AUDIT: Safely track wins
+            if (typeof SystemStats !== 'undefined') SystemStats.recordWin("connect4", 0);
         } else {
             const oppName = seats[winner - 1] ? seats[winner - 1].name : "OPPONENT";
             statusDisplay.textContent = `${oppName} WINS!`;
             SystemUI.playSound("lose");
+            // AUDIT: Safely track losses
+            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("connect4");
         }
     }
 }
@@ -474,6 +482,9 @@ function initGame() {
         statusDisplay.textContent = "WAITING FOR HOST TO RESTART";
         return; 
     }
+
+    // AUDIT: Safely track play count via OS 2.0
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("connect4");
 
     grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
     currentTurn = 1;

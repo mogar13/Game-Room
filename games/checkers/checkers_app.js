@@ -656,6 +656,9 @@ function startGame() {
         SystemUI.money -= BUY_IN;
         SystemUI.updateMoneyDisplay();
         SystemUI.playSound('chipTable');
+        
+        // AUDIT: Safely track play count via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("checkers");
     }
 
     gameActive     = true;
@@ -723,11 +726,23 @@ function endGame(winner) {
         msg   = playerWon ? `You win $${WIN_PAY}!` : 'Better luck next time.';
         if (playerWon) { SystemUI.money += WIN_PAY; SystemUI.updateMoneyDisplay(); }
         SystemUI.playSound(playerWon ? 'win' : 'lose');
+        
+        // AUDIT: Safely track online wins/losses
+        if (typeof SystemStats !== 'undefined') {
+            if (playerWon) SystemStats.recordWin("checkers", WIN_PAY);
+            else SystemStats.recordLoss("checkers");
+        }
     } else {
         title = playerWon ? '🏆 You Win!' : '💀 You Lose';
         msg   = playerWon ? `You win $${WIN_PAY}!` : 'The AI won this round.';
         if (playerWon) { SystemUI.money += WIN_PAY; SystemUI.updateMoneyDisplay(); }
         SystemUI.playSound(playerWon ? 'win' : 'lose');
+        
+        // AUDIT: Safely track AI wins/losses
+        if (typeof SystemStats !== 'undefined') {
+            if (playerWon) SystemStats.recordWin("checkers", WIN_PAY);
+            else SystemStats.recordLoss("checkers");
+        }
     }
 
     showToast(title, msg);

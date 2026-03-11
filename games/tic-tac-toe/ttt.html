@@ -16,7 +16,7 @@
     
     const firebaseConfig = {
       apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
-      databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com", // <-- DON'T FORGET THIS LINE!
+      databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com", 
       authDomain: "game-room-26e34.firebaseapp.com",
       projectId: "game-room-26e34",
       storageBucket: "game-room-26e34.firebasestorage.app",
@@ -27,7 +27,6 @@
     const app = initializeApp(firebaseConfig);
     const database = getDatabase(app);
     
-    // Attach database tools to the window so our ttt_app.js file can use them!
     window.db = database;
     window.dbRef = ref;
     window.dbSet = set;
@@ -62,6 +61,13 @@
       </div>
   </div>
 
+  <script src="../../system/system_profile.js"></script>
+  <script src="../../system/system_audio.js"></script>
+  <script src="../../system/system_stats.js"></script>
+  <script src="../../system/system_achievements.js"></script>
+  <script src="../../system/system_betting.js"></script>
+  <script src="../../system/system_lobby.js"></script>
+  <script src="../../system/system_chat.js"></script>
   <script src="../../system/system_ui.js"></script> 
   <script src="ttt_app.js"></script>
 </body>

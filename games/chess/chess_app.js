@@ -524,6 +524,9 @@ function newGame() {
 
     startTimerFor("white");
     
+    // AUDIT: Safely track play count via OS 2.0
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("chess");
+    
     if (gameMode === "online" && isHost) {
         pushState(); 
     }
@@ -1056,6 +1059,12 @@ function showResult(winner, reason) {
         if (!winner) playSFX(sfxTie);
         else if (iWon || gameMode==="local") playSFX(sfxWin);
         else playSFX(sfxLose);
+
+        // AUDIT: Safely track wins/losses via OS 2.0
+        if (typeof SystemStats !== 'undefined' && winner && gameMode !== "local") {
+            if (iWon) SystemStats.recordWin("chess", 0);
+            else SystemStats.recordLoss("chess");
+        }
 
         document.getElementById("game-over-modal").classList.remove("hidden");
     }, 900);

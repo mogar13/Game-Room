@@ -301,7 +301,7 @@ const QUESTIONS = [
     {
         q: "Name a reason someone might call in sick to work.",
         answers: [
-            { text: "Hangover",         pts: 32, aliases: ["drunk","drinking","hung over","party too hard"] },
+            { text: " Hangover",         pts: 32, aliases: ["drunk","drinking","hung over","party too hard"] },
             { text: "Just tired",       pts: 24, aliases: ["tired","exhausted","fatigue","sleepy","too tired","didn't want to go"] },
             { text: "Actually sick",    pts: 20, aliases: ["sick","ill","flu","cold","fever","cough"] },
             { text: "Mental health day",pts: 14, aliases: ["mental health","stressed","anxiety","depression","burned out"] },
@@ -703,6 +703,9 @@ function resetGame() {
 }
 
 function startGame() {
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("feud");
+
     currentRound  = 0;
     scores        = { p1: 0, p2: 0 };
     usedQuestions = [];
@@ -1083,6 +1086,12 @@ function endGame() {
 
     SystemUI.playSound(winner === 1 ? 'win' : 'lose');
 
+    // AUDIT: Tracking win/loss
+    if (typeof SystemStats !== 'undefined') {
+        if (winner === 1) SystemStats.recordWin("feud", 0);
+        else if (winner === 2) SystemStats.recordLoss("feud");
+    }
+
     if (gameMode === "online" && isHost && window.db) {
         window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
             status: "finished", winner: wName
@@ -1090,7 +1099,7 @@ function endGame() {
     }
 }
 
-// ── 8. AI BRAIN ──────────────────────────────
+// ── 17. AI BRAIN ──────────────────────────────
 function scheduleAiGuess(player) {
     if (gamePhase !== "playing" || !isBotTurn(player)) return;
     if (aiTimer) clearTimeout(aiTimer);

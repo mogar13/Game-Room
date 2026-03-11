@@ -221,6 +221,10 @@ document.getElementById("roll-btn").addEventListener("click", () => {
         if (SystemUI.money < BUY_IN) { showToast("Error", "Not enough cash!"); return; }
         SystemUI.money -= BUY_IN;
         SystemUI.updateMoneyDisplay();
+        
+        // 2.0 STATS INTEGRATION - Wrapped for safety
+        if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("backgammon");
+        
         startGameUI();
     } else {
         if (gameMode === "online" && currentTurn !== myColor) return;
@@ -453,6 +457,13 @@ function executeMove(fromIdx, toIdx, dieUsed) {
             SystemUI.playSound(isMyWin ? 'win' : 'lose');
             showToast(`${currentTurn.toUpperCase()} WINS!`, `They bore off all 15 checkers.`);
             if (isMyWin && gameMode !== "ai") { SystemUI.money += (BUY_IN * 2); SystemUI.updateMoneyDisplay(); }
+            
+            // 2.0 STATS INTEGRATION - Wrapped for safety
+            if (typeof SystemStats !== 'undefined') {
+                if (isMyWin) SystemStats.recordWin("backgammon", gameMode !== "ai" ? BUY_IN * 2 : 0);
+                else SystemStats.recordLoss("backgammon");
+            }
+            
             resetGame();
         }, 600);
         return;

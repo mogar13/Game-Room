@@ -130,6 +130,10 @@ document.getElementById("btn-paytable").addEventListener("click", () => {
 
 document.getElementById("btn-spin").addEventListener("click", () => {
     if (isSpinning || (baseBet * activeLines) > SystemUI.money) return;
+    
+    // AUDIT: Safely track play count via OS 2.0
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("slots");
+
     clearLinePreview();
     
     SystemUI.money -= (baseBet * activeLines);
@@ -219,6 +223,12 @@ function evaluateMatrix(matrix) {
     if (totalWin > 0) {
         SystemUI.playSound('win'); // OS Win Sound!
         highlightWinners(winningCoords);
+        
+        // AUDIT: Safely track win via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("slots", totalWin);
+    } else {
+        // AUDIT: Safely track loss via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("slots");
     }
 
     SystemUI.money += totalWin;

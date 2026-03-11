@@ -407,12 +407,24 @@ function checkResult(isFromNetwork) {
             let winner = currentPlayer === "X" ? "O" : "X"; 
             statusDisplay.innerText = winner === mySymbol ? "YOU WIN!" : "OPPONENT WINS!";
             if(!isFromNetwork) SystemUI.playSound(winner === mySymbol ? 'win' : 'lose');
+
+            // AUDIT: Track online win/loss
+            if (typeof SystemStats !== 'undefined') {
+                if (winner === mySymbol) SystemStats.recordWin("ttt", 0);
+                else SystemStats.recordLoss("ttt");
+            }
         } else if (gameMode === "ai" && currentPlayer === "O") {
             statusDisplay.innerText = "Computer Wins!";
             if(!isFromNetwork) SystemUI.playSound('lose');
+
+            // AUDIT: Track AI loss
+            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("ttt");
         } else {
             statusDisplay.innerText = `Player ${currentPlayer} Wins!`;
             if(!isFromNetwork) SystemUI.playSound('win');
+
+            // AUDIT: Track AI win
+            if (typeof SystemStats !== 'undefined' && gameMode === "ai") SystemStats.recordWin("ttt", 0);
         }
         gameActive = false; return;
     }
@@ -434,6 +446,9 @@ function checkResult(isFromNetwork) {
 document.getElementById("restart-btn")?.addEventListener("click", restartGame);
 
 function restartGame() {
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("ttt");
+
     SystemUI.playSound('shuffle'); 
     isThinking = false;
 

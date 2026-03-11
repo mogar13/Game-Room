@@ -129,6 +129,9 @@ document.getElementById("toast-modal").addEventListener("click", () => {
 document.getElementById("spin-btn").addEventListener("click", () => {
     if (isSpinning || currentTotalBet === 0) return;
     
+    // AUDIT: Tracking play count
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("roulette");
+
     isSpinning = true;
     updateUI();
     
@@ -175,8 +178,14 @@ function determineWinners(winningNum) {
         SystemUI.playSound('win');
         showToast(`Number ${winningNum}!`, `You won $${totalWin}!`);
         SystemUI.money += totalWin;
+        
+        // AUDIT: Tracking win
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("roulette", totalWin);
     } else {
         showToast(`Number ${winningNum}`, `Bank takes the board.`);
+        
+        // AUDIT: Tracking loss
+        if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("roulette");
     }
 
     bets = {};

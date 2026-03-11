@@ -225,6 +225,8 @@ document.getElementById("deal-btn").addEventListener("click", () => {
   SystemUI.money -= currentBet; 
   SystemUI.updateMoneyDisplay();
   
+  if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("blackjack");
+  
   isGameOver = false;
   updateBetUI(); 
   SystemUI.playSound('shuffle');
@@ -331,6 +333,7 @@ document.getElementById("insurance-btn").addEventListener("click", () => {
     SystemUI.money += (insBet * 3); 
     SystemUI.updateMoneyDisplay();
     SystemUI.playSound('win');
+    if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", insBet * 3);
     showToast("Insurance Paid!", `Dealer has Blackjack. You won $${insBet * 2}.`);
     setTimeout(handleStand, 2500);
   } else {
@@ -356,15 +359,19 @@ function determineWinner() {
   if (pScore > 21) {
     title = "Busted!"; message = `You went over 21. Lost $${currentBet}.`;
     winStreak = 0; SystemUI.playSound('lose');
+    if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("blackjack");
   } else if (playerHasBlackjack && !dealerHasBlackjack) {
     title = "Blackjack!"; message = `Natural 21! Won $${currentBet * 1.5}!`;
     SystemUI.money += (currentBet * 2.5); winStreak++; SystemUI.playSound('win');
+    if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", currentBet * 2.5);
   } else if (dScore > 21 || pScore > dScore) {
     title = "You Win!"; message = `Beat the dealer! Won $${currentBet * 2}!`;
     SystemUI.money += (currentBet * 2); winStreak++; SystemUI.playSound('win');
+    if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", currentBet * 2);
   } else if (dScore > pScore) {
     title = "Dealer Wins!"; message = `Dealer had a higher score. Lost $${currentBet}.`;
     winStreak = 0; SystemUI.playSound('lose');
+    if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("blackjack");
   } else {
     title = "Push (Tie)!"; message = "It's a tie. Bet returned.";
     SystemUI.money += currentBet; winStreak = 0; SystemUI.playSound('tie');

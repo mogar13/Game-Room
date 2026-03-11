@@ -150,7 +150,7 @@ function getAdjacentRooms(r, c) {
     const dirs = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
     const rooms = [];
     for (const [nr, nc] of dirs) {
-        if (nr < 0 || nr >= 24 || nc < 0 || nc >= 24) continue;
+        if (nr < 0 || nr >= 24 || nc < 0 || nr >= 24) continue;
         const t = BOARD_MAP[nr][nc];
         if (isRoomId(t) && !rooms.includes(t)) rooms.push(t);
     }
@@ -552,6 +552,9 @@ function initGame(count) {
     updateActionButtons();
 
     document.getElementById("start-screen").classList.add("hidden");
+
+    // AUDIT: Safely track play count via OS 2.0
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("clue");
 }
 
 function dealCards() {
@@ -1148,6 +1151,15 @@ function endGame(winnerIdx) {
         window.dbUpdate(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), {
             status: "finished", winner: winnerIdx
         });
+    }
+
+    // AUDIT: Safely track wins/losses via OS 2.0
+    if (typeof SystemStats !== 'undefined') {
+        if (winnerIdx === myPlayerIndex) {
+            SystemStats.recordWin("clue", 0);
+        } else {
+            SystemStats.recordLoss("clue");
+        }
     }
 }
 

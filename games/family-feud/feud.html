@@ -14,7 +14,6 @@
 
 <div id="game-container">
 
-    <!-- ── SCOREBOARD ─────────────────────── -->
     <div id="scoreboard">
         <div class="team-block" id="team1-block">
             <div class="team-name" id="t1-name">PLAYER</div>
@@ -30,7 +29,6 @@
         </div>
     </div>
 
-    <!-- ── STATUS ROW: strikes + phase tag ── -->
     <div id="status-row">
         <div id="strikes-zone">
             <div class="strike-box" id="s1"></div>
@@ -40,17 +38,14 @@
         <div id="phase-tag">FACE-OFF</div>
     </div>
 
-    <!-- ── QUESTION BANNER ────────────────── -->
     <div id="question-wrap">
         <div id="question-label">SURVEY SAYS...</div>
         <div id="question-text">Ready to play? Press Start Game!</div>
     </div>
 
-    <!-- ── ANSWER BOARD ───────────────────── -->
     <div id="answer-board">
         <div id="board-frame">
             <div id="tiles-grid">
-                <!-- 8 tiles — JS populates answer text, hides unused tiles -->
                 <div class="answer-tile" id="tile-0">
                     <div class="tile-inner">
                         <div class="tile-front"><span class="t-num">1</span></div>
@@ -103,7 +98,6 @@
         </div>
     </div>
 
-    <!-- ── BUZZ ZONE ──────────────────────── -->
     <div id="buzz-zone" class="hidden">
         <button id="buzz-btn">
             <span class="buzz-icon">🔔</span>
@@ -112,7 +106,6 @@
         <div id="buzz-hint">Press <kbd>SPACE</kbd> to buzz in</div>
     </div>
 
-    <!-- ── GUESS ZONE ─────────────────────── -->
     <div id="guess-zone" class="hidden">
         <div id="active-team-banner">TEAM 1 IS PLAYING</div>
         <div id="guess-row">
@@ -125,19 +118,14 @@
         </div>
     </div>
 
-    <!-- ── START BUTTON ───────────────────── -->
     <button id="start-btn">START GAME</button>
 
-    <!-- ── FULL-SCREEN STRIKE FLASH ────────── -->
     <div id="strike-flash">✗</div>
 
-    <!-- ── WRONG ANSWER FLASH ─────────────── -->
     <div id="wrong-flash">WRONG!</div>
 
-    <!-- ── CORRECT ANSWER FLASH ───────────── -->
     <div id="correct-flash">✓</div>
 
-    <!-- ── GAME OVER MODAL ─────────────────── -->
     <div id="game-over-modal" class="hidden">
         <div class="game-over-box">
             <div id="game-over-emoji">🏆</div>
@@ -148,11 +136,16 @@
         </div>
     </div>
 
-</div><!-- /#game-container -->
-
-<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+</div><script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
-<script src="../../system/player_name.js"></script>
+
+<script src="../../system/system_profile.js"></script>
+<script src="../../system/system_audio.js"></script>
+<script src="../../system/system_stats.js"></script>
+<script src="../../system/system_achievements.js"></script>
+<script src="../../system/system_betting.js"></script>
+<script src="../../system/system_lobby.js"></script>
+<script src="../../system/system_chat.js"></script>
 <script src="../../system/system_ui.js"></script>
 <script src="feud_app.js"></script>
 </body>

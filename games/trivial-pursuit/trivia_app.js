@@ -81,29 +81,29 @@ document.getElementById("sys-trivia-qs").addEventListener("change", e => {
  * HOW OPENTDB WORKS:
  *
  * Step 1 — Request a session token:
- *   GET https://opentdb.com/api_token.php?command=request
- *   → Returns { token: "abc123..." }
- *   The token tracks which questions you've seen so you never get a repeat.
+ * GET https://opentdb.com/api_token.php?command=request
+ * → Returns { token: "abc123..." }
+ * The token tracks which questions you've seen so you never get a repeat.
  *
  * Step 2 — Fetch questions using that token:
- *   GET https://opentdb.com/api.php?amount=10&token=TOKEN
- *   → Returns { response_code: 0, results: [...] }
+ * GET https://opentdb.com/api.php?amount=10&token=TOKEN
+ * → Returns { response_code: 0, results: [...] }
  *
  * Response codes:
- *   0 = Success
- *   1 = Not enough questions for query
- *   2 = Invalid parameter
- *   3 = Token not found (reset and retry)
- *   4 = Token exhausted (all questions seen — reset token)
+ * 0 = Success
+ * 1 = Not enough questions for query
+ * 2 = Invalid parameter
+ * 3 = Token not found (reset and retry)
+ * 4 = Token exhausted (all questions seen — reset token)
  *
  * Each question object:
  * {
- *   category:          "Science & Nature",
- *   type:              "multiple" | "boolean",
- *   difficulty:        "easy" | "medium" | "hard",
- *   question:          "HTML-encoded question string",
- *   correct_answer:    "HTML-encoded correct answer",
- *   incorrect_answers: ["HTML-encoded wrong", ...]
+ * category:          "Science & Nature",
+ * type:              "multiple" | "boolean",
+ * difficulty:        "easy" | "medium" | "hard",
+ * question:          "HTML-encoded question string",
+ * correct_answer:    "HTML-encoded correct answer",
+ * incorrect_answers: ["HTML-encoded wrong", ...]
  * }
  *
  * IMPORTANT: All strings are HTML-encoded (e.g. &amp; &#039; &quot;)
@@ -202,9 +202,9 @@ async function fetchQuestions(amount) {
 // ── 3. SCORING ───────────────────────────────
 /*
  * Points by difficulty:
- *   easy   = 100 pts
- *   medium = 200 pts
- *   hard   = 300 pts
+ * easy   = 100 pts
+ * medium = 200 pts
+ * hard   = 300 pts
  *
  * Time bonus: up to +100 pts based on how quickly you answered.
  * timeBonus = Math.floor((timeLeft / TIME_LIMIT) * 100)
@@ -469,6 +469,9 @@ function showNextOverlay(correct, correctAnswer, pts, scoringPlayer) {
 
 // ── 8. GAME FLOW ─────────────────────────────
 async function startGame() {
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("trivia");
+
     // Hide start screen, show loader
     document.getElementById("start-screen").classList.add("hidden");
     document.getElementById("loading-screen").classList.remove("hidden");
@@ -622,15 +625,15 @@ function resetAnswerButtons() {
  * Two independent axes control the AI opponent:
  *
  * AI DIFFICULTY (set by the player on the start screen):
- *   Controls how fast the AI buzzes in AND how often it gets things right.
- *   "Easy"   → slow (10–18 s) and poor accuracy — you have time to think
- *   "Medium" → moderate (6–13 s) and reasonable accuracy — competitive
- *   "Hard"   → fast (3–7 s) and sharp accuracy — you must read quickly
+ * Controls how fast the AI buzzes in AND how often it gets things right.
+ * "Easy"   → slow (10–18 s) and poor accuracy — you have time to think
+ * "Medium" → moderate (6–13 s) and reasonable accuracy — competitive
+ * "Hard"   → fast (3–7 s) and sharp accuracy — you must read quickly
  *
  * QUESTION DIFFICULTY (easy / medium / hard from OpenTDB):
- *   Applies an additional accuracy penalty so the AI struggles more on
- *   hard questions regardless of its difficulty setting — this keeps
- *   hard questions feeling genuinely harder.
+ * Applies an additional accuracy penalty so the AI struggles more on
+ * hard questions regardless of its difficulty setting — this keeps
+ * hard questions feeling genuinely harder.
  *
  * Crucially, the AI delay is always LESS than TIME_LIMIT (20 s) so the
  * AI fires before the timeout.  On Easy AI the window is 2–10 s after
@@ -745,6 +748,17 @@ function endGame() {
 
     document.getElementById("game-over-modal").classList.remove("hidden");
     SystemUI.playSound(winner === 1 ? 'win' : 'lose');
+
+    // AUDIT: Tracking win/loss
+    if (typeof SystemStats !== 'undefined' && gameMode !== "hotseat") {
+        if (winner !== 0) {
+            if ((gameMode === "ai" && winner === 1) || (gameMode === "online" && winner === myId)) {
+                SystemStats.recordWin("trivia", 0);
+            } else {
+                SystemStats.recordLoss("trivia");
+            }
+        }
+    }
 
     if (gameMode === "online") {
         window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {

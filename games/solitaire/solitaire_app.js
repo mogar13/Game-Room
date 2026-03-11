@@ -152,6 +152,11 @@ function buildDeck() {
 }
 
 function resetGame() {
+    // AUDIT: Safely track loss if restarting an active game
+    if (isPlaying && typeof SystemStats !== 'undefined') {
+        SystemStats.recordLoss("solitaire");
+    }
+
     if(timerInterval) clearInterval(timerInterval);
     timeElapsed = 0; moves = 0; isPlaying = false;
     historyStack = [];
@@ -169,6 +174,9 @@ function resetGame() {
 document.getElementById("restart-btn").addEventListener("click", resetGame);
 
 document.getElementById("deal-btn").addEventListener("click", () => {
+    // AUDIT: Safely track play count via OS 2.0
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("solitaire");
+
     playSFX(sfxShuffle);
     buildDeck();
     document.getElementById("deal-btn").classList.add("hidden");
@@ -521,6 +529,9 @@ function autoFlipTopCard(colIndex) {
 
 function checkWinCondition() {
     if (foundations.every(f => f.length === 13)) {
+        // AUDIT: Safely track win via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("solitaire", 0);
+
         if(timerInterval) clearInterval(timerInterval);
         setTimeout(() => {
             playSFX(sfxWin);

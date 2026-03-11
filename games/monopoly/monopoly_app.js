@@ -1245,6 +1245,15 @@ function endGame(winner) {
         `${p.bankrupt ? "💀" : "✓"} ${p.name}: $${p.money.toLocaleString()}`
     ).join("<br>");
     document.getElementById("gameover-modal").classList.remove("hidden");
+
+    // AUDIT: Tracking final game result
+    if (typeof SystemStats !== 'undefined' && winner) {
+        if (winner.id === 1) { // Assuming player is always id 1 in local AI mode
+            SystemStats.recordWin("monopoly", winner.money);
+        } else {
+            SystemStats.recordLoss("monopoly");
+        }
+    }
 }
 
 async function aiDoTurn(player) {
@@ -1294,6 +1303,9 @@ function aiDecideBuy(player, sid) {
 }
 
 function startGame() {
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("monopoly");
+
     phase = "idle"; doublesRolled = 0; turnIdx = 0;
     gameLog = []; chanceIdx = 0; chestIdx = 0;
     bankHouses = 32; bankHotels = 12;
@@ -1690,3 +1702,5 @@ function syncOnlineState(stateJson) {
         }
     } catch (e) { console.error("Sync error:", e); }
 }
+
+resetGame();

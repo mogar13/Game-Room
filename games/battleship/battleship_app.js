@@ -43,48 +43,38 @@ function playCombatSound(type) {
     snd.play().catch(e => console.log("Audio failed:", e));
 }
 
-// Sync dropdowns after init
+// Sync state after SystemUI's own setTimeout(0) has reset dropdowns to 'ai'
 setTimeout(() => {
-    const modeEl = document.getElementById("sys-bs-mode");
+    document.getElementById("sys-bs-mode").value = gameMode;
+    document.getElementById("sys-bs-diff").value = aiDifficulty;
+
+    document.getElementById("sys-bs-diff").style.display = gameMode === "ai" ? "" : "none";
+}, 50);
+
+document.getElementById("sys-bs-mode").addEventListener("change", function(e) {
+    gameMode = e.target.value;
+    localStorage.setItem("bs_mode", gameMode);
+    document.getElementById("sys-modal").classList.add("sys-hidden");
+    
     const diffEl = document.getElementById("sys-bs-diff");
+    if (diffEl) diffEl.style.display = gameMode === "ai" ? "" : "none";
     
-    if (modeEl) {
-        modeEl.value = gameMode;
-        modeEl.addEventListener("change", (e) => {
-            gameMode = e.target.value;
-            localStorage.setItem("bs_mode", gameMode);
-            document.getElementById("sys-modal").classList.add("sys-hidden");
-            syncDiffVisibility();
-            
-            if (gameMode === "online") {
-                SystemUI.v2Lobby.show();
-            } else {
-                SystemUI.v2Lobby.hide();
-                SystemUI.stopChat();
-                chatStarted = false;
-                myId = 1; isHost = true;
-                if (roomListener) { roomListener(); roomListener = null; }
-                resetGame();
-            }
-        });
+    if (gameMode === "online") {
+        SystemUI.v2Lobby.show();
+    } else {
+        SystemUI.v2Lobby.hide();
+        SystemUI.stopChat();
+        chatStarted = false;
+        myId = 1; isHost = true;
+        if (roomListener) { roomListener(); roomListener = null; }
+        resetGame();
     }
+});
 
-    if (diffEl) {
-        diffEl.value = aiDifficulty;
-        diffEl.addEventListener("change", (e) => {
-            aiDifficulty = e.target.value;
-            localStorage.setItem("bs_diff", aiDifficulty);
-        });
-    }
-    
-    syncDiffVisibility();
-}, 10);
-
-function syncDiffVisibility() {
-    const wrap = document.getElementById("sys-bs-diff")?.closest(".hud-dropdown-wrap") ||
-                 document.getElementById("sys-bs-diff")?.parentElement;
-    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
-}
+document.getElementById("sys-bs-diff").addEventListener("change", function(e) {
+    aiDifficulty = e.target.value;
+    localStorage.setItem("bs_diff", aiDifficulty);
+});
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
     if(confirm("Wipe the board and restart the game?")) {
@@ -357,6 +347,10 @@ document.getElementById("fire-btn").addEventListener("click", () => {
         rollBtn.disabled = true;
     } else {
         gameState = "playing";
+        
+        // AUDIT: Safely track play count via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("battleship");
+        
         autoPlaceShips(opponentBoard, false); 
         document.getElementById("status-display").innerText = "BATTLE STATIONS!";
         document.getElementById("ship-selector").classList.add("hidden");
@@ -445,9 +439,17 @@ function checkWin() {
     const statusText = document.getElementById("status-display");
     if (oRem === 0 && gameState === "playing") {
         SystemUI.playSound('win'); statusText.innerText = "VICTORY! ENEMY FLEET SUNK!";
+        
+        // AUDIT: Safely track wins via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("battleship", 0);
+        
         gameState = "finished"; updateVisuals();
     } else if (pRem === 0 && gameState === "playing") {
         SystemUI.playSound('lose'); statusText.innerText = "DEFEAT! YOUR FLEET IS GONE!";
+        
+        // AUDIT: Safely track losses via OS 2.0
+        if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("battleship");
+        
         gameState = "finished"; updateVisuals();
     }
 }

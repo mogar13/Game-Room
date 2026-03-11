@@ -207,6 +207,9 @@ function generateId() {
 function startGame() {
     if (gameMode === "online" && !isHost) return; 
     
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("uno");
+
     playCustomSound('draw');
     
     document.getElementById("start-game-btn").classList.add("hidden");
@@ -540,6 +543,9 @@ function handleActionCard(card, player) {
         logMove("SYSTEM", `${p1Name} WINS!`, true); 
         showResultModal("🎉 YOU WIN!", "#2ecc71");
         
+        // AUDIT: Tracking win
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("uno", 0);
+        
         if (gameMode === 'online' && window.db) {
             window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 
         }
@@ -550,6 +556,9 @@ function handleActionCard(card, player) {
         playCustomSound('lose'); 
         logMove("SYSTEM", `${p2Name} WINS!`, true); 
         showResultModal(`😞 ${p2Name} WINS!`, "#e74c3c");
+        
+        // AUDIT: Tracking loss
+        if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("uno");
         
         if (gameMode === 'online' && window.db) {
             window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 

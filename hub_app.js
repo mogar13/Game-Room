@@ -14,54 +14,51 @@ document.querySelectorAll('.hub-interactive').forEach(el => {
     el.addEventListener('click', () => playHubSound('click'));
 });
 
-// --- 2. PROFILE BANNER & DAILY BONUS ---
+// --- 2. PROFILE BANNER & DAILY BONUS (REFACTORED FOR CASINO OS 2.0) ---
 const bonusBtn = document.getElementById("daily-bonus-btn");
-let bonusTimerInterval;
 
-function updateBonusButton() {
-    const lastClaim = localStorage.getItem("last_bonus_claim");
-    const now = Date.now();
-    const cooldown = 24 * 60 * 60 * 1000; // 24 hours in ms
+function updateBonusUI() {
+    // Failsafe in case modules aren't loaded
+    if (!window.SystemProfile || !window.SystemRewards) return;
 
-    if (lastClaim && (now - parseInt(lastClaim)) < cooldown) {
+    // 1. Sync the HUD securely through the Profile API
+    document.getElementById("display-player-name").innerText = SystemProfile.getPlayerName();
+    document.getElementById("display-player-money").innerText = SystemProfile.getMoney();
+
+    // 2. Sync the Bonus Button state with the Rewards API
+    const todayStr = SystemRewards.getTodayString();
+    if (SystemRewards.data.lastClaim === todayStr) {
         bonusBtn.disabled = true;
-        const timeLeft = cooldown - (now - parseInt(lastClaim));
-        
-        const hours = Math.floor(timeLeft / (1000 * 60 * 60));
-        const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-        bonusBtn.innerText = `Next in ${hours}h ${minutes}m`;
-
-        if(!bonusTimerInterval) {
-            bonusTimerInterval = setInterval(updateBonusButton, 60000);
-        }
+        bonusBtn.innerText = "Claimed Today";
+        bonusBtn.style.background = "#444";
+        bonusBtn.style.color = "#888";
     } else {
         bonusBtn.disabled = false;
-        bonusBtn.innerText = "Claim +$1,000";
-        clearInterval(bonusTimerInterval);
-        bonusTimerInterval = null;
+        bonusBtn.innerText = "Claim Daily Bonus";
+        bonusBtn.style.background = "#2ecc71";
+        bonusBtn.style.color = "#000";
     }
 }
 
+// Make globally available so system_rewards.js can trigger UI updates after claiming
+window.updateBonusButton = updateBonusUI;
+
 document.addEventListener("DOMContentLoaded", () => {
-    const pName = localStorage.getItem("casino_player_name") || "Player";
-    const pMoney = localStorage.getItem("blackjack_money") || "5000";
-    document.getElementById("display-player-name").innerText = pName;
-    document.getElementById("display-player-money").innerText = pMoney;
-    updateBonusButton();
+    updateBonusUI();
+    
+    // If the Event Emitter is ready, listen for future money changes
+    if (window.SystemUI && typeof window.SystemUI.on === 'function') {
+        window.SystemUI.on("money_changed", updateBonusUI);
+    }
 });
 
 bonusBtn.addEventListener("click", () => {
     if (bonusBtn.disabled) return;
-    
-    playHubSound('win');
-    
-    let currentMoney = parseInt(localStorage.getItem("blackjack_money")) || 5000;
-    currentMoney += 1000;
-    localStorage.setItem("blackjack_money", currentMoney);
-    document.getElementById("display-player-money").innerText = currentMoney;
-    
-    localStorage.setItem("last_bonus_claim", Date.now());
-    updateBonusButton();
+    playHubSound('click');
+    if (window.SystemRewards) {
+        // This will launch the new AAA reward modal
+        SystemRewards.checkDailyLogin(); 
+    }
 });
 
 // --- 3. THEME LOGIC ---

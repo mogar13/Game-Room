@@ -92,7 +92,8 @@ function initRPS() {
     // Set up betting rack using Casino OS globally defined method
     SystemUI.setupBetting("os-betting-rack", {
         onBet: val => {
-            if (isAnimating || gameMode !== "ai") return;
+            // Block betting if animating, or if playing online and a choice is already locked in
+            if (isAnimating || (gameMode === "online" && myOnlineChoice !== null)) return;
             if (SystemUI.money >= val) {
                 SystemUI.money -= val;
                 currentBet += val;
@@ -103,7 +104,7 @@ function initRPS() {
             }
         },
         onClear: () => {
-            if (isAnimating || gameMode !== "ai") return;
+            if (isAnimating || (gameMode === "online" && myOnlineChoice !== null)) return;
             SystemUI.money += currentBet;
             currentBet = 0;
             refreshAIUI();
@@ -127,21 +128,32 @@ function enterAIUI() {
     resultOverlay.classList.add("hidden");
     // CPU image faces down (rotated in CSS); player image faces up
     cpuImg.style.opacity = "1";
+    
+    if (currentBet === 0) {
+        statusText.innerText = "PLACE BET";
+        resultOverlay.classList.remove("hidden");
+    }
+    
     refreshAIUI();
 }
 
 function enterOnlineUI() {
     document.getElementById("streak-counter").style.display    = "none";
     document.getElementById("online-scoreboard").style.display = "";
-    document.getElementById("os-betting-rack").style.display   = "none";
+    document.getElementById("os-betting-rack").style.display   = ""; // Now enabled for Online!
     waitingMsg.classList.add("hidden");
     oppLockedOverlay.classList.add("hidden");
     resultOverlay.classList.add("hidden");
     playerImg.src = "../../system/images/icons/rock.png";
     cpuImg.src    = "../../system/images/icons/rock.png";
-    // Disable all choice buttons until the room is live
-    document.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
     myOnlineChoice = null;
+    
+    if (currentBet === 0) {
+        statusText.innerText = "PLACE BET";
+        resultOverlay.classList.remove("hidden");
+    }
+    
+    refreshAIUI();
 }
 
 // ── 5. AI MODE ───────────────────────────────────────────────
@@ -153,8 +165,6 @@ document.getElementById("sys-reset-game-btn")?.addEventListener("click", () => {
 });
 
 function refreshAIUI() {
-    if (gameMode !== "ai") return;
-    
     if (typeof SystemUI.updateMoneyDisplay === "function") {
         SystemUI.updateMoneyDisplay();
     }
@@ -163,13 +173,21 @@ function refreshAIUI() {
     }
     
     document.getElementById("streak-val").innerText = winStreak;
+    
     // Buttons enabled only when a bet is placed and no animation is running
     document.querySelectorAll(".choice-btn").forEach(b => {
-        b.disabled = (currentBet === 0 || isAnimating);
+        if (gameMode === "online") {
+            b.disabled = (currentBet === 0 || isAnimating || myOnlineChoice !== null);
+        } else {
+            b.disabled = (currentBet === 0 || isAnimating);
+        }
     });
 }
 
 function startAIThrow(choice) {
+    // AUDIT: Tracking game start
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("rps");
+
     isAnimating = true;
     resultOverlay.classList.add("hidden");
 
@@ -206,10 +224,14 @@ function resolveAIRound(playerChoice) {
         SystemUI.playSound("win");
         SystemUI.money += currentBet * 2;
         winStreak++;
+        // AUDIT: Tracking win
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("rps", currentBet * 2);
     } else {
         statusText.innerText = "CPU WINS! 💀";
         SystemUI.playSound("lose");
         winStreak = 0;
+        // AUDIT: Tracking loss
+        if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("rps");
     }
 
     resultOverlay.classList.remove("hidden");
@@ -237,8 +259,8 @@ document.querySelectorAll(".choice-btn").forEach(btn => {
             if (currentBet === 0 || isAnimating) return;
             startAIThrow(btn.id);
         } else {
-            // Online mode: once per round
-            if (myOnlineChoice !== null) return;
+            // Online mode: once per round and only if they placed a bet
+            if (myOnlineChoice !== null || currentBet === 0) return;
             lockInOnlineChoice(btn.id);
         }
     });
@@ -263,52 +285,75 @@ document.querySelectorAll(".choice-btn").forEach(btn => {
 
 SystemUI.v2Lobby.setup({
     onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+        if (!window.db) { alert("Server connection error."); return; }
+
+        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
         isHost = true; myId = 1; chatStarted = false;
-        
+
+        // Ensure name is guaranteed to be a string
+        const hostName = p1Name || "Player 1";
+
         seats = [
-            { type:"human", name:SystemUI.getPlayerName() },
-            { type:"ai",    name:"Waiting for opponent…" }
+            { type: "human", name: hostName },
+            { type: "ai",    name: "Waiting for opponent…"  }
         ];
 
-        window.dbSet(window.dbRef(window.db, `rps_rooms/${currentRoomId}`), {
-            status: "waiting", 
-            p1Name: SystemUI.getPlayerName(), 
-            seats: seats,
-            round: 1, 
-            p1Choice: "", 
-            p2Choice: "", 
-            scores: { p1: 0, p2: 0, ties: 0 }
+        window.dbSet(window.dbRef(window.db, "rps_rooms/" + currentRoomId), {
+            status: "waiting",
+            p1Name: hostName,
+            seats,
+            round:    1,
+            p1Choice: "",
+            p2Choice: "",
+            scores:   { p1: 0, p2: 0, ties: 0 }
         }).then(() => {
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToRoom();
+        }).catch(err => {
+            console.error("Firebase Room Creation Error:", err);
         });
     },
 
-    onJoin: (code) => {
+    onJoin: code => {
+        if (!window.db) { alert("Server connection error."); return; }
+
         window.dbGet(window.dbChild(window.dbRef(window.db), `rps_rooms/${code}`))
             .then(snap => {
                 if (snap.exists() && snap.val().status === "waiting") {
-                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-                    
+                    currentRoomId = code;
+                    isHost = false; myId = 2; chatStarted = false;
+
                     const data = snap.val();
-                    const updSeats = data.seats ? [...data.seats] : [{type:"human",name:data.p1Name||"P1"},{type:"ai",name:"Slot 2"}];
-                    updSeats[1] = { type:"human", name:SystemUI.getPlayerName() };
+                    const updatedSeats = data.seats || [];
+                    const guestName = p1Name || "Player 2";
                     
-                    window.dbUpdate(window.dbRef(window.db, `rps_rooms/${code}`), {
-                        p2Name: SystemUI.getPlayerName(), 
-                        seats: updSeats
+                    updatedSeats[1] = { type: "human", name: guestName };
+
+                    window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + code), {
+                        p2Name: guestName,
+                        seats: updatedSeats
                     }).then(() => {
                         SystemUI.v2Lobby.showRoomPhase(code, false);
                         listenToRoom();
+                    }).catch(err => {
+                        console.error("Firebase Join Error:", err);
                     });
                 } else {
                     SystemUI.v2Lobby.showError("ROOM NOT FOUND OR GAME ALREADY STARTED");
                 }
+            }).catch(err => {
+                console.error("Firebase Get Error:", err);
+                SystemUI.v2Lobby.showError("Network error finding room.");
             });
     },
 
     onLeave: () => {
+        // Refund any pending bet if the user leaves the room
+        if (currentBet > 0) {
+            SystemUI.money += currentBet;
+            currentBet = 0;
+        }
+        
         gameMode = "ai";
         if (roomListener) { roomListener(); roomListener = null; }
         SystemUI.stopChat();
@@ -319,13 +364,21 @@ SystemUI.v2Lobby.setup({
 
     // Host taps "Start Game" in the lobby to begin the first round
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, `rps_rooms/${currentRoomId}`), {
+        // AUDIT: Tracking game start
+        if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("rps");
+
+        window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + currentRoomId), {
             status: "choosing"
-        });
+        }).catch(err => console.error("Start game failed:", err));
     },
 
     onClose: () => {
         if (gameMode === "online") {
+            // Refund any pending bet
+            if (currentBet > 0) {
+                SystemUI.money += currentBet;
+                currentBet = 0;
+            }
             gameMode = "ai";
             const el = document.getElementById("sys-rps-mode");
             if (el) el.value = "ai";
@@ -441,19 +494,27 @@ function renderChoosingState(data) {
     // Both choices cleared → new round starting
     if (!myField) {
         myOnlineChoice = null;
-        resultOverlay.classList.add("hidden");
         oppLockedOverlay.classList.add("hidden");
         oppStatusEl.classList.add("hidden");
         waitingMsg.classList.add("hidden");
         playerImg.src = "../../system/images/icons/rock.png";
         cpuImg.src    = "../../system/images/icons/rock.png";
-        document.querySelectorAll(".choice-btn").forEach(b => b.disabled = false);
+        
+        // Show "PLACE BET" overlay if they haven't bet yet
+        if (currentBet === 0) {
+            statusText.innerText = "PLACE BET";
+            resultOverlay.classList.remove("hidden");
+        } else {
+            resultOverlay.classList.add("hidden");
+        }
+        
+        refreshAIUI();
     } else {
         // Edge case: I refreshed the page and I already have a choice in the DB for this round
         myOnlineChoice = myField;
         waitingMsg.classList.remove("hidden");
-        document.querySelectorAll(".choice-btn").forEach(b => b.disabled = true);
         playerImg.src = `../../system/images/icons/${myField}.png`;
+        refreshAIUI();
     }
 
     // Opponent has locked in but we don't know their choice yet
@@ -486,18 +547,27 @@ function showOnlineResult(result, data) {
         if (result.winner === "tie") {
             statusText.innerText = "TIE! 🤝";
             SystemUI.playSound("tie");
+            SystemUI.money += currentBet; // Push — return bet
         } else if (
             (result.winner === "p1" && myId === 1) ||
             (result.winner === "p2" && myId === 2)
         ) {
             statusText.innerText = "YOU WIN! 🎉";
             SystemUI.playSound("win");
+            SystemUI.money += currentBet * 2; // Win
+            // AUDIT: Tracking win
+            if (typeof SystemStats !== 'undefined') SystemStats.recordWin("rps", currentBet * 2);
         } else {
             statusText.innerText = "THEY WIN! 💀";
             SystemUI.playSound("lose");
+            // Bet is lost (was already deducted on placement)
+            // AUDIT: Tracking loss
+            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("rps");
         }
 
         resultOverlay.classList.remove("hidden");
+        currentBet = 0;
+        refreshAIUI();
 
         // The Host waits for the result to show, then resets the DB for the next round
         if (isHost) {

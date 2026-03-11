@@ -14,19 +14,14 @@
 
 <div id="game-container">
 
-    <!-- ── MAIN GAME AREA ───────────────────── -->
     <div id="main-area">
 
-        <!-- ── BOARD WRAPPER ──────────────── -->
         <div id="board-wrap">
 
-            <!-- Board cells injected here by JS -->
             <div id="clue-board"></div>
 
-            <!-- Room name labels (absolutely positioned over board) -->
             <div id="room-labels"></div>
 
-            <!-- Secret passage indicators -->
             <div class="secret-passage" id="sp-kitchen"    title="Secret Passage to Study">⬛</div>
             <div class="secret-passage" id="sp-study"      title="Secret Passage to Kitchen">⬛</div>
             <div class="secret-passage" id="sp-lounge"     title="Secret Passage to Conservatory">⬛</div>
@@ -34,17 +29,14 @@
 
         </div>
 
-        <!-- ── SIDE PANEL ─────────────────── -->
         <div id="side-panel">
 
-            <!-- Turn info -->
             <div id="turn-block">
                 <div id="turn-badge"></div>
                 <div id="turn-name">—</div>
                 <div id="turn-action">Roll to move</div>
             </div>
 
-            <!-- Dice -->
             <div id="dice-row">
                 <div class="die" id="die-1">?</div>
                 <div class="die" id="die-2">?</div>
@@ -52,38 +44,28 @@
             </div>
             <button id="roll-btn" class="hidden">🎲 ROLL DICE</button>
 
-            <!-- Action buttons -->
             <div id="action-btns">
                 <button id="suggest-btn"  class="hidden">💬 SUGGEST</button>
                 <button id="accuse-btn"   class="hidden">⚖️ ACCUSE</button>
                 <button id="end-turn-btn" class="hidden">END TURN →</button>
             </div>
 
-            <!-- Player list -->
             <div id="player-list">
-                <!-- Injected by JS -->
-            </div>
+                </div>
 
         </div>
     </div>
 
-    <!-- ── BOTTOM BAR: HAND + NOTEPAD TOGGLE ── -->
     <div id="bottom-bar">
         <div id="my-hand">
             <div id="hand-label">YOUR CARDS</div>
             <div id="hand-cards">
-                <!-- Card elements injected by JS -->
-            </div>
+                </div>
         </div>
         <button id="notepad-toggle-btn">📋 NOTEPAD</button>
     </div>
 
-</div><!-- /#game-container -->
-
-<!-- ═══════════════════════════════════════════
-     NOTEPAD OVERLAY
-     ═══════════════════════════════════════════ -->
-<div id="notepad-overlay" class="hidden">
+</div><div id="notepad-overlay" class="hidden">
     <div id="notepad-panel">
         <div id="notepad-header">
             <span id="notepad-title">🔍 DETECTIVE'S NOTEPAD</span>
@@ -92,21 +74,17 @@
 
         <div id="notepad-body">
 
-            <!-- SUSPECTS section -->
             <div class="note-section">
                 <div class="note-section-title">SUSPECTS</div>
                 <div class="note-grid" id="note-suspects">
-                    <!-- Rows: suspect name | columns: player initials | injected by JS -->
-                </div>
+                    </div>
             </div>
 
-            <!-- WEAPONS section -->
             <div class="note-section">
                 <div class="note-section-title">WEAPONS</div>
                 <div class="note-grid" id="note-weapons"></div>
             </div>
 
-            <!-- ROOMS section -->
             <div class="note-section">
                 <div class="note-section-title">ROOMS</div>
                 <div class="note-grid" id="note-rooms"></div>
@@ -116,9 +94,6 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     SUGGESTION MODAL
-     ═══════════════════════════════════════════ -->
 <div id="suggest-modal" class="modal-overlay hidden">
     <div class="modal-box">
         <div class="modal-title">💬 MAKE A SUGGESTION</div>
@@ -126,13 +101,11 @@
 
         <div class="modal-section-label">SUSPECT</div>
         <div class="modal-pick-row" id="suggest-suspect-row">
-            <!-- Suspect buttons injected by JS -->
-        </div>
+            </div>
 
         <div class="modal-section-label">WEAPON</div>
         <div class="modal-pick-row" id="suggest-weapon-row">
-            <!-- Weapon buttons injected by JS -->
-        </div>
+            </div>
 
         <div class="modal-actions">
             <button class="modal-btn-cancel" id="suggest-cancel">CANCEL</button>
@@ -141,9 +114,6 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     ACCUSATION MODAL
-     ═══════════════════════════════════════════ -->
 <div id="accuse-modal" class="modal-overlay hidden">
     <div class="modal-box">
         <div class="modal-title">⚖️ MAKE AN ACCUSATION</div>
@@ -165,17 +135,12 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     SHOW CARD MODAL (proving a suggestion wrong)
-     ═══════════════════════════════════════════ -->
 <div id="show-card-modal" class="modal-overlay hidden">
     <div class="modal-box">
         <div class="modal-title" id="show-card-title">Show a Card</div>
         <div class="modal-subtitle" id="show-card-sub">Pick one card to secretly show</div>
         <div class="modal-pick-row" id="show-card-options">
-            <!-- Cards to show injected by JS -->
-        </div>
-        <!-- "No matching cards" case -->
+            </div>
         <div id="show-card-none" class="hidden">
             <p style="color:var(--muted);text-align:center;margin:16px 0;">You have no matching cards.<br>Pass to next player.</p>
             <button class="modal-btn-confirm" id="show-card-pass">PASS →</button>
@@ -183,23 +148,15 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     SUGGESTION RESULT MODAL
-     (shows what card was revealed to suggester)
-     ═══════════════════════════════════════════ -->
 <div id="result-modal" class="modal-overlay hidden">
     <div class="modal-box">
         <div class="modal-title" id="result-modal-title">Suggestion Result</div>
         <div id="result-modal-body">
-            <!-- Injected by JS -->
-        </div>
+            </div>
         <button class="modal-btn-confirm" id="result-modal-ok">OK</button>
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     GAME OVER MODAL
-     ═══════════════════════════════════════════ -->
 <div id="game-over-modal" class="hidden">
     <div class="game-over-box">
         <div id="game-over-emoji">🔍</div>
@@ -211,9 +168,6 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     START SCREEN
-     ═══════════════════════════════════════════ -->
 <div id="start-screen">
     <div id="start-logo">
         <div id="start-icon">🔍</div>
@@ -235,7 +189,14 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
-<script src="../../system/player_name.js"></script>
+
+<script src="../../system/system_profile.js"></script>
+<script src="../../system/system_audio.js"></script>
+<script src="../../system/system_stats.js"></script>
+<script src="../../system/system_achievements.js"></script>
+<script src="../../system/system_betting.js"></script>
+<script src="../../system/system_lobby.js"></script>
+<script src="../../system/system_chat.js"></script>
 <script src="../../system/system_ui.js"></script>
 <script src="clue_app.js"></script>
 </body>
