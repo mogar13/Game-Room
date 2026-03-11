@@ -151,7 +151,13 @@ window.SystemUI = {
         document.getElementById('sys-btn-home').addEventListener('click', () => {
             this.playSound('exit');
             setTimeout(() => {
-                window.location.href = '../../index.html'; 
+                // If we are inside an iframe, tell the Casino Hub to close it
+                if (window !== window.parent) {
+                    window.parent.postMessage({ type: 'CASINO_OS_CLOSE_GAME' }, '*');
+                } else {
+                    // Fallback: If someone opened the game directly in a tab
+                    window.location.href = '../../index.html'; 
+                }
             }, 150);
         });
 

@@ -21,13 +21,24 @@
 
   <div class="profile-banner">
     <div class="profile-left">
-      <span class="profile-icon">👤</span> 
-      <span id="display-player-name">Player</span>
+      <div class="player-info-row">
+        <span class="profile-icon">👤</span> 
+        <span id="display-player-name">Player</span>
+        <span id="display-player-level" class="level-badge">Lv.1</span>
+      </div>
+      <div class="xp-bar-container">
+        <div id="xp-bar-fill" class="xp-bar-fill"></div>
+        <span id="xp-text" class="xp-text">0 / 500 XP</span>
+      </div>
+      <div id="display-player-title" class="player-title">Newcomer</div>
     </div>
-    <div class="profile-right" style="display: flex; align-items: center;">
-      <span class="profile-icon">💰</span> 
-      $<span id="display-player-money">5000</span>
+    <div class="profile-right" style="display: flex; align-items: center; gap: 10px;">
+      <div class="money-display">
+        <span class="profile-icon">💰</span> 
+        $<span id="display-player-money">5000</span>
+      </div>
       <button id="daily-bonus-btn" class="hub-interactive">Claim +$1,000</button>
+      <button id="btn-achievements" class="hub-interactive" style="background: #3498db; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(52, 152, 219, 0.4);" title="Trophy Room">🏆</button>
       <select id="theme-dropdown" class="hub-interactive" onchange="changeTheme(this.value)">
         <option value="default">Night Mode</option>
         <option value="casino">Casino Felt</option>
@@ -234,10 +245,61 @@
   </div>
   
   <div id="pagination-dots"></div>
+
+  <div id="os-game-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; background: #000;">
+      <iframe id="os-game-frame" style="width: 100%; height: 100%; border: none;"></iframe>
+  </div>
+
+  <div id="achievements-modal" class="hidden">
+    <div class="ach-modal-box">
+      <button id="close-ach-btn" class="hub-interactive">&times;</button>
+      <h2>TROPHY ROOM</h2>
+      <div class="ach-stats">
+        <span id="ach-count">0 / 0 Unlocked</span>
+      </div>
+      <div id="ach-list" class="ach-list">
+        </div>
+    </div>
+  </div>
   
-  <script src="system/player_name.js"></script>
   <script src="system/system_profile.js"></script>
+  <script src="system/system_achievements.js"></script>
   <script src="system/system_rewards.js"></script>
   <script src="hub_app.js"></script>
+
+  <script>
+      // 1. Intercept clicks on Game Cards
+      document.querySelectorAll('.game-card').forEach(card => {
+          card.addEventListener('click', function(e) {
+              // Prevent the browser from loading a new page
+              e.preventDefault(); 
+              
+              // Get the game URL from the href attribute
+              const gameUrl = this.getAttribute('href'); 
+              
+              // Load the game into the iframe and show it
+              const frame = document.getElementById('os-game-frame');
+              const container = document.getElementById('os-game-container');
+              
+              frame.src = gameUrl;
+              container.style.display = 'block';
+          });
+      });
+
+      // 2. Listen for the "Home" button click from inside the iframe
+      window.addEventListener('message', function(event) {
+          if (event.data && event.data.type === 'CASINO_OS_CLOSE_GAME') {
+              const container = document.getElementById('os-game-container');
+              const frame = document.getElementById('os-game-frame');
+              
+              // Hide the iframe and clear the source to stop the game processes
+              container.style.display = 'none';
+              frame.src = '';
+              
+              // Update the Hub UI so new XP and Money instantly reflect
+              if (typeof updateBonusUI === 'function') updateBonusUI();
+          }
+      });
+  </script>
 </body>
 </html>

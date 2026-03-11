@@ -22,10 +22,41 @@ function updateBonusUI() {
     if (!window.SystemProfile || !window.SystemRewards) return;
 
     // 1. Sync the HUD securely through the Profile API
-    document.getElementById("display-player-name").innerText = SystemProfile.getPlayerName();
-    document.getElementById("display-player-money").innerText = SystemProfile.getMoney();
+    const profile = SystemProfile.getProfile();
+    document.getElementById("display-player-name").innerText = profile.name;
+    document.getElementById("display-player-money").innerText = profile.bankroll;
 
-    // 2. Sync the Bonus Button state with the Rewards API
+    // 2. Sync the XP & Level UI
+    const levelBadge = document.getElementById("display-player-level");
+    const titleText = document.getElementById("display-player-title");
+    const xpFill = document.getElementById("xp-bar-fill");
+    const xpText = document.getElementById("xp-text");
+    
+    if (levelBadge) levelBadge.innerText = `Lv.${profile.level}`;
+    if (titleText) titleText.innerText = SystemProfile.getLevelTitle();
+
+    if (xpFill && xpText) {
+        // XP Math based on system_profile thresholds
+        const thresholds = [0, 500, 2000, 5000, 10000, 25000];
+        let nextLvlXP = thresholds[profile.level] || 25000; 
+        let prevLvlXP = thresholds[profile.level - 1] || 0;
+
+        let xpIntoLevel = profile.xp - prevLvlXP;
+        let xpNeeded = nextLvlXP - prevLvlXP;
+        let pct = (xpIntoLevel / xpNeeded) * 100;
+        
+        if (pct > 100) pct = 100;
+        
+        if (profile.level >= 6) {
+            xpFill.style.width = `100%`;
+            xpText.innerText = "MAX LEVEL";
+        } else {
+            xpFill.style.width = `${pct}%`;
+            xpText.innerText = `${profile.xp} / ${nextLvlXP} XP`;
+        }
+    }
+
+    // 3. Sync the Bonus Button state with the Rewards API
     const todayStr = SystemRewards.getTodayString();
     if (SystemRewards.data.lastClaim === todayStr) {
         bonusBtn.disabled = true;
@@ -232,6 +263,64 @@ allCards.forEach(card => {
         star.addEventListener('click', (e) => toggleFavorite(card.dataset.id, e));
     }
 });
+
+// --- 6. TROPHY ROOM (ACHIEVEMENTS VIEWER) ---
+const btnAchievements = document.getElementById("btn-achievements");
+const modalAchievements = document.getElementById("achievements-modal");
+const closeAchBtn = document.getElementById("close-ach-btn");
+const achList = document.getElementById("ach-list");
+
+function renderTrophyRoom() {
+    if (!window.SystemAchievements) return;
+    
+    achList.innerHTML = "";
+    const list = SystemAchievements.list;
+    const unlockedIds = SystemAchievements.data.unlocked;
+    
+    let unlockedCount = 0;
+    const totalCount = Object.keys(list).length;
+
+    // Loop through every achievement in the system
+    Object.keys(list).forEach(key => {
+        const ach = list[key];
+        const isUnlocked = unlockedIds.includes(key);
+        if (isUnlocked) unlockedCount++;
+
+        const card = document.createElement("div");
+        card.className = `ach-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+        
+        card.innerHTML = `
+            <div class="ach-icon">${isUnlocked ? ach.icon : '🔒'}</div>
+            <div class="ach-info">
+                <div class="ach-title">${ach.name}</div>
+                <div class="ach-desc">${ach.desc}</div>
+                <div class="ach-rewards">
+                    <span class="ach-rxp">+${ach.xp} XP</span>
+                    <span class="ach-rmoney">+$${ach.chips}</span>
+                </div>
+            </div>
+            ${isUnlocked ? '<div style="color: #f1c40f; font-size: 1.5rem; font-weight: bold;">✓</div>' : ''}
+        `;
+        achList.appendChild(card);
+    });
+
+    document.getElementById("ach-count").innerText = `${unlockedCount} / ${totalCount} Unlocked`;
+}
+
+if (btnAchievements) {
+    btnAchievements.addEventListener("click", () => {
+        playHubSound('click');
+        renderTrophyRoom();
+        modalAchievements.classList.remove("hidden");
+    });
+}
+
+if (closeAchBtn) {
+    closeAchBtn.addEventListener("click", () => {
+        playHubSound('click');
+        modalAchievements.classList.add("hidden");
+    });
+}
 
 renderFavorites();
 updateStarIcons();
