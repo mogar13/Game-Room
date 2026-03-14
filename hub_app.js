@@ -129,16 +129,23 @@ function renderCarousel() {
     localStorage.setItem('hub_current_page', currentPage);
 
     allCards.forEach(card => card.style.display = 'none');
-    
+
     const start = (currentPage - 1) * itemsPerPage;
     const end = start + itemsPerPage;
     const visibleNow = filteredCards.slice(start, end);
-    
+
     visibleNow.forEach(card => card.style.display = 'flex');
+
+    // Show category headers only if at least one card in that category is visible on this page
+    document.querySelectorAll('.cat-section-header').forEach(header => {
+        const cat = header.dataset.cat;
+        const hasVisible = visibleNow.some(card => card.dataset.cat === cat);
+        header.style.display = hasVisible ? '' : 'none';
+    });
 
     prevBtn.style.visibility = currentPage === 1 ? 'hidden' : 'visible';
     nextBtn.style.visibility = currentPage === totalPages ? 'hidden' : 'visible';
-    
+
     dotsContainer.innerHTML = '';
     for(let i = 1; i <= totalPages; i++) {
         const dot = document.createElement('div');
@@ -332,6 +339,100 @@ window.addEventListener('message', function(event) {
     }
 });
 
+// --- 8. PLAYER PROFILE PANEL ---
+function openProfilePanel() {
+    if (!window.SystemProfile || !window.SystemStats || !window.SystemAchievements) return;
+
+    const profile = SystemProfile.getProfile();
+    const globalStats = SystemStats.getStats();
+    const unlockedAchs = SystemAchievements.data.unlocked;
+    const achList = SystemAchievements.list;
+
+    // Header
+    document.getElementById('pp-name').innerText = profile.name;
+    document.getElementById('pp-title').innerText = SystemProfile.getLevelTitle ? SystemProfile.getLevelTitle() : '';
+    document.getElementById('pp-level').innerText = `Lv.${profile.level}`;
+    document.getElementById('pp-money').innerText = `$${profile.bankroll.toLocaleString()}`;
+
+    // XP bar
+    const thresholds = [0, 500, 2000, 5000, 10000, 25000];
+    const nextXP = thresholds[profile.level] || 25000;
+    const prevXP = thresholds[profile.level - 1] || 0;
+    const pct = profile.level >= 6 ? 100 : Math.min(100, ((profile.xp - prevXP) / (nextXP - prevXP)) * 100);
+    document.getElementById('pp-xp-fill').style.width = pct + '%';
+    document.getElementById('pp-xp-text').innerText = profile.level >= 6 ? 'MAX' : `${profile.xp} / ${nextXP} XP`;
+
+    // Career stats
+    const played = globalStats ? globalStats.gamesPlayed : 0;
+    const wins   = globalStats ? globalStats.wins : 0;
+    const losses = globalStats ? globalStats.losses : 0;
+    const wr     = played > 0 ? Math.round((wins / played) * 100) + '%' : '—';
+    document.getElementById('pp-played').innerText  = played;
+    document.getElementById('pp-wins').innerText    = wins;
+    document.getElementById('pp-losses').innerText  = losses;
+    document.getElementById('pp-winrate').innerText = wr;
+
+    // Achievements
+    const achRow = document.getElementById('pp-ach-row');
+    achRow.innerHTML = '';
+    unlockedAchs.slice(0, 8).forEach(id => {
+        const ach = achList[id];
+        if (!ach) return;
+        const span = document.createElement('span');
+        span.className = 'pp-ach-icon';
+        span.title = ach.name;
+        span.innerText = ach.icon;
+        achRow.appendChild(span);
+    });
+    document.getElementById('pp-ach-count').innerText =
+        `${unlockedAchs.length} / ${Object.keys(achList).length} unlocked`;
+
+    // Top games by wins
+    const gamesData = SystemStats.data.games;
+    const topGames = Object.entries(gamesData)
+        .filter(([, s]) => s.gamesPlayed > 0)
+        .sort(([, a], [, b]) => b.wins - a.wins)
+        .slice(0, 5);
+
+    const topGamesEl = document.getElementById('pp-top-games');
+    topGamesEl.innerHTML = '';
+    if (topGames.length === 0) {
+        topGamesEl.innerHTML = '<div class="pp-no-games">No games played yet</div>';
+    } else {
+        topGames.forEach(([id, s]) => {
+            const card = allCards.find(c => c.dataset.id === id);
+            const name = card ? card.querySelector('h2').innerText : id;
+            const row = document.createElement('div');
+            row.className = 'pp-game-row';
+            row.innerHTML = `
+                <span class="pp-game-name">${name}</span>
+                <span class="pp-game-stats">🏆 ${s.wins} &nbsp;·&nbsp; 🎮 ${s.gamesPlayed}</span>
+            `;
+            topGamesEl.appendChild(row);
+        });
+    }
+
+    // Show panel
+    document.getElementById('profile-panel-overlay').classList.remove('hidden');
+    document.getElementById('profile-panel').classList.remove('hidden');
+}
+
+function closeProfilePanel() {
+    document.getElementById('profile-panel-overlay').classList.add('hidden');
+    document.getElementById('profile-panel').classList.add('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const nameEl = document.getElementById('display-player-name');
+    if (nameEl) nameEl.addEventListener('click', () => { playHubSound('click'); openProfilePanel(); });
+
+    const closeBtn = document.getElementById('pp-close-btn');
+    if (closeBtn) closeBtn.addEventListener('click', () => { playHubSound('click'); closeProfilePanel(); });
+
+    const overlay = document.getElementById('profile-panel-overlay');
+    if (overlay) overlay.addEventListener('click', closeProfilePanel);
+});
+
 // --- 8. RECENTLY PLAYED ---
 const RECENT_KEY = 'hub_recently_played';
 const RECENT_MAX = 5;
@@ -460,36 +561,60 @@ async function initCards() {
         return;
     }
 
+    // Group games by category for Steam-style section headers
+    const categoryLabels = {
+        'board':  '🎲 Board Games',
+        'casino': '🃏 Casino',
+        'card':   '🂡 Card Games',
+        'arcade': '🕹 Arcade'
+    };
+    const grouped = {};
     games.forEach(game => {
-        const iconStyle = game.iconStyle ? ` ${game.iconStyle}` : '';
-        const badgesHTML = game.badges.map(b => {
-            const cls = b.includes('Online') ? 'b-online' : b.includes('Solo') ? 'b-solo' : '';
-            return `<span class="badge ${cls}">${b}</span>`;
-        }).join(' ');
+        const cat = game.category || 'board';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(game);
+    });
 
-        const stats = (window.SystemStats) ? window.SystemStats.getStats(game.id) : null;
-        const wins = stats ? stats.wins : 0;
-        const played = stats ? stats.gamesPlayed : 0;
+    // Render each category group with a header
+    Object.entries(grouped).forEach(([cat, catGames]) => {
+        // Section header — sits outside the grid, spans full width
+        const header = document.createElement('div');
+        header.className = 'cat-section-header';
+        header.dataset.cat = cat;
+        header.innerText = categoryLabels[cat] || cat.toUpperCase();
+        grid.appendChild(header);
 
-        const a = document.createElement('a');
-        a.href = game.url;
-        a.className = 'game-card hub-interactive';
-        a.dataset.id = game.id;
-        a.dataset.name = game.searchTags;
-        a.dataset.cat = game.category;
-        a.innerHTML = `
-            <div class="fav-btn hub-interactive">☆</div>
-            <div class="card-icon" style="background-image: url('${game.icon}');${iconStyle}"></div>
-            <h2>${game.name}</h2>
-            <div class="card-badges">${badgesHTML}</div>
-            <div class="card-stats">
-                <span class="card-stat">🏆 ${wins}</span>
-                <span class="card-stat-sep">·</span>
-                <span class="card-stat">🎮 ${played}</span>
-            </div>
-            <div class="card-play-btn">▶ PLAY</div>
-        `;
-        grid.appendChild(a);
+        catGames.forEach(game => {
+            const iconStyle = game.iconStyle ? ` ${game.iconStyle}` : '';
+            const badgesHTML = game.badges.map(b => {
+                const cls = b.includes('Online') ? 'b-online' : b.includes('Solo') ? 'b-solo' : '';
+                return `<span class="badge ${cls}">${b}</span>`;
+            }).join(' ');
+
+            const stats = (window.SystemStats) ? window.SystemStats.getStats(game.id) : null;
+            const wins   = stats ? stats.wins : 0;
+            const played = stats ? stats.gamesPlayed : 0;
+
+            const a = document.createElement('a');
+            a.href = game.url;
+            a.className = 'game-card hub-interactive';
+            a.dataset.id = game.id;
+            a.dataset.name = game.searchTags;
+            a.dataset.cat = game.category;
+            a.innerHTML = `
+                <div class="fav-btn hub-interactive">☆</div>
+                <div class="card-icon" style="background-image: url('${game.icon}');${iconStyle}"></div>
+                <h2>${game.name}</h2>
+                <div class="card-badges">${badgesHTML}</div>
+                <div class="card-stats">
+                    <span class="card-stat">🏆 ${wins}</span>
+                    <span class="card-stat-sep">·</span>
+                    <span class="card-stat">🎮 ${played}</span>
+                </div>
+                <div class="card-play-btn">▶ PLAY</div>
+            `;
+            grid.appendChild(a);
+        });
     });
 
     // Rebuild allCards from the now-populated DOM

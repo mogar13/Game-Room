@@ -22,8 +22,8 @@
   <div class="profile-banner">
     <div class="profile-left">
       <div class="player-info-row">
-        <span class="profile-icon">👤</span> 
-        <span id="display-player-name">Player</span>
+        <span class="profile-icon">👤</span>
+        <span id="display-player-name" class="hub-interactive" id="btn-open-profile" style="cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px;" title="View Profile">Player</span>
         <span id="display-player-level" class="level-badge">Lv.1</span>
       </div>
       <div class="xp-bar-container">
@@ -96,6 +96,62 @@
     </div>
   </div>
   
+  <div id="profile-panel-overlay" class="hidden"></div>
+
+  <div id="profile-panel" class="hidden">
+    <div class="pp-header">
+      <button id="pp-close-btn" class="hub-interactive">&times;</button>
+      <div class="pp-avatar">👤</div>
+      <div id="pp-name" class="pp-name">Player</div>
+      <div id="pp-title" class="pp-title">Newcomer</div>
+      <div class="pp-level-row">
+        <span id="pp-level" class="pp-level-badge">Lv.1</span>
+        <div class="pp-xp-bar-wrap">
+          <div id="pp-xp-fill" class="pp-xp-fill"></div>
+        </div>
+        <span id="pp-xp-text" class="pp-xp-text">0 XP</span>
+      </div>
+    </div>
+
+    <div class="pp-section">
+      <div class="pp-section-title">💰 BANKROLL</div>
+      <div id="pp-money" class="pp-big-stat">$5,000</div>
+    </div>
+
+    <div class="pp-section">
+      <div class="pp-section-title">📊 CAREER STATS</div>
+      <div class="pp-stats-grid">
+        <div class="pp-stat-box">
+          <div id="pp-played" class="pp-stat-val">0</div>
+          <div class="pp-stat-lbl">Played</div>
+        </div>
+        <div class="pp-stat-box">
+          <div id="pp-wins" class="pp-stat-val">0</div>
+          <div class="pp-stat-lbl">Wins</div>
+        </div>
+        <div class="pp-stat-box">
+          <div id="pp-losses" class="pp-stat-val">0</div>
+          <div class="pp-stat-lbl">Losses</div>
+        </div>
+        <div class="pp-stat-box">
+          <div id="pp-winrate" class="pp-stat-val">—</div>
+          <div class="pp-stat-lbl">Win Rate</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pp-section">
+      <div class="pp-section-title">🏆 ACHIEVEMENTS</div>
+      <div id="pp-ach-row" class="pp-ach-row"></div>
+      <div id="pp-ach-count" class="pp-ach-count">0 unlocked</div>
+    </div>
+
+    <div class="pp-section">
+      <div class="pp-section-title">🎮 TOP GAMES</div>
+      <div id="pp-top-games" class="pp-top-games"></div>
+    </div>
+  </div>
+
   <script src="system/system_profile.js"></script>
   <script src="system/system_stats.js"></script>
   <script src="system/system_achievements.js"></script>
