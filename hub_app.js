@@ -10,6 +10,7 @@ function playHubSound(type) {
     hubAudio[type].play().catch(e => console.log("Audio blocked by browser."));
 }
 
+// Wire hub sounds to all static interactive elements (cards wired after fetch)
 document.querySelectorAll('.hub-interactive').forEach(el => {
     el.addEventListener('click', () => playHubSound('click'));
 });
@@ -108,16 +109,16 @@ changeTheme(savedTheme);
 
 // --- 4. CAROUSEL, SEARCH & CATEGORY LOGIC ---
 const searchInput = document.getElementById('game-search');
-const allCards = Array.from(document.querySelectorAll('.game-card'));
 const prevBtn = document.getElementById('prev-page');
 const nextBtn = document.getElementById('next-page');
 const dotsContainer = document.getElementById('pagination-dots');
 const grid = document.getElementById('game-grid');
 const catBtns = document.querySelectorAll('.cat-btn');
 
+let allCards = [];
 let currentPage = parseInt(localStorage.getItem('hub_current_page')) || 1;
 const itemsPerPage = 6;
-let filteredCards = [...allCards];
+let filteredCards = [];
 let currentCategory = 'all';
 
 function renderCarousel() {
@@ -257,13 +258,6 @@ function updateStarIcons() {
     });
 }
 
-allCards.forEach(card => {
-    const star = card.querySelector('.fav-btn');
-    if (star) {
-        star.addEventListener('click', (e) => toggleFavorite(card.dataset.id, e));
-    }
-});
-
 // --- 6. TROPHY ROOM (ACHIEVEMENTS VIEWER) ---
 const btnAchievements = document.getElementById("btn-achievements");
 const modalAchievements = document.getElementById("achievements-modal");
@@ -322,6 +316,212 @@ if (closeAchBtn) {
     });
 }
 
-renderFavorites();
-updateStarIcons();
-renderCarousel();
+// --- 7. IFRAME GAME LOADER (message listener) ---
+window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'CASINO_OS_CLOSE_GAME') {
+        const container = document.getElementById('os-game-container');
+        const frame = document.getElementById('os-game-frame');
+
+        // Hide the iframe and clear the source to stop the game processes
+        container.style.display = 'none';
+        frame.src = '';
+
+        // Update the Hub UI so new XP and Money instantly reflect
+        if (typeof updateBonusUI === 'function') updateBonusUI();
+        renderRecentlyPlayed();
+    }
+});
+
+// --- 8. RECENTLY PLAYED ---
+const RECENT_KEY = 'hub_recently_played';
+const RECENT_MAX = 5;
+
+function getRecentlyPlayed() {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }
+    catch(e) { return []; }
+}
+
+function addRecentlyPlayed(gameId) {
+    let recent = getRecentlyPlayed();
+    recent = recent.filter(id => id !== gameId);
+    recent.unshift(gameId);
+    if (recent.length > RECENT_MAX) recent = recent.slice(0, RECENT_MAX);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+}
+
+function renderRecentlyPlayed() {
+    const bar = document.getElementById('recently-played-bar');
+    if (!bar) return;
+    const recent = getRecentlyPlayed();
+    if (recent.length === 0) {
+        bar.classList.add('hidden');
+        return;
+    }
+    bar.classList.remove('hidden');
+    const list = bar.querySelector('.rp-list');
+    if (!list) return;
+    list.innerHTML = '';
+    recent.forEach(id => {
+        const card = allCards.find(c => c.dataset.id === id);
+        if (!card) return;
+        const iconUrl = card.querySelector('.card-icon').style.backgroundImage;
+        const url = card.getAttribute('href');
+        const name = card.querySelector('h2').innerText;
+        const chip = document.createElement('a');
+        chip.href = url;
+        chip.className = 'rp-chip hub-interactive';
+        chip.dataset.recentId = id;
+        chip.innerHTML = `<div class="rp-icon" style="background-image:${iconUrl}"></div><span>${name}</span>`;
+        list.appendChild(chip);
+    });
+    // Wire rp chip clicks through the launch panel
+    list.querySelectorAll('.rp-chip').forEach(chip => {
+        chip.addEventListener('click', function(e) {
+            e.preventDefault();
+            const id = this.dataset.recentId;
+            const card = allCards.find(c => c.dataset.id === id);
+            if (card) openLaunchPanel(card);
+        });
+    });
+}
+
+// --- 9. LAUNCH PANEL ---
+function launchGame(gameUrl) {
+    const frame = document.getElementById('os-game-frame');
+    const container = document.getElementById('os-game-container');
+    frame.src = gameUrl;
+    container.style.display = 'block';
+}
+
+function openLaunchPanel(cardEl) {
+    playHubSound('click');
+    const gameUrl  = cardEl.getAttribute('href');
+    const gameName = cardEl.querySelector('h2').innerText;
+    const iconStyle = cardEl.querySelector('.card-icon').style.backgroundImage;
+    const hasOnline = cardEl.querySelector('.b-online') !== null;
+    const gameId   = cardEl.dataset.id;
+
+    // Build or reuse overlay
+    let overlay = document.getElementById('launch-panel-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'launch-panel-overlay';
+        document.body.appendChild(overlay);
+    }
+
+    const onlineBtn = hasOnline ? `
+        <button class="lp-btn lp-btn-online" id="lp-btn-online">
+            👥 Play Online
+        </button>` : '';
+
+    overlay.innerHTML = `
+        <div class="lp-box">
+            <button class="lp-close" id="lp-close">&times;</button>
+            <div class="lp-icon" style="background-image:${iconStyle}"></div>
+            <div class="lp-title">${gameName}</div>
+            <div class="lp-buttons">
+                <button class="lp-btn lp-btn-solo" id="lp-btn-solo">🎮 Solo / AI</button>
+                ${onlineBtn}
+            </div>
+        </div>
+    `;
+    overlay.classList.remove('lp-hidden');
+
+    document.getElementById('lp-close').addEventListener('click', () => {
+        overlay.classList.add('lp-hidden');
+    });
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) overlay.classList.add('lp-hidden');
+    });
+
+    document.getElementById('lp-btn-solo').addEventListener('click', () => {
+        overlay.classList.add('lp-hidden');
+        addRecentlyPlayed(gameId);
+        launchGame(gameUrl);
+    });
+
+    if (hasOnline) {
+        document.getElementById('lp-btn-online').addEventListener('click', () => {
+            overlay.classList.add('lp-hidden');
+            addRecentlyPlayed(gameId);
+            launchGame(gameUrl + '?mode=online');
+        });
+    }
+}
+
+// --- 10. CARD GENERATION FROM games.json ---
+async function initCards() {
+    let games = [];
+    try {
+        const res = await fetch('games.json');
+        games = await res.json();
+    } catch(e) {
+        console.error('Game Shack: Failed to load games.json', e);
+        return;
+    }
+
+    games.forEach(game => {
+        const iconStyle = game.iconStyle ? ` ${game.iconStyle}` : '';
+        const badgesHTML = game.badges.map(b => {
+            const cls = b.includes('Online') ? 'b-online' : b.includes('Solo') ? 'b-solo' : '';
+            return `<span class="badge ${cls}">${b}</span>`;
+        }).join(' ');
+
+        const stats = (window.SystemStats) ? window.SystemStats.getStats(game.id) : null;
+        const wins = stats ? stats.wins : 0;
+        const played = stats ? stats.gamesPlayed : 0;
+
+        const a = document.createElement('a');
+        a.href = game.url;
+        a.className = 'game-card hub-interactive';
+        a.dataset.id = game.id;
+        a.dataset.name = game.searchTags;
+        a.dataset.cat = game.category;
+        a.innerHTML = `
+            <div class="fav-btn hub-interactive">☆</div>
+            <div class="card-icon" style="background-image: url('${game.icon}');${iconStyle}"></div>
+            <h2>${game.name}</h2>
+            <div class="card-badges">${badgesHTML}</div>
+            <div class="card-stats">
+                <span class="card-stat">🏆 ${wins}</span>
+                <span class="card-stat-sep">·</span>
+                <span class="card-stat">🎮 ${played}</span>
+            </div>
+            <div class="card-play-btn">▶ PLAY</div>
+        `;
+        grid.appendChild(a);
+    });
+
+    // Rebuild allCards from the now-populated DOM
+    allCards = Array.from(document.querySelectorAll('.game-card'));
+    filteredCards = [...allCards];
+
+    // Wire hub click sound to each new card
+    allCards.forEach(card => {
+        card.addEventListener('click', () => playHubSound('click'));
+    });
+
+    // Wire fav star buttons
+    allCards.forEach(card => {
+        const star = card.querySelector('.fav-btn');
+        if (star) {
+            star.addEventListener('click', (e) => toggleFavorite(card.dataset.id, e));
+        }
+    });
+
+    // Wire card clicks to launch panel instead of direct iframe load
+    allCards.forEach(card => {
+        card.addEventListener('click', function(e) {
+            e.preventDefault();
+            openLaunchPanel(this);
+        });
+    });
+
+    // Initial render
+    renderFavorites();
+    updateStarIcons();
+    renderRecentlyPlayed();
+    renderCarousel();
+}
+
+initCards();

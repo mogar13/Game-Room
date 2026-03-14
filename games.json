@@ -1,0 +1,242 @@
+[
+  {
+    "id": "backgammon",
+    "name": "Backgammon",
+    "searchTags": "backgammon",
+    "category": "board",
+    "icon": "system/images/icons/bg-icon.png",
+    "iconStyle": "",
+    "url": "games/backgammon/bg.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "battleship",
+    "name": "Battleship",
+    "searchTags": "battleship navy ships multiplayer",
+    "category": "board",
+    "icon": "system/images/icons/battleship-icon.png",
+    "iconStyle": "",
+    "url": "games/battleship/battleship.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "blackjack",
+    "name": "Blackjack",
+    "searchTags": "blackjack cards 21 dealer",
+    "category": "casino",
+    "icon": "system/images/icons/blackjack.png",
+    "iconStyle": "",
+    "url": "games/blackjack/blackjack.html",
+    "badges": ["🤖 Solo"]
+  },
+  {
+    "id": "checkers",
+    "name": "Checkers",
+    "searchTags": "checkers draughts board pieces",
+    "category": "board",
+    "icon": "system/images/icons/checkers-icon.png",
+    "iconStyle": "",
+    "url": "games/checkers/checkers.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "chess",
+    "name": "Chess",
+    "searchTags": "chess",
+    "category": "board",
+    "icon": "system/images/pieces/chess-pieces/white-knight.png",
+    "iconStyle": "",
+    "url": "games/chess/chess.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "clue",
+    "name": "Clue",
+    "searchTags": "clue",
+    "category": "board",
+    "icon": "system/images/icons/CLUE_logo.png",
+    "iconStyle": "",
+    "url": "games/clue/clue.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "c4",
+    "name": "Connect 4",
+    "searchTags": "connect 4 four multiplayer",
+    "category": "board",
+    "icon": "system/images/pieces/yellow/token_circle_flat_yellow.png",
+    "iconStyle": "",
+    "url": "games/connect4/c4.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "domino",
+    "name": "Domino",
+    "searchTags": "classic domino",
+    "category": "board",
+    "icon": "system/images/icons/domino.png",
+    "iconStyle": "",
+    "url": "games/domino/domino.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "family-feud",
+    "name": "Family Feud",
+    "searchTags": "family feud",
+    "category": "board",
+    "icon": "system/images/icons/Logo_of_Family_Feud.png",
+    "iconStyle": "",
+    "url": "games/family-feud/feud.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "memory",
+    "name": "Memory",
+    "searchTags": "memory match cards pairs",
+    "category": "board",
+    "icon": "system/images/cards/standard/cardBack_green5.png",
+    "iconStyle": "border-radius: 5px;",
+    "url": "games/memory/memory.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "monopoly",
+    "name": "Monopoly",
+    "searchTags": "monopoly",
+    "category": "board",
+    "icon": "system/images/icons/Monopoly_logo.png",
+    "iconStyle": "border-radius: 5px;",
+    "url": "games/monopoly/monopoly.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "risk",
+    "name": "Risk",
+    "searchTags": "risk the board game",
+    "category": "board",
+    "icon": "system/images/icons/risk-logo.png",
+    "iconStyle": "border-radius: 50%;",
+    "url": "games/risk/risk.html",
+    "badges": ["🤖 Solo"]
+  },
+  {
+    "id": "roulette",
+    "name": "Roulette",
+    "searchTags": "roulette spin wheel casino",
+    "category": "casino",
+    "icon": "system/images/wheel.png",
+    "iconStyle": "border-radius: 50%;",
+    "url": "games/roulette/roulette.html",
+    "badges": ["🤖 Solo"]
+  },
+  {
+    "id": "rps",
+    "name": "RPS",
+    "searchTags": "rps rock paper scissors",
+    "category": "board",
+    "icon": "system/images/icons/rps-icon.png",
+    "iconStyle": "",
+    "url": "games/rps/rps.html",
+    "badges": ["🤖 Solo"]
+  },
+  {
+    "id": "rummy",
+    "name": "Rummy",
+    "searchTags": "classic rummy",
+    "category": "board",
+    "icon": "system/images/cards/standard/cardBack_red5.png",
+    "iconStyle": "",
+    "url": "games/rummy/rummy.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "slots",
+    "name": "Slots",
+    "searchTags": "slots spin high roller casino",
+    "category": "casino",
+    "icon": "system/images/icons/slots-icon.png",
+    "iconStyle": "border-radius: 8px;",
+    "url": "games/slots/slots.html",
+    "badges": ["🤖 Solo"]
+  },
+  {
+    "id": "scrabble",
+    "name": "Scrabble",
+    "searchTags": "scrabble",
+    "category": "board",
+    "icon": "system/images/icons/scrabble-logo.png",
+    "iconStyle": "border-radius: 8px;",
+    "url": "games/scrabble/scrabble.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "snl",
+    "name": "Snakes & Ladders",
+    "searchTags": "snakes ladders chutes multiplayer",
+    "category": "board",
+    "icon": "system/images/icons/snl-icon.png",
+    "iconStyle": "",
+    "url": "games/snakes-and-ladders/snl.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "solitaire",
+    "name": "Solitaire",
+    "searchTags": "Klondike solitaire",
+    "category": "board",
+    "icon": "system/images/cards/standard/cardBack_blue2.png",
+    "iconStyle": "",
+    "url": "games/solitaire/solitaire.html",
+    "badges": ["🤖 Solo"]
+  },
+  {
+    "id": "texas_holdem",
+    "name": "Texas Hold 'Em",
+    "searchTags": "Texas Hold Em Poker",
+    "category": "casino",
+    "icon": "system/images/cards/standard/cardSpadesK.png",
+    "iconStyle": "",
+    "url": "games/holdem/texas_holdem.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "ttt",
+    "name": "Tic-Tac-Toe",
+    "searchTags": "tic tac toe x o multiplayer",
+    "category": "board",
+    "icon": "system/images/icons/ttt-icon.png",
+    "iconStyle": "",
+    "url": "games/tic-tac-toe/ttt.html",
+    "badges": ["👥 Online"]
+  },
+  {
+    "id": "trivial-pursuit",
+    "name": "Trivial Pursuit",
+    "searchTags": "trivial-pursuit",
+    "category": "board",
+    "icon": "system/images/icons/trivial-pusuit.png",
+    "iconStyle": "",
+    "url": "games/trivial-pursuit/trivia.html",
+    "badges": ["👥 Online"]
+  },
+  {
+    "id": "uno",
+    "name": "UNO",
+    "searchTags": "UNO!",
+    "category": "board",
+    "icon": "system/images/cards/uno/wild/wild_card.png",
+    "iconStyle": "",
+    "url": "games/uno/uno.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  },
+  {
+    "id": "yahtzee",
+    "name": "Yahtzee",
+    "searchTags": "yahtzee die game",
+    "category": "board",
+    "icon": "system/images/icons/icon2.png",
+    "iconStyle": "",
+    "url": "games/yahtzee/yahtzee.html",
+    "badges": ["👥 Online", "🤖 Solo"]
+  }
+]

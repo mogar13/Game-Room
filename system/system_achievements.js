@@ -22,7 +22,13 @@ window.SystemAchievements = {
 
     init: function() {
         this.loadData();
-        this.bindEvents();
+        // Defer bindEvents until DOMContentLoaded so system_ui.js is guaranteed
+        // to have run first (system_achievements.js loads before system_ui.js)
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", () => this.bindEvents());
+        } else {
+            this.bindEvents();
+        }
     },
 
     loadData: function() {

@@ -123,6 +123,18 @@ window.SystemUI = {
                     <button id="sys-close-btn">BACK TO GAME</button>
                 </div>
             </div>
+
+            <div id="sys-hub-menu" class="sys-hidden">
+                <div class="sys-hub-menu-box">
+                    <div class="sys-hub-menu-title">${config.gameName || 'CASINO OS'}</div>
+                    <div class="sys-hub-menu-divider"></div>
+                    <button class="sys-hub-menu-btn" id="sys-hm-resume">▶&nbsp;&nbsp;RESUME GAME</button>
+                    <button class="sys-hub-menu-btn" id="sys-hm-restart">🔄&nbsp;&nbsp;RESTART GAME</button>
+                    <button class="sys-hub-menu-btn" id="sys-hm-info">📖&nbsp;&nbsp;GAME INFO</button>
+                    <div class="sys-hub-menu-divider"></div>
+                    <button class="sys-hub-menu-btn sys-hub-menu-btn-exit" id="sys-hm-exit">🏠&nbsp;&nbsp;RETURN TO LIBRARY</button>
+                </div>
+            </div>
         `;
 
         document.body.insertAdjacentHTML('afterbegin', hudHTML);
@@ -137,6 +149,28 @@ window.SystemUI = {
             });
         }, 0);
 
+        // If launched with ?mode=online from the hub, auto-trigger the online mode dropdown.
+        // Runs at 60ms so it fires after both the ai-default (0ms) and game's own sync (50ms).
+        const urlMode = new URLSearchParams(window.location.search).get('mode');
+        if (urlMode) {
+            // Run at 100ms — after the ai-default (0ms) and game's own sync (50ms).
+            // Find specifically the dropdown that HAS the requested mode as an option,
+            // so we never accidentally target the difficulty or other dropdowns.
+            setTimeout(() => {
+                const allDropdowns = document.querySelectorAll('.hud-dropdown');
+                let modeDropdown = null;
+                allDropdowns.forEach(sel => {
+                    if ([...sel.options].some(o => o.value === urlMode)) {
+                        modeDropdown = sel;
+                    }
+                });
+                if (modeDropdown) {
+                    modeDropdown.value = urlMode;
+                    modeDropdown.dispatchEvent(new Event('change'));
+                }
+            }, 100);
+        }
+
         // Listen for internal profile changes to auto-update HUD
         this.on("money_changed", (newAmount) => this.updateMoneyDisplay());
         
@@ -149,16 +183,8 @@ window.SystemUI = {
 
     bindEvents: function() {
         document.getElementById('sys-btn-home').addEventListener('click', () => {
-            this.playSound('exit');
-            setTimeout(() => {
-                // If we are inside an iframe, tell the Casino Hub to close it
-                if (window !== window.parent) {
-                    window.parent.postMessage({ type: 'CASINO_OS_CLOSE_GAME' }, '*');
-                } else {
-                    // Fallback: If someone opened the game directly in a tab
-                    window.location.href = '../../index.html'; 
-                }
-            }, 150);
+            this.playSound('click');
+            this.openHubMenu();
         });
 
         document.getElementById('sys-btn-sound').addEventListener('click', (e) => {
@@ -190,6 +216,35 @@ window.SystemUI = {
             if (this._chatOpen) this.closeChat();
             else this.openChat();
         });
+
+        document.getElementById('sys-hm-resume').addEventListener('click', () => {
+            this.playSound('click');
+            this.closeHubMenu();
+        });
+
+        document.getElementById('sys-hm-restart').addEventListener('click', () => {
+            this.playSound('click');
+            this.closeHubMenu();
+            const resetBtn = document.getElementById('sys-reset-game-btn');
+            if (resetBtn) resetBtn.click();
+        });
+
+        document.getElementById('sys-hm-info').addEventListener('click', () => {
+            this.playSound('click');
+            this.closeHubMenu();
+            document.getElementById('sys-modal').classList.remove('sys-hidden');
+        });
+
+        document.getElementById('sys-hm-exit').addEventListener('click', () => {
+            this.playSound('exit');
+            setTimeout(() => {
+                if (window.self !== window.top) {
+                    window.parent.postMessage({ type: 'CASINO_OS_CLOSE_GAME' }, '*');
+                } else {
+                    window.location.href = '../../index.html';
+                }
+            }, 150);
+        });
     },
 
     updateMoneyDisplay: function() {
@@ -207,6 +262,14 @@ window.SystemUI = {
         this.money = 1000;
         this.updateMoneyDisplay();
         this.playSound('win');
+    },
+
+    openHubMenu: function() {
+        document.getElementById('sys-hub-menu').classList.remove('sys-hidden');
+    },
+
+    closeHubMenu: function() {
+        document.getElementById('sys-hub-menu').classList.add('sys-hidden');
     },
 
     // ==========================================
@@ -696,56 +759,3 @@ if (isMobileDevice) {
     document.addEventListener('touchstart', goFullscreen, { passive: true });
     document.addEventListener('click', goFullscreen, { passive: true });
 }
-
-// ==========================================
-// MODULE WIRING
-// The system modules (system_betting.js, system_lobby.js, etc.) load BEFORE
-// this file in every game page's <script> order. Their own compatibility
-// overrides all ran as no-ops because window.SystemUI didn't exist yet when
-// they executed. This block is the fix: it runs after window.SystemUI is
-// fully defined and wires each loaded module into SystemUI so the rest of
-// the codebase (games, hub, etc.) works through the same stable API.
-// ==========================================
-(function wireSystemModules() {
-    // -- Betting module --
-    if (window.SystemBetting) {
-        window.SystemUI.setupBetting   = function(id, opts) { window.SystemBetting.setup(id, opts); };
-        window.SystemUI.updateBetDisplay = function(amt)   { window.SystemBetting.updateDisplay(); };
-        window.SystemUI.enableBetting  = function(en)      { window.SystemBetting.enable(en); };
-    }
-
-    // -- Lobby module --
-    if (window.SystemLobby) {
-        window.SystemUI.v2Lobby = window.SystemLobby;
-    }
-
-    // -- Chat module --
-    if (window.SystemChat) {
-        window.SystemUI.startChat   = function(roomId, name) { window.SystemChat.startChat(roomId, name); };
-        window.SystemUI.stopChat    = function()             { window.SystemChat.stopChat(); };
-        window.SystemUI.openChat    = function()             { window.SystemChat.openChat(); };
-        window.SystemUI.closeChat   = function()             { window.SystemChat.closeChat(); };
-        window.SystemUI._sendMessage = function()            { window.SystemChat.sendMessage(); };
-        // Keep the _chatOpen flag in sync between SystemUI and SystemChat
-        Object.defineProperty(window.SystemUI, '_chatOpen', {
-            get: function() { return window.SystemChat.isOpen; },
-            set: function(val) { window.SystemChat.isOpen = val; },
-            configurable: true
-        });
-    }
-
-    // -- Stats module --
-    if (window.SystemStats) {
-        window.SystemUI.recordGameStart = function(id) { window.SystemStats.recordGameStart(id); };
-        window.SystemUI.recordWin       = function(id) { window.SystemStats.recordWin(id); };
-        window.SystemUI.recordLoss      = function(id) { window.SystemStats.recordLoss(id); };
-        window.SystemUI.recordTie       = function(id) { window.SystemStats.recordTie(id); };
-        window.SystemUI.getStats        = function(id) { return window.SystemStats.getStats(id); };
-    }
-
-    // -- Achievements module --
-    if (window.SystemAchievements) {
-        window.SystemUI.unlockAchievement = function(id) { window.SystemAchievements.unlock(id); };
-        window.SystemUI.getAchievements   = function()   { return window.SystemAchievements.getUnlocked(); };
-    }
-})();

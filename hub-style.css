@@ -604,3 +604,288 @@ header {
 .ach-rewards { display: flex; gap: 10px; font-size: 0.75rem; font-weight: bold; margin-top: 5px; }
 .ach-rxp { color: #3498db; }
 .ach-rmoney { color: #2ecc71; }
+
+/*======================================================
+  MOBILE OPTIMIZATION FIXES
+========================================================*/
+@media (max-width: 600px) {
+  /* Shrink the massive header */
+  .shack-title { font-size: 1.8rem; }
+  header { padding: 20px 10px; margin-bottom: 10px; }
+  
+  /* Stack the profile banner vertically */
+  .profile-banner { 
+    flex-direction: column; 
+    align-items: center; 
+    gap: 12px; 
+    text-align: center; 
+  }
+  .profile-left, .profile-right { 
+    width: 100%; 
+    justify-content: center; 
+    flex-wrap: wrap;
+  }
+  
+  /* Optimize the Game Grid for tight screens */
+  .game-grid { 
+    grid-template-columns: repeat(2, 1fr); 
+    gap: 10px; 
+    padding: 5px; 
+    min-height: 350px; 
+  }
+  .game-card { padding: 12px 5px; }
+  .card-icon { width: 40px; height: 40px; margin-bottom: 5px; }
+  .game-card h2 { font-size: 0.85rem; }
+  
+  /* Shrink badges so they don't break boundaries */
+  .badge { font-size: 0.55rem; padding: 2px 4px; }
+  
+  /* Full width search bar */
+  #game-search { width: 100%; }
+}
+/*======================================================
+  STEAM-STYLE CARD STATS & PLAY BUTTON
+========================================================*/
+
+/* Stats row — shows wins and games played under the badges */
+.card-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.5px;
+}
+
+.card-stat-sep {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+/* Play button — visual only, the whole card is the click target */
+.card-play-btn {
+  margin-top: 10px;
+  background: var(--accent-color);
+  color: #000;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.65rem;
+  font-weight: bold;
+  padding: 6px 18px;
+  border-radius: 20px;
+  letter-spacing: 1.5px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.game-card:hover .card-play-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Mobile — always show play button, no hover required */
+@media (max-width: 600px) {
+  .card-play-btn {
+    opacity: 1;
+    transform: none;
+    font-size: 0.6rem;
+    padding: 5px 14px;
+    margin-top: 6px;
+  }
+
+  .card-stats {
+    font-size: 0.62rem;
+  }
+}
+
+/*======================================================
+  RECENTLY PLAYED BAR
+========================================================*/
+#recently-played-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  background: rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+#recently-played-bar::-webkit-scrollbar { height: 3px; }
+#recently-played-bar::-webkit-scrollbar-thumb { background: var(--accent-color); border-radius: 2px; }
+
+.rp-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.6rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.rp-list {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rp-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card-bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 12px 4px 6px;
+  border-radius: 20px;
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.75);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.68rem;
+  transition: border-color 0.2s, color 0.2s, transform 0.15s;
+  flex-shrink: 0;
+}
+
+.rp-chip:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  transform: scale(1.04);
+}
+
+.rp-icon {
+  width: 18px;
+  height: 18px;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .rp-label { font-size: 0.55rem; }
+  .rp-chip { font-size: 0.6rem; padding: 3px 10px 3px 5px; }
+  .rp-icon { width: 14px; height: 14px; }
+}
+
+/*======================================================
+  LAUNCH PANEL OVERLAY
+========================================================*/
+#launch-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  z-index: 100001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  animation: lpFadeIn 0.15s ease;
+}
+
+#launch-panel-overlay.lp-hidden {
+  display: none !important;
+}
+
+@keyframes lpFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.lp-box {
+  background: linear-gradient(160deg, #12122a 0%, #0a0a18 100%);
+  border: 2px solid var(--accent-color);
+  border-radius: 16px;
+  padding: 32px 28px 24px;
+  width: 88%;
+  max-width: 300px;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 0 60px rgba(0, 210, 255, 0.1), 0 20px 50px rgba(0,0,0,0.9);
+  animation: lpSlideUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes lpSlideUp {
+  from { transform: translateY(16px) scale(0.96); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.lp-close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.3);
+  font-size: 1.6rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.lp-close:hover { color: #fff; }
+
+.lp-icon {
+  width: 56px;
+  height: 56px;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  margin: 0 auto 12px;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));
+}
+
+.lp-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: var(--accent-color);
+  margin-bottom: 22px;
+  text-transform: uppercase;
+}
+
+.lp-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lp-btn {
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 10px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.78rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.1s, box-shadow 0.15s;
+}
+
+.lp-btn:active { transform: scale(0.97); }
+
+.lp-btn-solo {
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.8);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+.lp-btn-solo:hover {
+  background: rgba(255,255,255,0.14);
+  color: #fff;
+  border-color: rgba(255,255,255,0.35);
+}
+
+.lp-btn-online {
+  background: var(--accent-color);
+  color: #000;
+  box-shadow: 0 4px 20px rgba(0, 210, 255, 0.35);
+}
+.lp-btn-online:hover {
+  box-shadow: 0 6px 28px rgba(0, 210, 255, 0.55);
+  transform: scale(1.02);
+}
