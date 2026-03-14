@@ -246,6 +246,11 @@ function renderFavorites() {
             a.href = url;
             a.className = 'fav-shortcut hub-interactive';
             a.innerHTML = `<div class="fav-shortcut-icon" style="background-image: ${iconUrl}"></div><span>${name}</span>`;
+            // Route through launch panel instead of direct iframe load
+            a.addEventListener('click', (e) => {
+                e.preventDefault();
+                openLaunchPanel(card);
+            });
             bar.appendChild(a);
         }
     });
@@ -330,12 +335,32 @@ window.addEventListener('message', function(event) {
         const frame = document.getElementById('os-game-frame');
 
         // Hide the iframe and clear the source to stop the game processes
+        // NOTE: save the URL BEFORE clearing frame.src — it will be '' immediately after
+        const closingFrameUrl = frame.src || '';
         container.style.display = 'none';
         frame.src = '';
 
         // Update the Hub UI so new XP and Money instantly reflect
         if (typeof updateBonusUI === 'function') updateBonusUI();
         renderRecentlyPlayed();
+
+        // Clean up stale waiting rooms for the game that just closed
+        if (window.db && window.dbGet && window.dbUpdate && window.dbRef) {
+            const frameUrl = closingFrameUrl;
+            const closingGame = rawGameData.find(g => frameUrl.includes(g.url.split('/').pop()));
+            if (closingGame) {
+                const roomsRef = window.dbRef(window.db, `${closingGame.id}_rooms`);
+                window.dbGet(roomsRef).then(snap => {
+                    const rooms = snap.val();
+                    if (!rooms) return;
+                    Object.keys(rooms).forEach(code => {
+                        if (rooms[code].status === 'waiting') {
+                            window.dbUpdate(window.dbRef(window.db, `${closingGame.id}_rooms/${code}`), { status: 'closed' });
+                        }
+                    });
+                }).catch(() => {});
+            }
+        }
     }
 });
 
@@ -684,11 +709,12 @@ function scanActiveMatches() {
                 return;
             }
 
-            let foundMatch = false;
+            // Collect every roomCode that is currently waiting
+            const waitingCodes = [];
             Object.keys(rooms).forEach(roomCode => {
                 const roomData = rooms[roomCode];
                 if (roomData.status === "waiting") {
-                    foundMatch = true;
+                    waitingCodes.push(roomCode);
                     // Try to grab the host's name safely depending on how the game stores it
                     let hostName = "Player";
                     if (roomData.seats && roomData.seats[0]) hostName = roomData.seats[0].name;
@@ -698,8 +724,21 @@ function scanActiveMatches() {
                 }
             });
 
-            if (!foundMatch) {
+            if (waitingCodes.length === 0) {
+                // No waiting rooms at all — remove all chips for this game
                 removeMatchesForGame(game.id);
+            } else {
+                // Remove chips for rooms that used to be waiting but no longer are
+                const list = document.querySelector('.am-list');
+                const staleChips = list.querySelectorAll(`.am-chip[data-game-id="${game.id}"]`);
+                staleChips.forEach(chip => {
+                    if (!waitingCodes.includes(chip.dataset.roomCode)) {
+                        chip.remove();
+                    }
+                });
+                // Keep the bar visible as long as any chips remain
+                const bar = document.getElementById('active-matches-bar');
+                if (list.children.length === 0) bar.classList.add('hidden');
             }
         });
         
@@ -710,32 +749,34 @@ function scanActiveMatches() {
 function upsertMatchChip(game, roomCode, hostName) {
     const list = document.querySelector('.am-list');
     const bar = document.getElementById('active-matches-bar');
+    // Key by game + roomCode — one chip per open room, exactly as intended
     const chipId = `am-chip-${game.id}-${roomCode}`;
-    
+
     let chip = document.getElementById(chipId);
     if (!chip) {
         chip = document.createElement('a');
         chip.id = chipId;
         chip.className = 'rp-chip am-chip hub-interactive';
         chip.dataset.gameId = game.id;
-        
-        chip.addEventListener('click', (e) => {
-            e.preventDefault();
-            playHubSound('win');
-            addRecentlyPlayed(game.id);
-            launchGame(`${game.url}?mode=online&join=${roomCode}`);
-        });
-        
+        chip.dataset.roomCode = roomCode;
         list.appendChild(chip);
         bar.classList.remove('hidden');
     }
-    
+
+    // Set innerHTML first, then onclick — so the handler is always on the final element
     chip.innerHTML = `
         <div class="rp-icon" style="background-image:url('${game.icon}')"></div>
         <span class="am-host">${hostName}</span>
-        <span style="color:#aaa;"> - ${game.name}</span>
+        <span style="color:#aaa;"> — ${game.name}</span>
         <span class="am-join-tag">JOIN</span>
     `;
+
+    chip.onclick = (e) => {
+        e.preventDefault();
+        playHubSound('win');
+        addRecentlyPlayed(game.id);
+        launchGame(`${game.url}?mode=online&join=${roomCode}`);
+    };
 }
 
 function removeMatchesForGame(gameId) {

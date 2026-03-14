@@ -167,6 +167,17 @@ function showToast(title, message, resetTableAfter = false) {
   }, 3500);
 }
 
+document.getElementById("toast-modal").addEventListener("click", function() {
+  if (!this.classList.contains("hidden")) {
+    clearTimeout(modalTimer);
+    this.classList.add("hidden");
+    if (resetPending) {
+      resetPending = false;
+      resetTableForBetting();
+    }
+  }
+});
+
 function resetTableForBetting() {
   isGameOver = true;
   playerHand = [];
