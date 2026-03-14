@@ -1148,3 +1148,60 @@ header {
   #profile-panel { width: 100%; max-width: 100%; border-left: none; border-top: 2px solid var(--accent-color); }
   .pp-stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/*======================================================
+  ACTIVE MATCHES BAR (LIVE LOBBY)
+========================================================*/
+#active-matches-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  background: rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+#active-matches-bar::-webkit-scrollbar { height: 3px; }
+#active-matches-bar::-webkit-scrollbar-thumb { background: #e74c3c; border-radius: 2px; }
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: #e74c3c;
+  border-radius: 50%;
+  margin-right: 6px;
+  box-shadow: 0 0 8px #e74c3c;
+  animation: pulseLive 1.5s infinite;
+}
+
+@keyframes pulseLive {
+  0% { opacity: 1; box-shadow: 0 0 8px #e74c3c; }
+  50% { opacity: 0.4; box-shadow: 0 0 2px #e74c3c; }
+  100% { opacity: 1; box-shadow: 0 0 8px #e74c3c; }
+}
+
+.am-chip {
+  border-color: rgba(231, 76, 60, 0.4);
+}
+.am-chip:hover {
+  border-color: #e74c3c;
+  color: #fff;
+}
+.am-host {
+  color: #e74c3c;
+  font-weight: bold;
+  margin-right: 4px;
+}
+.am-join-tag {
+  background: #e74c3c;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  font-size: 0.55rem;
+  letter-spacing: 1px;
+}

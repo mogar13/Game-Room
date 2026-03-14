@@ -551,11 +551,14 @@ function openLaunchPanel(cardEl) {
 }
 
 // --- 10. CARD GENERATION FROM games.json ---
+let rawGameData = []; // Store raw json for the scanner
+
 async function initCards() {
     let games = [];
     try {
         const res = await fetch('games.json');
         games = await res.json();
+        rawGameData = games;
     } catch(e) {
         console.error('Game Shack: Failed to load games.json', e);
         return;
@@ -647,6 +650,102 @@ async function initCards() {
     updateStarIcons();
     renderRecentlyPlayed();
     renderCarousel();
+    
+    // Boot the live multiplayer scanner after cards exist
+    scanActiveMatches();
 }
 
 initCards();
+
+// --- 11. LIVE MULTIPLAYER SCANNER ---
+let activeMatchesListeners = [];
+
+function scanActiveMatches() {
+    // Only run if Firebase is connected
+    if (typeof window.db === 'undefined' || typeof window.dbRef === 'undefined') return;
+
+    const bar = document.getElementById('active-matches-bar');
+    const list = bar.querySelector('.am-list');
+
+    // Clean up old listeners
+    activeMatchesListeners.forEach(off => off());
+    activeMatchesListeners = [];
+
+    // Filter down to only games that support online multiplayer
+    const onlineGames = rawGameData.filter(g => g.badges.includes("👥 Online"));
+
+    onlineGames.forEach(game => {
+        const roomRef = window.dbRef(window.db, `${game.id}_rooms`);
+        
+        const listener = window.dbOnValue(roomRef, (snapshot) => {
+            const rooms = snapshot.val();
+            if (!rooms) {
+                removeMatchesForGame(game.id);
+                return;
+            }
+
+            let foundMatch = false;
+            Object.keys(rooms).forEach(roomCode => {
+                const roomData = rooms[roomCode];
+                if (roomData.status === "waiting") {
+                    foundMatch = true;
+                    // Try to grab the host's name safely depending on how the game stores it
+                    let hostName = "Player";
+                    if (roomData.seats && roomData.seats[0]) hostName = roomData.seats[0].name;
+                    else if (roomData.p1Name) hostName = roomData.p1Name;
+
+                    upsertMatchChip(game, roomCode, hostName);
+                }
+            });
+
+            if (!foundMatch) {
+                removeMatchesForGame(game.id);
+            }
+        });
+        
+        activeMatchesListeners.push(listener);
+    });
+}
+
+function upsertMatchChip(game, roomCode, hostName) {
+    const list = document.querySelector('.am-list');
+    const bar = document.getElementById('active-matches-bar');
+    const chipId = `am-chip-${game.id}-${roomCode}`;
+    
+    let chip = document.getElementById(chipId);
+    if (!chip) {
+        chip = document.createElement('a');
+        chip.id = chipId;
+        chip.className = 'rp-chip am-chip hub-interactive';
+        chip.dataset.gameId = game.id;
+        
+        chip.addEventListener('click', (e) => {
+            e.preventDefault();
+            playHubSound('win');
+            addRecentlyPlayed(game.id);
+            launchGame(`${game.url}?mode=online&join=${roomCode}`);
+        });
+        
+        list.appendChild(chip);
+        bar.classList.remove('hidden');
+    }
+    
+    chip.innerHTML = `
+        <div class="rp-icon" style="background-image:url('${game.icon}')"></div>
+        <span class="am-host">${hostName}</span>
+        <span style="color:#aaa;"> - ${game.name}</span>
+        <span class="am-join-tag">JOIN</span>
+    `;
+}
+
+function removeMatchesForGame(gameId) {
+    const list = document.querySelector('.am-list');
+    const bar = document.getElementById('active-matches-bar');
+    
+    const chips = list.querySelectorAll(`.am-chip[data-game-id="${gameId}"]`);
+    chips.forEach(c => c.remove());
+    
+    if (list.children.length === 0) {
+        bar.classList.add('hidden');
+    }
+}

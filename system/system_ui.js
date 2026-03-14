@@ -152,6 +152,7 @@ window.SystemUI = {
         // If launched with ?mode=online from the hub, auto-trigger the online mode dropdown.
         // Runs at 60ms so it fires after both the ai-default (0ms) and game's own sync (50ms).
         const urlMode = new URLSearchParams(window.location.search).get('mode');
+        const urlJoin = new URLSearchParams(window.location.search).get('join');
         if (urlMode) {
             // Run at 100ms — after the ai-default (0ms) and game's own sync (50ms).
             // Find specifically the dropdown that HAS the requested mode as an option,
@@ -167,6 +168,15 @@ window.SystemUI = {
                 if (modeDropdown) {
                     modeDropdown.value = urlMode;
                     modeDropdown.dispatchEvent(new Event('change'));
+                }
+                
+                if (urlJoin) {
+                    const joinInput = document.getElementById("v2-join-input");
+                    const joinBtn = document.getElementById("v2-btn-join");
+                    if (joinInput && joinBtn) {
+                        joinInput.value = urlJoin;
+                        joinBtn.click();
+                    }
                 }
             }, 100);
         }
@@ -759,3 +769,56 @@ if (isMobileDevice) {
     document.addEventListener('touchstart', goFullscreen, { passive: true });
     document.addEventListener('click', goFullscreen, { passive: true });
 }
+
+// ==========================================
+// MODULE WIRING
+// The system modules (system_betting.js, system_lobby.js, etc.) load BEFORE
+// this file in every game page's <script> order. Their own compatibility
+// overrides all ran as no-ops because window.SystemUI didn't exist yet when
+// they executed. This block is the fix: it runs after window.SystemUI is
+// fully defined and wires each loaded module into SystemUI so the rest of
+// the codebase (games, hub, etc.) works through the same stable API.
+// ==========================================
+(function wireSystemModules() {
+    // -- Betting module --
+    if (window.SystemBetting) {
+        window.SystemUI.setupBetting   = function(id, opts) { window.SystemBetting.setup(id, opts); };
+        window.SystemUI.updateBetDisplay = function(amt)   { window.SystemBetting.updateDisplay(); };
+        window.SystemUI.enableBetting  = function(en)      { window.SystemBetting.enable(en); };
+    }
+
+    // -- Lobby module --
+    if (window.SystemLobby) {
+        window.SystemUI.v2Lobby = window.SystemLobby;
+    }
+
+    // -- Chat module --
+    if (window.SystemChat) {
+        window.SystemUI.startChat   = function(roomId, name) { window.SystemChat.startChat(roomId, name); };
+        window.SystemUI.stopChat    = function()             { window.SystemChat.stopChat(); };
+        window.SystemUI.openChat    = function()             { window.SystemChat.openChat(); };
+        window.SystemUI.closeChat   = function()             { window.SystemChat.closeChat(); };
+        window.SystemUI._sendMessage = function()            { window.SystemChat.sendMessage(); };
+        // Keep the _chatOpen flag in sync between SystemUI and SystemChat
+        Object.defineProperty(window.SystemUI, '_chatOpen', {
+            get: function() { return window.SystemChat.isOpen; },
+            set: function(val) { window.SystemChat.isOpen = val; },
+            configurable: true
+        });
+    }
+
+    // -- Stats module --
+    if (window.SystemStats) {
+        window.SystemUI.recordGameStart = function(id) { window.SystemStats.recordGameStart(id); };
+        window.SystemUI.recordWin       = function(id) { window.SystemStats.recordWin(id); };
+        window.SystemUI.recordLoss      = function(id) { window.SystemStats.recordLoss(id); };
+        window.SystemUI.recordTie       = function(id) { window.SystemStats.recordTie(id); };
+        window.SystemUI.getStats        = function(id) { return window.SystemStats.getStats(id); };
+    }
+
+    // -- Achievements module --
+    if (window.SystemAchievements) {
+        window.SystemUI.unlockAchievement = function(id) { window.SystemAchievements.unlock(id); };
+        window.SystemUI.getAchievements   = function()   { return window.SystemAchievements.getUnlocked(); };
+    }
+})();
