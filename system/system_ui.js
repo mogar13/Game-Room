@@ -170,13 +170,16 @@ window.SystemUI = {
                     modeDropdown.dispatchEvent(new Event('change'));
                 }
                 
+                // Auto-join fires after mode change has opened the lobby overlay
                 if (urlJoin) {
-                    const joinInput = document.getElementById("v2-join-input");
-                    const joinBtn = document.getElementById("v2-btn-join");
-                    if (joinInput && joinBtn) {
-                        joinInput.value = urlJoin;
-                        joinBtn.click();
-                    }
+                    setTimeout(() => {
+                        const joinInput = document.getElementById("v2-join-input");
+                        const joinBtn = document.getElementById("v2-btn-join");
+                        if (joinInput && joinBtn) {
+                            joinInput.value = urlJoin.toUpperCase();
+                            joinBtn.click();
+                        }
+                    }, 300);
                 }
             }, 100);
         }
