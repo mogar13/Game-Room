@@ -180,6 +180,9 @@
     window.dbUpdate = update;
     window.dbGet = get;
     window.dbRemove = remove;
+
+    // Signal that Firebase is ready so hub_app.js scanner can start immediately
+    window.hubFirebaseReady = true;
   </script>
 
   <script src="system/system_profile.js"></script>

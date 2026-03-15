@@ -614,7 +614,8 @@ let rawGameData = []; // Store raw json for the scanner
 async function initCards() {
     let games = [];
     try {
-        const res = await fetch('games.json');
+        // Cache Buster added here!
+        const res = await fetch('games.json?v=' + Date.now());
         games = await res.json();
         rawGameData = games;
     } catch(e) {
@@ -710,19 +711,20 @@ async function initCards() {
     renderCarousel();
     
     // Boot the live multiplayer scanner after cards exist.
-    // Firebase is a type="module" script so window.db may not be ready yet.
-    // Retry every 200ms for up to 3 seconds until it exists.
+    // Firebase is a type="module" script which runs AFTER regular scripts.
+    // We wait for window.hubFirebaseReady (set by the module) before scanning.
+    // Retry every 100ms for up to 5 seconds.
     let dbWaitAttempts = 0;
     const dbWaitInterval = setInterval(() => {
         dbWaitAttempts++;
-        if (typeof window.db !== 'undefined' && typeof window.dbRef !== 'undefined' && typeof window.dbOnValue !== 'undefined') {
+        if (window.hubFirebaseReady === true && typeof window.db !== 'undefined' && typeof window.dbOnValue !== 'undefined') {
             clearInterval(dbWaitInterval);
             scanActiveMatches();
-        } else if (dbWaitAttempts >= 15) {
+        } else if (dbWaitAttempts >= 50) {
             clearInterval(dbWaitInterval);
-            console.warn('Game Shack: Firebase not ready after 3s — live scanner skipped.');
+            console.warn('Game Shack: Firebase not ready after 5s — live scanner skipped.');
         }
-    }, 200);
+    }, 100);
 }
 
 initCards();
@@ -754,34 +756,42 @@ function scanActiveMatches() {
                 return;
             }
 
-            // Collect every roomCode that is currently waiting and was created recently
-            const TWO_HOURS = 2 * 60 * 60 * 1000;
+            // Collect every roomCode that is currently active and joinable
+            const THIRTY_MINS = 30 * 60 * 1000;
             const now = Date.now();
-            const waitingCodes = [];
+            const activeCodes = [];
             Object.keys(rooms).forEach(roomCode => {
                 const roomData = rooms[roomCode];
-                // Skip rooms older than 2 hours — they are ghosts from abandoned sessions
-                if (roomData.createdAt && (now - roomData.createdAt) > TWO_HOURS) return;
-                if (roomData.status === "waiting") {
-                    waitingCodes.push(roomCode);
+                // Skip rooms older than 30 minutes — they are ghosts from abandoned sessions
+                if (roomData.createdAt && (now - roomData.createdAt) > THIRTY_MINS) return;
+                
+                const isActive = roomData.status === "waiting" || roomData.status === "playing";
+                const seats = roomData.seats || [];
+                const hasOpenSeat = seats.some(s => s && (s.type === 'ai' || s.type === 'empty'));
+
+                if (isActive && hasOpenSeat) {
+                    activeCodes.push(roomCode);
                     // Try to grab the host's name safely depending on how the game stores it
                     let hostName = "Player";
-                    if (roomData.seats && roomData.seats[0]) hostName = roomData.seats[0].name;
+                    if (seats[0] && seats[0].name) hostName = seats[0].name;
                     else if (roomData.p1Name) hostName = roomData.p1Name;
+                    
+                    const humanCount = seats.filter(s => s && s.type === 'human').length;
+                    const totalSeats = Math.max(seats.length, 2);
 
-                    upsertMatchChip(game, roomCode, hostName);
+                    upsertMatchChip(game, roomCode, hostName, humanCount, totalSeats);
                 }
             });
 
-            if (waitingCodes.length === 0) {
-                // No waiting rooms at all — remove all chips for this game
+            if (activeCodes.length === 0) {
+                // No active joinable rooms at all — remove all chips for this game
                 removeMatchesForGame(game.id);
             } else {
-                // Remove chips for rooms that used to be waiting but no longer are
+                // Remove chips for rooms that used to be joinable but no longer are
                 const list = document.querySelector('.am-list');
                 const staleChips = list.querySelectorAll(`.am-chip[data-game-id="${game.id}"]`);
                 staleChips.forEach(chip => {
-                    if (!waitingCodes.includes(chip.dataset.roomCode)) {
+                    if (!activeCodes.includes(chip.dataset.roomCode)) {
                         chip.remove();
                     }
                 });
@@ -795,7 +805,7 @@ function scanActiveMatches() {
     });
 }
 
-function upsertMatchChip(game, roomCode, hostName) {
+function upsertMatchChip(game, roomCode, hostName, humanCount, totalSeats) {
     const list = document.querySelector('.am-list');
     const bar = document.getElementById('active-matches-bar');
     // Key by game + roomCode — one chip per open room, exactly as intended
@@ -816,7 +826,7 @@ function upsertMatchChip(game, roomCode, hostName) {
     chip.innerHTML = `
         <div class="rp-icon" style="background-image:url('${game.icon}')"></div>
         <span class="am-host">${hostName}</span>
-        <span style="color:#aaa;"> — ${game.name}</span>
+        <span style="color:#aaa;"> — ${game.name} <span style="color:#3498db; font-size:0.65rem; margin-left:4px; font-weight:bold;">(👤 ${humanCount}/${totalSeats})</span></span>
         <span class="am-join-tag">JOIN</span>
     `;
 
