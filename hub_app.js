@@ -366,18 +366,28 @@ window.addEventListener('message', function(event) {
         if (window.db && window.dbGet && window.dbRemove && window.dbRef) {
             const frameUrl = closingFrameUrl;
             const closingGame = rawGameData.find(g => frameUrl.includes(g.url.split('/').pop()));
-            if (closingGame) {
-                const roomsRef = window.dbRef(window.db, `${closingGame.id}_rooms`);
+            console.log('[Hub] Close game fired. frameUrl:', frameUrl);
+            console.log('[Hub] Matched game:', closingGame ? closingGame.id : 'NONE');
+            console.log('[Hub] roomPath:', closingGame ? closingGame.roomPath : 'N/A');
+            if (closingGame && closingGame.roomPath) {
+                const roomsRef = window.dbRef(window.db, closingGame.roomPath);
                 window.dbGet(roomsRef).then(snap => {
                     const rooms = snap.val();
+                    console.log('[Hub] Rooms found at', closingGame.roomPath, ':', rooms ? Object.keys(rooms).length : 0);
                     if (!rooms) return;
                     Object.keys(rooms).forEach(code => {
+                        console.log('[Hub] Room', code, 'status:', rooms[code].status);
                         if (rooms[code].status === 'waiting') {
-                            window.dbRemove(window.dbRef(window.db, `${closingGame.id}_rooms/${code}`));
+                            console.log('[Hub] Deleting room:', code);
+                            window.dbRemove(window.dbRef(window.db, `${closingGame.roomPath}/${code}`));
                         }
                     });
-                }).catch(() => {});
+                }).catch(err => { console.error('[Hub] dbGet error:', err); });
+            } else {
+                console.warn('[Hub] Skipping room cleanup — no closingGame or no roomPath');
             }
+        } else {
+            console.warn('[Hub] Skipping room cleanup — Firebase not ready. db:', !!window.db, 'dbGet:', !!window.dbGet, 'dbRemove:', !!window.dbRemove);
         }
     }
 });
@@ -699,8 +709,20 @@ async function initCards() {
     renderRecentlyPlayed();
     renderCarousel();
     
-    // Boot the live multiplayer scanner after cards exist
-    scanActiveMatches();
+    // Boot the live multiplayer scanner after cards exist.
+    // Firebase is a type="module" script so window.db may not be ready yet.
+    // Retry every 200ms for up to 3 seconds until it exists.
+    let dbWaitAttempts = 0;
+    const dbWaitInterval = setInterval(() => {
+        dbWaitAttempts++;
+        if (typeof window.db !== 'undefined' && typeof window.dbRef !== 'undefined' && typeof window.dbOnValue !== 'undefined') {
+            clearInterval(dbWaitInterval);
+            scanActiveMatches();
+        } else if (dbWaitAttempts >= 15) {
+            clearInterval(dbWaitInterval);
+            console.warn('Game Shack: Firebase not ready after 3s — live scanner skipped.');
+        }
+    }, 200);
 }
 
 initCards();
@@ -719,11 +741,11 @@ function scanActiveMatches() {
     activeMatchesListeners.forEach(off => off());
     activeMatchesListeners = [];
 
-    // Filter down to only games that support online multiplayer
-    const onlineGames = rawGameData.filter(g => g.badges.includes("👥 Online"));
+    // Filter down to only games that have a known Firebase room path
+    const onlineGames = rawGameData.filter(g => g.badges.includes("👥 Online") && g.roomPath);
 
     onlineGames.forEach(game => {
-        const roomRef = window.dbRef(window.db, `${game.id}_rooms`);
+        const roomRef = window.dbRef(window.db, game.roomPath);
         
         const listener = window.dbOnValue(roomRef, (snapshot) => {
             const rooms = snapshot.val();

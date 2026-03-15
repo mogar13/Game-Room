@@ -593,6 +593,8 @@ function handleActionCard(card, player) {
         }
     } else {
         if (player === 1) {
+            renderHand();
+            renderTable();
             advanceTurn(`played ${card.name.toUpperCase()}`); 
         } else {
             currentTurn = 1;
