@@ -46,7 +46,7 @@ window.SystemUI = {
     set isMuted(val) {
         if (window.SystemAudio) {
             window.SystemAudio.isMuted = val;
-            window.SystemAudio.toggleMute(); // Keeps state synced
+            localStorage.setItem("casino_muted", val);
         } else {
             localStorage.setItem("casino_muted", val);
         }
@@ -67,6 +67,19 @@ window.SystemUI = {
     // ==========================================
 
     init: function(config = {}) {
+        // Set the browser tab favicon from the ?icon= URL param injected by the hub
+        const urlIcon = new URLSearchParams(window.location.search).get('icon');
+        if (urlIcon) {
+            let link = document.querySelector("link[rel~='icon']");
+            if (!link) {
+                link = document.createElement('link');
+                link.rel = 'icon';
+                document.head.appendChild(link);
+            }
+            // icon path is relative to the game folder (games/gamename/) so step up two levels
+            link.href = '../../' + urlIcon;
+        }
+
         const dropdownsHTML = (config.hudDropdowns || []).map(d => `
             <select id="${d.id}" class="hud-dropdown" title="${d.label || ''}" autocomplete="off">
                 ${d.options.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
@@ -250,14 +263,6 @@ window.SystemUI = {
 
         document.getElementById('sys-hm-exit').addEventListener('click', () => {
             this.playSound('exit');
-            
-            // 🐛 MOBILE BUG FIX: Exit Fullscreen before closing the game frame!
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(()=>{});
-            } else if (document.webkitFullscreenElement) {
-                document.webkitExitFullscreen().catch(()=>{});
-            }
-
             setTimeout(() => {
                 if (window.self !== window.top) {
                     window.parent.postMessage({ type: 'CASINO_OS_CLOSE_GAME' }, '*');
@@ -542,7 +547,7 @@ window.SystemUI = {
 
                 if (!this._chatOpen && !isMine) {
                     this._updateBadge(true);
-                    this.playSound('click');
+                    this.playSound('message');
                 }
             });
         });

@@ -354,7 +354,7 @@ window.addEventListener('message', function(event) {
         frame.src = '';
 
         // Force the Hub to re-read localStorage so stats & achievements from the iframe sync instantly
-        if (window.SystemProfile) window.SystemProfile.loadData();
+        if (window.SystemProfile) window.SystemProfile.loadProfile();
         if (window.SystemStats) window.SystemStats.loadData();
         if (window.SystemAchievements) window.SystemAchievements.loadData();
 
@@ -397,7 +397,7 @@ function openProfilePanel() {
     if (!window.SystemProfile || !window.SystemStats || !window.SystemAchievements) return;
 
     // Force sync before building the panel
-    if (window.SystemProfile.loadData) window.SystemProfile.loadData();
+    if (window.SystemProfile.loadProfile) window.SystemProfile.loadProfile();
     if (window.SystemStats.loadData) window.SystemStats.loadData();
     if (window.SystemAchievements.loadData) window.SystemAchievements.loadData();
 
@@ -559,6 +559,8 @@ function openLaunchPanel(cardEl) {
     const iconStyle = cardEl.querySelector('.card-icon').style.backgroundImage;
     const hasOnline = cardEl.querySelector('.b-online') !== null;
     const gameId   = cardEl.dataset.id;
+    const gameData = rawGameData.find(g => g.id === gameId);
+    const iconParam = gameData ? '&icon=' + encodeURIComponent(gameData.icon) : '';
 
     // Build or reuse overlay
     let overlay = document.getElementById('launch-panel-overlay');
@@ -596,14 +598,14 @@ function openLaunchPanel(cardEl) {
     document.getElementById('lp-btn-solo').addEventListener('click', () => {
         overlay.classList.add('lp-hidden');
         addRecentlyPlayed(gameId);
-        launchGame(gameUrl);
+        launchGame(gameUrl + '?solo=1' + iconParam);
     });
 
     if (hasOnline) {
         document.getElementById('lp-btn-online').addEventListener('click', () => {
             overlay.classList.add('lp-hidden');
             addRecentlyPlayed(gameId);
-            launchGame(gameUrl + '?mode=online');
+            launchGame(gameUrl + '?mode=online' + iconParam);
         });
     }
 }
@@ -614,7 +616,7 @@ let rawGameData = []; // Store raw json for the scanner
 async function initCards() {
     let games = [];
     try {
-        // Cache Buster added here!
+        // Cache buster so Netlify doesn't serve a stale games.json
         const res = await fetch('games.json?v=' + Date.now());
         games = await res.json();
         rawGameData = games;
@@ -765,11 +767,12 @@ function scanActiveMatches() {
                 // Skip rooms older than 30 minutes — they are ghosts from abandoned sessions
                 if (roomData.createdAt && (now - roomData.createdAt) > THIRTY_MINS) return;
                 
-                const isActive = roomData.status === "waiting" || roomData.status === "playing";
+                const isJoinable = roomData.status === "waiting" || roomData.status === "playing";
                 const seats = roomData.seats || [];
-                const hasOpenSeat = seats.some(s => s && (s.type === 'ai' || s.type === 'empty'));
+                // Default hasOpenSeat to true for games that don't use a seats array (e.g. ttt)
+                const hasOpenSeat = seats.length === 0 || seats.some(s => s && (s.type === 'ai' || s.type === 'empty' || s.type === 'open'));
 
-                if (isActive && hasOpenSeat) {
+                if (isJoinable && hasOpenSeat) {
                     activeCodes.push(roomCode);
                     // Try to grab the host's name safely depending on how the game stores it
                     let hostName = "Player";
@@ -834,7 +837,8 @@ function upsertMatchChip(game, roomCode, hostName, humanCount, totalSeats) {
         e.preventDefault();
         playHubSound('win');
         addRecentlyPlayed(game.id);
-        launchGame(`${game.url}?mode=online&join=${roomCode}`);
+        const chipIconParam = game.icon ? '&icon=' + encodeURIComponent(game.icon) : '';
+        launchGame(`${game.url}?mode=online&join=${roomCode}${chipIconParam}`);
     };
 }
 
