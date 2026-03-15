@@ -1,6 +1,6 @@
 // --- 1. HUB AUDIO ENGINE ---
 const hubAudio = {
-    click: new Audio('system/audio/switch4.ogg'),
+    click: new Audio('system/audio/click1.mp3'),
     win: new Audio('system/audio/win.ogg') 
 };
 
@@ -279,6 +279,11 @@ const achList = document.getElementById("ach-list");
 function renderTrophyRoom() {
     if (!window.SystemAchievements) return;
     
+    // Force a fresh sync from local storage
+    if (typeof window.SystemAchievements.loadData === 'function') {
+        window.SystemAchievements.loadData();
+    }
+    
     achList.innerHTML = "";
     const list = SystemAchievements.list;
     const unlockedIds = SystemAchievements.data.unlocked;
@@ -331,6 +336,14 @@ if (closeAchBtn) {
 // --- 7. IFRAME GAME LOADER (message listener) ---
 window.addEventListener('message', function(event) {
     if (event.data && event.data.type === 'CASINO_OS_CLOSE_GAME') {
+        
+        // 🐛 MOBILE BUG FIX: Ensure the parent window also drops fullscreen
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(()=>{});
+        } else if (document.webkitFullscreenElement) {
+            document.webkitExitFullscreen().catch(()=>{});
+        }
+
         const container = document.getElementById('os-game-container');
         const frame = document.getElementById('os-game-frame');
 
@@ -340,12 +353,17 @@ window.addEventListener('message', function(event) {
         container.style.display = 'none';
         frame.src = '';
 
+        // Force the Hub to re-read localStorage so stats & achievements from the iframe sync instantly
+        if (window.SystemProfile) window.SystemProfile.loadData();
+        if (window.SystemStats) window.SystemStats.loadData();
+        if (window.SystemAchievements) window.SystemAchievements.loadData();
+
         // Update the Hub UI so new XP and Money instantly reflect
         if (typeof updateBonusUI === 'function') updateBonusUI();
         renderRecentlyPlayed();
 
-        // Clean up stale waiting rooms for the game that just closed
-        if (window.db && window.dbGet && window.dbUpdate && window.dbRef) {
+        // Delete waiting rooms for the game that just closed so they never pile up in Firebase
+        if (window.db && window.dbGet && window.dbRemove && window.dbRef) {
             const frameUrl = closingFrameUrl;
             const closingGame = rawGameData.find(g => frameUrl.includes(g.url.split('/').pop()));
             if (closingGame) {
@@ -355,7 +373,7 @@ window.addEventListener('message', function(event) {
                     if (!rooms) return;
                     Object.keys(rooms).forEach(code => {
                         if (rooms[code].status === 'waiting') {
-                            window.dbUpdate(window.dbRef(window.db, `${closingGame.id}_rooms/${code}`), { status: 'closed' });
+                            window.dbRemove(window.dbRef(window.db, `${closingGame.id}_rooms/${code}`));
                         }
                     });
                 }).catch(() => {});
@@ -367,6 +385,11 @@ window.addEventListener('message', function(event) {
 // --- 8. PLAYER PROFILE PANEL ---
 function openProfilePanel() {
     if (!window.SystemProfile || !window.SystemStats || !window.SystemAchievements) return;
+
+    // Force sync before building the panel
+    if (window.SystemProfile.loadData) window.SystemProfile.loadData();
+    if (window.SystemStats.loadData) window.SystemStats.loadData();
+    if (window.SystemAchievements.loadData) window.SystemAchievements.loadData();
 
     const profile = SystemProfile.getProfile();
     const globalStats = SystemStats.getStats();
@@ -709,10 +732,14 @@ function scanActiveMatches() {
                 return;
             }
 
-            // Collect every roomCode that is currently waiting
+            // Collect every roomCode that is currently waiting and was created recently
+            const TWO_HOURS = 2 * 60 * 60 * 1000;
+            const now = Date.now();
             const waitingCodes = [];
             Object.keys(rooms).forEach(roomCode => {
                 const roomData = rooms[roomCode];
+                // Skip rooms older than 2 hours — they are ghosts from abandoned sessions
+                if (roomData.createdAt && (now - roomData.createdAt) > TWO_HOURS) return;
                 if (roomData.status === "waiting") {
                     waitingCodes.push(roomCode);
                     // Try to grab the host's name safely depending on how the game stores it

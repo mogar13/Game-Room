@@ -159,7 +159,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-    import { getDatabase, ref, onValue, update, get } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    import { getDatabase, ref, onValue, update, get, remove } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
@@ -179,6 +179,7 @@
     window.dbOnValue = onValue;
     window.dbUpdate = update;
     window.dbGet = get;
+    window.dbRemove = remove;
   </script>
 
   <script src="system/system_profile.js"></script>

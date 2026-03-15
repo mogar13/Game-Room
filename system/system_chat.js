@@ -84,8 +84,8 @@ window.SystemChat = {
 
                 if (!this.isOpen && !isMine) {
                     this.updateBadge(true);
-                    if (window.SystemAudio) window.SystemAudio.play('click');
-                    else if (window.SystemUI) window.SystemUI.playSound('click');
+                    if (window.SystemAudio) window.SystemAudio.play('message');
+                    else if (window.SystemUI) window.SystemUI.playSound('message');
                 }
             });
         });

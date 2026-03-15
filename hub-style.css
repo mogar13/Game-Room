@@ -613,17 +613,26 @@ header {
   .shack-title { font-size: 1.8rem; }
   header { padding: 20px 10px; margin-bottom: 10px; }
   
-  /* Stack the profile banner vertically */
+  /* Stack the profile banner vertically and center everything */
   .profile-banner { 
     flex-direction: column; 
     align-items: center; 
     gap: 12px; 
     text-align: center; 
   }
-  .profile-left, .profile-right { 
+  .profile-left { 
+    width: 100%; 
+    justify-content: center; 
+    align-items: center; 
+    flex-wrap: wrap;
+  }
+  .profile-right { 
     width: 100%; 
     justify-content: center; 
     flex-wrap: wrap;
+  }
+  .player-title {
+    text-align: center; 
   }
   
   /* Optimize the Game Grid for tight screens */
@@ -643,6 +652,7 @@ header {
   /* Full width search bar */
   #game-search { width: 100%; }
 }
+
 /*======================================================
   STEAM-STYLE CARD STATS & PLAY BUTTON
 ========================================================*/

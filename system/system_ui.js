@@ -250,6 +250,14 @@ window.SystemUI = {
 
         document.getElementById('sys-hm-exit').addEventListener('click', () => {
             this.playSound('exit');
+            
+            // 🐛 MOBILE BUG FIX: Exit Fullscreen before closing the game frame!
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(()=>{});
+            } else if (document.webkitFullscreenElement) {
+                document.webkitExitFullscreen().catch(()=>{});
+            }
+
             setTimeout(() => {
                 if (window.self !== window.top) {
                     window.parent.postMessage({ type: 'CASINO_OS_CLOSE_GAME' }, '*');
@@ -347,11 +355,17 @@ window.SystemUI = {
     // ==========================================
     v2Lobby: {
         callbacks: {},
+        _bound: false,
         
         setup: function(callbacks) {
             this.callbacks = callbacks || {};
             if (!document.getElementById("v2-lobby-overlay")) this.injectHTML();
-            this.bindEvents();
+            // Guard: only bind DOM event listeners once — subsequent setup() calls
+            // (e.g. after game reset) only update the callbacks, never re-bind.
+            if (!this._bound) {
+                this.bindEvents();
+                this._bound = true;
+            }
         },
 
         injectHTML: function() {

@@ -29,11 +29,12 @@ window.SystemAudio = {
             ],
             win: new Audio(basePath + 'victory.mp3'),
             click: new Audio(basePath + 'click1.mp3'),
-            exit: new Audio(basePath + 'switch4.ogg'),
+            exit: new Audio(basePath + 'click1.mp3'),
             roulette: new Audio(basePath + 'roulette.mp3'),
             lose: new Audio(basePath + 'lose.ogg'),
             tie: new Audio(basePath + 'tie.ogg'),
-            shuffle: new Audio(basePath + 'shuffle.mp3')
+            shuffle: new Audio(basePath + 'shuffle.mp3'),
+            message: new Audio(basePath + 'notification.mp3')
         };
     },
 
