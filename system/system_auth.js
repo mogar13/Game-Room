@@ -37,7 +37,11 @@ window.SystemAuth = {
             totalWagered: 0,
             xp:           0,
             level:        1,
-            isDev:        false
+            isDev:        false,
+            avatar:       "👤",
+            chatColor:    "#ffffff",
+            title:        "Newcomer",
+            inventory:    []
         };
     },
 
@@ -123,7 +127,7 @@ window.SystemAuth = {
     },
 
     // ── UPDATE PROFILE (EDIT) ─────────────────────
-    updateProfile: async function(newUsername, newAvatar) {
+    updateProfile: async function(newUsername, newAvatar, newTitle, newChatColor) {
         if (!this._activeUser) return { ok: false, error: "Not logged in." };
         if (!navigator.onLine) return { ok: false, error: "You must be online to edit your profile." };
         
@@ -153,7 +157,12 @@ window.SystemAuth = {
         // Everything is valid. Apply changes.
         const userObj = this._users[currentDbKey];
         userObj.profile.name = rawUsername.trim();
-        userObj.profile.avatar = newAvatar || "👤";
+        userObj.profile.avatar = newAvatar || userObj.profile.avatar || "👤";
+        
+        // Save new cosmetic fields if they are provided
+        if (newTitle !== undefined) userObj.profile.title = newTitle;
+        if (newChatColor !== undefined) userObj.profile.chatColor = newChatColor;
+
         userObj.lastUpdated = Date.now();
 
         if (isNameChange) {
@@ -359,6 +368,12 @@ window.SystemAuth = {
         const user = this._users[username];
         if (!user) return;
         
+        // Retro-active patch for older accounts that lack cosmetic fields
+        if (!user.profile.inventory) user.profile.inventory = [];
+        if (!user.profile.chatColor) user.profile.chatColor = "#ffffff";
+        if (!user.profile.title)     user.profile.title     = "Newcomer";
+        if (!user.profile.avatar)    user.profile.avatar    = "👤";
+
         // Load the specific user's data into the active session, with fallback defaults for older accounts
         if (window.SystemProfile) {
             window.SystemProfile.data = { ...window.SystemProfile.data, ...(user.profile || this._defaultProfile(username)) };

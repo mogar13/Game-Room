@@ -1,6 +1,5 @@
 // =============================================
-// BLACKJACK PRO — bj_app.js (V2 Engine)
-// Dynamic Seat Array & Dealer-as-Player Drop-In
+// BLACKJACK PRO — audited & fixed
 // =============================================
 
 let savedDifficulty = localStorage.getItem("blackjack_diff") || "17";
@@ -182,8 +181,8 @@ function resetTableForBetting() {
   isGameOver = true;
   playerHand = [];
   dealerHand = [];
-  currentBet = 0;
-  updateBetUI();
+  // Note: we keep currentBet so "repeat" betting works
+  updateBetUI(); 
   updateStreakUI();
   renderGame(); 
   document.getElementById("playing-controls").classList.add("hidden");
@@ -233,6 +232,11 @@ function calculateScore(hand) {
 
 document.getElementById("deal-btn").addEventListener("click", () => {
   if (gameMode === "online" && myId === 2) return;
+  if (SystemUI.money < currentBet) {
+      showToast("Bankrupt", "You can't afford this bet anymore. Clear or lower your bet.");
+      return;
+  }
+  
   SystemUI.money -= currentBet; 
   SystemUI.updateMoneyDisplay();
   
@@ -393,18 +397,63 @@ function determineWinner() {
   setTimeout(() => { showToast(title, message, true); }, 1000);
 }
 
+// --- EQUIPMENT & STORE INTEGRATION ---
+function getEquipment() {
+    const inv = (window.SystemProfile && window.SystemProfile.data.inventory) ? window.SystemProfile.data.inventory : [];
+    
+    // Check for Jumbo Deck
+    const useJumbo = inv.includes("deck_alt");
+    const deckFolder = useJumbo ? "standard-1" : "standard";
+    
+    // Check for Card Backs (highest price one wins if multiple owned)
+    let backImg = useJumbo ? "back01.png" : "cardBack_blue1.png"; // Defaults
+    const backs = [
+        { id: "back_b1", img: "cardBack_blue1.png" },
+        { id: "back_b5", img: "cardBack_blue5.png" },
+        { id: "back_r1", img: "cardBack_red1.png" },
+        { id: "back_r5", img: "cardBack_red5.png" },
+        { id: "back_g1", img: "cardBack_green1.png" }
+    ];
+    
+    // We only change the back if they don't have jumbo deck (as jumbo has its own back style)
+    if (!useJumbo) {
+        backs.forEach(b => { if(inv.includes(b.id)) backImg = b.img; });
+    }
+
+    return { folder: deckFolder, back: backImg };
+}
+
 function getCardImage(card) {
+  const equip = getEquipment();
   const suitMap = { "♠": "Spades", "♥": "Hearts", "♦": "Diamonds", "♣": "Clubs" };
+  
+  if (equip.folder === "standard-1") {
+      const jumboSuitMap = { "♠": "spades", "♥": "hearts", "♦": "diamonds", "♣": "clubs" };
+      let nameStr = card.name;
+      if (nameStr === "A") nameStr = "ace";
+      else if (nameStr === "J") nameStr = "jack";
+      else if (nameStr === "Q") nameStr = "queen";
+      else if (nameStr === "K") nameStr = "king";
+      else if (parseInt(nameStr) < 10) nameStr = "0" + nameStr;
+      
+      return `../../system/images/cards/standard-1/${jumboSuitMap[card.suit]}_${nameStr}.png`;
+  }
+  
   return `../../system/images/cards/standard/card${suitMap[card.suit]}${card.name}.png`;
 }
 
 function createCardElement(card, isHidden) {
+  const equip = getEquipment();
   const cardEl = document.createElement("div");
   cardEl.classList.add("card");
+  
   if (isHidden) {
     cardEl.classList.add("hidden-card");
+    const backPath = `../../system/images/cards/${equip.folder}/${equip.back}`;
+    cardEl.innerHTML = `<img src="${backPath}" style="width: 100%; height: 100%; border-radius: 6px; display: block;">`;
     return cardEl;
   }
+  
   let imgFile = getCardImage(card);
   cardEl.innerHTML = `<img src="${imgFile}" style="width: 100%; height: 100%; border-radius: 6px; display: block;">`;
   cardEl.style.border = "none"; cardEl.style.backgroundColor = "transparent";
