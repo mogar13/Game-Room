@@ -8,17 +8,17 @@
  * SystemMatch handles: v2Lobby wiring, room create/join, seat tracking, cleanup.
  *
  * Usage:
- *   SystemMatch.setup({ gameId, roomPath, onHost, onJoin, onLeave, onStart, onClose })
- *   SystemMatch.getMyId()              → 1 or 2
- *   SystemMatch.isHost()               → bool
- *   SystemMatch.getRoomId()            → string | null
- *   SystemMatch.getRoomPath()          → string | null
- *   SystemMatch.getSeats()             → array
- *   SystemMatch.setSeats(arr)          → stores seats array
- *   SystemMatch.setListener(fn)        → stores the onValue unsubscribe fn
- *   SystemMatch.isMyTurn(activeTurn)   → bool
- *   SystemMatch.getSeatName(idx)       → string (1-based idx)
- *   SystemMatch.cleanup()              → tears down room + listener
+ * SystemMatch.setup({ gameId, roomPath, onHost, onJoin, onLeave, onStart, onClose })
+ * SystemMatch.getMyId()              → 1 or 2
+ * SystemMatch.isHost()               → bool
+ * SystemMatch.getRoomId()            → string | null
+ * SystemMatch.getRoomPath()          → string | null
+ * SystemMatch.getSeats()             → array
+ * SystemMatch.setSeats(arr)          → stores seats array
+ * SystemMatch.setListener(fn)        → stores the onValue unsubscribe fn
+ * SystemMatch.isMyTurn(activeTurn)   → bool
+ * SystemMatch.getSeatName(idx)       → string (1-based idx)
+ * SystemMatch.cleanup()              → tears down room + listener
  */
 
 window.SystemMatch = {
@@ -48,7 +48,7 @@ window.SystemMatch = {
                 self._myId    = 1;
                 self._isHost  = true;
 
-                window.dbSet(window.dbRef(window.db, self._roomPath + '/' + id), {
+                window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + id), {
                     status:    'waiting',
                     createdAt: Date.now(),
                     seats: [
@@ -62,7 +62,7 @@ window.SystemMatch = {
             },
 
             onJoin: function(code) {
-                window.dbGet(window.dbChild(window.dbRef(window.db), self._roomPath + '/' + code)).then(function(snap) {
+                window.dbGet(window.dbRef(window.db, self._roomPath + '/' + code)).then(function(snap) {
                     const data = snap.val();
                     if (!data) { SystemUI.v2Lobby.showError('ROOM NOT FOUND'); return; }
                     if (data.status !== 'waiting') { SystemUI.v2Lobby.showError('GAME ALREADY STARTED'); return; }

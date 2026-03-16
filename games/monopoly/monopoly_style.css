@@ -311,7 +311,7 @@ body {
 
 /* ── MOBILE OPTIMIZATION ────────────────── */
 @media (max-width: 800px) {
-    #game-area { flex-direction: column; overflow: hidden; }
+    #game-area { flex-direction: column; overflow-y: auto; }
     
     #board-section { padding: 8px 4px; flex: 0 0 auto; width: 100%; }
     

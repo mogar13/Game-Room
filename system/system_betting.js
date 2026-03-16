@@ -6,16 +6,16 @@
 
 window.SystemBetting = {
     containerId: null,
-    minBet: 5,
-    maxBet: 500,
+    minBet: 2,
+    maxBet: 999999999,
     currentBet: 0,
     lastBet: 0, 
     callbacks: { onBet: null, onClear: null },
 
     setup: function(containerId, options = {}) {
         this.containerId = containerId;
-        this.minBet = options.minBet || 5;
-        this.maxBet = options.maxBet || 500;
+        this.minBet = options.minBet || 2;
+        this.maxBet = options.maxBet || 1000;
         this.callbacks.onBet = options.onBet;
         this.callbacks.onClear = options.onClear;
         this.currentBet = 0;
