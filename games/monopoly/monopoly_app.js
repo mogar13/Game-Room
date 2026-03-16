@@ -200,10 +200,10 @@ function shuffleDeck(arr) {
 const PLAYER_COLORS = ["red","blue","green","yellow"];
 const PLAYER_HEX    = ["#DC143C","#1a7fd4","#27ae60","#f39c12"];
 const PLAYER_PIECES = [
-    "../../system/images/pieces/red/pawn_red.png",
-    "../../system/images/pieces/blue/pawn_blue.png",
-    "../../system/images/pieces/green/pawn_green.png",
-    "../../system/images/pieces/yellow/pawn_yellow.png",
+    "../../system/images/pieces/iso-pieces/PawnsA2.png",
+    "../../system/images/pieces/iso-pieces/PawnsA5.png",
+    "../../system/images/pieces/iso-pieces/PawnsA4.png",
+    "../../system/images/pieces/iso-pieces/PawnsA3.png",
 ];
 const DICE_FACES = [
     "../../system/images/dice/dieWhite_border1.png",

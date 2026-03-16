@@ -15,6 +15,25 @@ document.querySelectorAll('.hub-interactive').forEach(el => {
     el.addEventListener('click', () => playHubSound('click'));
 });
 
+// --- 1.5 REWARDS BUG FIX (GUEST BLOCKER) ---
+// Intercepts the rewards module to prevent it from auto-firing for guests
+if (window.SystemRewards) {
+    const originalCheck = window.SystemRewards.checkDailyLogin;
+    window.SystemRewards.checkDailyLogin = function() {
+        if (window.SystemAuth && !window.SystemAuth.isLoggedIn()) return;
+        if (originalCheck) originalCheck.apply(this, arguments);
+    };
+    
+    // Catch any secondary modal popups Claude might have used
+    if (typeof window.SystemRewards.showModal === 'function') {
+        const originalShow = window.SystemRewards.showModal;
+        window.SystemRewards.showModal = function() {
+            if (window.SystemAuth && !window.SystemAuth.isLoggedIn()) return;
+            if (originalShow) originalShow.apply(this, arguments);
+        };
+    }
+}
+
 // --- 2. PROFILE BANNER & DAILY BONUS (REFACTORED FOR CASINO OS 2.0) ---
 const bonusBtn = document.getElementById("daily-bonus-btn");
 
@@ -33,6 +52,8 @@ function updateBonusUI() {
     // 1. Sync the HUD securely through the Profile API
     const profile = SystemProfile.getProfile();
     document.getElementById("display-player-name").innerText = profile.name;
+    const bannerAvatar = document.getElementById("display-player-avatar");
+    if (bannerAvatar) bannerAvatar.innerText = profile.avatar || "👤";
     document.getElementById("display-player-money").innerText = profile.bankroll;
 
     // 2. Sync the XP & Level UI
@@ -42,7 +63,15 @@ function updateBonusUI() {
     const xpText = document.getElementById("xp-text");
     
     if (levelBadge) levelBadge.innerText = `Lv.${profile.level}`;
-    if (titleText) titleText.innerText = SystemProfile.getLevelTitle();
+    
+    // Check if they have a custom purchased title, otherwise use level-based
+    if (titleText) {
+        if (profile.title && profile.title !== "Newcomer") {
+            titleText.innerText = profile.title;
+        } else {
+            titleText.innerText = typeof SystemProfile.getLevelTitle === 'function' ? SystemProfile.getLevelTitle() : "Newcomer";
+        }
+    }
 
     if (xpFill && xpText) {
         const thresholds = [0, 500, 2000, 5000, 10000, 25000];
@@ -133,12 +162,12 @@ function wireAuthModals() {
     });
 
     const submitLogin = document.getElementById("btn-submit-login");
-    if (submitLogin) submitLogin.addEventListener("click", () => {
+    if (submitLogin) submitLogin.addEventListener("click", async () => {
         const username = (document.getElementById("login-username")?.value || "").trim();
         const password = (document.getElementById("login-password")?.value || "").trim();
         const errorEl  = document.getElementById("login-error");
         if (errorEl) errorEl.classList.add("hidden");
-        const result = window.SystemAuth ? SystemAuth.login(username, password) : { ok: false, error: "Auth not loaded." };
+        const result = window.SystemAuth ? await SystemAuth.login(username, password) : { ok: false, error: "Auth not loaded." };
         if (result.ok) {
             if (modalLogin) modalLogin.classList.add("hidden");
             playHubSound('win');
@@ -149,14 +178,14 @@ function wireAuthModals() {
     });
 
     const submitReg = document.getElementById("btn-submit-register");
-    if (submitReg) submitReg.addEventListener("click", () => {
+    if (submitReg) submitReg.addEventListener("click", async () => {
         const username = (document.getElementById("register-username")?.value || "").trim();
         const password = (document.getElementById("register-password")?.value || "").trim();
         const question = (document.getElementById("register-security-question")?.value || "").trim();
         const answer   = (document.getElementById("register-security-answer")?.value || "").trim();
         const errorEl  = document.getElementById("register-error");
         if (errorEl) errorEl.classList.add("hidden");
-        const result = window.SystemAuth ? SystemAuth.register(username, password, question, answer) : { ok: false, error: "Auth not loaded." };
+        const result = window.SystemAuth ? await SystemAuth.register(username, password, question, answer) : { ok: false, error: "Auth not loaded." };
         if (result.ok) {
             if (modalRegister) modalRegister.classList.add("hidden");
             playHubSound('win');
@@ -181,6 +210,21 @@ function wireAuthModals() {
 
     const submitForgot = document.getElementById("btn-submit-forgot");
     let forgotStep = 1;
+
+    const linkBackToLogin = document.getElementById("link-back-to-login");
+    if (linkBackToLogin) linkBackToLogin.addEventListener("click", () => {
+        if (modalForgot) modalForgot.classList.add("hidden");
+        if (modalLogin)  modalLogin.classList.remove("hidden");
+        const errEl = document.getElementById("forgot-error");
+        const sucEl = document.getElementById("forgot-success");
+        if (errEl) errEl.classList.add("hidden");
+        if (sucEl) sucEl.classList.add("hidden");
+        forgotStep = 1;
+        if (submitForgot) submitForgot.innerText = "CONTINUE";
+        const step2 = document.getElementById("forgot-step-2");
+        if (step2) step2.classList.add("hidden");
+    });
+
     if (submitForgot) submitForgot.addEventListener("click", () => {
         const errEl = document.getElementById("forgot-error");
         const sucEl = document.getElementById("forgot-success");
@@ -195,12 +239,11 @@ function wireAuthModals() {
                 return;
             }
             const questionLabels = {
-                pet:    "What was the name of your first pet?",
-                city:   "What city were you born in?",
-                mother: "What is your mother's maiden name?",
-                school: "What elementary school did you attend?",
-                car:    "What was the make of your first car?",
-                friend: "What is the name of your childhood best friend?"
+                game:       "What is your favorite video game of all time?",
+                character:  "Who is your favorite fictional character?",
+                movie:      "What was the first movie you saw in theaters?",
+                karaoke:    "What is your go-to karaoke song?",
+                superpower: "If you had a superpower, what would it be?"
             };
             const step2 = document.getElementById("forgot-step-2");
             const qText = document.getElementById("forgot-question-text");
@@ -223,6 +266,26 @@ function wireAuthModals() {
             }
         }
     });
+
+    const triggerClickOnEnter = (inputId, buttonId) => {
+        const input = document.getElementById(inputId);
+        if (input) input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                const btn = document.getElementById(buttonId);
+                if (btn) btn.click();
+            }
+        });
+    };
+    
+    triggerClickOnEnter("login-username", "btn-submit-login");
+    triggerClickOnEnter("login-password", "btn-submit-login");
+    triggerClickOnEnter("register-username", "btn-submit-register");
+    triggerClickOnEnter("register-password", "btn-submit-register");
+    triggerClickOnEnter("register-security-question", "btn-submit-register");
+    triggerClickOnEnter("register-security-answer", "btn-submit-register");
+    triggerClickOnEnter("forgot-username", "btn-submit-forgot");
+    triggerClickOnEnter("forgot-security-answer", "btn-submit-forgot");
 
     document.querySelectorAll(".dev-tab").forEach(tab => {
         tab.addEventListener("click", () => {
@@ -359,19 +422,568 @@ function wireDevModal() {
 }
 
 function systemLogout() {
+    const modal = document.getElementById("modal-logout");
+    const text = document.getElementById("logout-prompt-text");
+    if (!modal) return;
+    
     if (window.SystemAuth && window.SystemAuth.isLoggedIn()) {
-        if (!confirm("Log out of your account?")) return;
-        SystemAuth.logout();
-        updateBonusUI();
-        window.location.reload();
+        if (text) text.innerText = "Are you sure you want to log out of your account?";
     } else {
-        // Legacy fallback
-        if (!confirm("Deactivate Developer Mode and return to standard Player account?")) return;
-        SystemProfile.data.isDev = false;
-        SystemProfile.data.name = "Player";
-        SystemProfile.saveProfile();
-        window.location.reload();
+        if (text) text.innerText = "Deactivate Developer Mode and return to standard Player account?";
     }
+    modal.classList.remove("hidden");
+}
+
+function wireProfileEdit() {
+    const btnEdit = document.getElementById("btn-edit-profile");
+    const modalEdit = document.getElementById("modal-edit-profile");
+    const closeEdit = document.getElementById("close-edit-btn");
+    const submitEdit = document.getElementById("btn-submit-edit");
+    
+    if (btnEdit) {
+        btnEdit.addEventListener("click", () => {
+            playHubSound('click');
+            if (!window.SystemAuth || !window.SystemAuth.isLoggedIn()) return;
+            
+            const profile = window.SystemProfile.getProfile();
+            const currentName = profile.name;
+            const currentAvatar = profile.avatar || "👤";
+            const currentColor = profile.chatColor || "#ffffff";
+            const currentTitle = profile.title || "Newcomer";
+            
+            document.getElementById("edit-username").value = currentName;
+            document.getElementById("edit-error").classList.add("hidden");
+            
+            // Dynamically inject all unlocked Avatars
+            const avatarGrid = document.getElementById("avatar-grid");
+            const baseAvatars = ["👤", "🤖", "👽", "👾", "👻", "🤠", "🐱‍👤"];
+            const ownedAvatars = window.SystemStore ? window.SystemStore.getOwnedItemsByType('avatar').map(i => i.value) : [];
+            const allAvatars = [...new Set([...baseAvatars, ...ownedAvatars])];
+            
+            avatarGrid.innerHTML = allAvatars.map(av => 
+                `<span class="avatar-option ${av === currentAvatar ? 'active-avatar' : ''}" 
+                       style="border: 2px solid ${av === currentAvatar ? 'var(--accent-color)' : 'transparent'}; 
+                              border-radius: 8px; padding: 2px; 
+                              background: ${av === currentAvatar ? 'rgba(0,210,255,0.2)' : 'transparent'}; 
+                              transition: 0.2s;">${av}</span>`
+            ).join("");
+            
+            document.getElementById("edit-avatar-val").value = currentAvatar;
+            
+            // Rebind avatar clicks for the new dynamically generated grid
+            avatarGrid.querySelectorAll(".avatar-option").forEach(el => {
+                el.addEventListener("click", (e) => {
+                    avatarGrid.querySelectorAll(".avatar-option").forEach(opt => {
+                        opt.classList.remove("active-avatar");
+                        opt.style.borderColor = "transparent";
+                        opt.style.background = "transparent";
+                    });
+                    e.target.classList.add("active-avatar");
+                    e.target.style.borderColor = "var(--accent-color)";
+                    e.target.style.background = "rgba(0,210,255,0.2)";
+                    document.getElementById("edit-avatar-val").value = e.target.innerText;
+                });
+            });
+
+            // Dynamically inject Title and Color dropdowns based on Store Inventory
+            let extraControls = document.getElementById("edit-extra-controls");
+            if (!extraControls) {
+                extraControls = document.createElement("div");
+                extraControls.id = "edit-extra-controls";
+                extraControls.style.display = "flex";
+                extraControls.style.flexDirection = "column";
+                extraControls.style.gap = "10px";
+                const errEl = document.getElementById("edit-error");
+                errEl.parentNode.insertBefore(extraControls, submitEdit);
+            }
+            
+            const ownedColors = window.SystemStore ? window.SystemStore.getOwnedItemsByType('color') : [];
+            const colorOptions = `<option value="#ffffff" ${currentColor==='#ffffff'?'selected':''}>White (Default)</option>` + 
+                ownedColors.map(c => `<option value="${c.value}" ${currentColor===c.value?'selected':''}>${c.name}</option>`).join("");
+                
+            const ownedTitles = window.SystemStore ? window.SystemStore.getOwnedItemsByType('title') : [];
+            const titles = ["Newcomer"];
+            if (profile.level >= 2) titles.push("Regular");
+            if (profile.level >= 3) titles.push("Veteran");
+            if (profile.level >= 4) titles.push("Pro");
+            if (profile.level >= 5) titles.push("Master");
+            if (profile.level >= 6) titles.push("Legend");
+            ownedTitles.forEach(t => titles.push(t.value));
+            const titleOptions = [...new Set(titles)].map(t => `<option value="${t}" ${currentTitle===t?'selected':''}>${t}</option>`).join("");
+
+            extraControls.innerHTML = `
+                <div style="text-align: center; color: #aaa; font-size: 0.8rem; margin-bottom: -5px;">Chat Color</div>
+                <select id="edit-color-val" class="auth-input" style="padding: 10px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.7); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; cursor: pointer;">
+                    ${colorOptions}
+                </select>
+                <div style="text-align: center; color: #aaa; font-size: 0.8rem; margin-bottom: -5px;">Title</div>
+                <select id="edit-title-val" class="auth-input" style="padding: 10px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.7); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; cursor: pointer;">
+                    ${titleOptions}
+                </select>
+            `;
+            
+            if (modalEdit) modalEdit.classList.remove("hidden");
+        });
+    }
+    
+    if (closeEdit) closeEdit.addEventListener("click", () => {
+        playHubSound('click');
+        if (modalEdit) modalEdit.classList.add("hidden");
+    });
+    
+    // Clean up old listener to prevent double firing, then bind the new comprehensive one
+    if (submitEdit) {
+        const newSubmitEdit = submitEdit.cloneNode(true);
+        submitEdit.parentNode.replaceChild(newSubmitEdit, submitEdit);
+        
+        newSubmitEdit.addEventListener("click", async () => {
+            playHubSound('click');
+            const newName = document.getElementById("edit-username").value;
+            const newAvatar = document.getElementById("edit-avatar-val").value;
+            const newColorEl = document.getElementById("edit-color-val");
+            const newColor = newColorEl ? newColorEl.value : undefined;
+            const newTitleEl = document.getElementById("edit-title-val");
+            const newTitle = newTitleEl ? newTitleEl.value : undefined;
+            const errorEl = document.getElementById("edit-error");
+            
+            const originalText = newSubmitEdit.innerText;
+            newSubmitEdit.innerText = "SAVING...";
+            newSubmitEdit.disabled = true;
+            
+            const res = await window.SystemAuth.updateProfile(newName, newAvatar, newTitle, newColor);
+            
+            if (res.ok) {
+                if (modalEdit) modalEdit.classList.add("hidden");
+                updateBonusUI();
+                if (typeof openProfilePanel === 'function') {
+                    document.getElementById("pp-name").innerText = window.SystemProfile.getProfile().name;
+                    const ppAvatar = document.getElementById("pp-avatar");
+                    if (ppAvatar) ppAvatar.innerText = newAvatar;
+                }
+            } else {
+                if (errorEl) {
+                    errorEl.innerText = res.error;
+                    errorEl.classList.remove("hidden");
+                }
+            }
+            newSubmitEdit.innerText = originalText;
+            newSubmitEdit.disabled = false;
+        });
+
+        const editInput = document.getElementById("edit-username");
+        if (editInput) {
+            editInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    newSubmitEdit.click();
+                }
+            });
+        }
+    }
+}
+
+function wireBugReporter() {
+    const bugBtns = document.querySelectorAll(".btn-report-bug");
+    const modalBug = document.getElementById("modal-bug-report");
+    const closeBug = document.getElementById("close-bug-btn");
+    const submitBug = document.getElementById("btn-submit-bug");
+    
+    bugBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            playHubSound('click');
+            document.getElementById("bug-title").value = "";
+            document.getElementById("bug-desc").value = "";
+            document.getElementById("bug-error").classList.add("hidden");
+            document.getElementById("bug-success").classList.add("hidden");
+            if (modalBug) modalBug.classList.remove("hidden");
+        });
+    });
+    
+    if (closeBug) closeBug.addEventListener("click", () => {
+        playHubSound('click');
+        if (modalBug) modalBug.classList.add("hidden");
+    });
+    
+    if (submitBug) submitBug.addEventListener("click", () => {
+        playHubSound('click');
+        const title = document.getElementById("bug-title").value.trim();
+        const desc = document.getElementById("bug-desc").value.trim();
+        const errorEl = document.getElementById("bug-error");
+        const successEl = document.getElementById("bug-success");
+        
+        if (!title || !desc) {
+            errorEl.innerText = "Please fill out both the title and description.";
+            errorEl.classList.remove("hidden");
+            successEl.classList.add("hidden");
+            return;
+        }
+        
+        if (!navigator.onLine || !window.dbUpdate || !window.dbRef || !window.db) {
+            errorEl.innerText = "You must be online to report a bug.";
+            errorEl.classList.remove("hidden");
+            successEl.classList.add("hidden");
+            return;
+        }
+        
+        const username = (window.SystemAuth && window.SystemAuth.isLoggedIn()) ? window.SystemAuth.getActiveUsername() : "Guest";
+        const reportId = "bug_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+        
+        const payload = {
+            title: title,
+            description: desc,
+            reportedBy: username,
+            timestamp: Date.now(),
+            userAgent: navigator.userAgent,
+            status: "open"
+        };
+        
+        window.dbUpdate(window.dbRef(window.db, `bug_reports/${reportId}`), payload)
+            .then(() => {
+                errorEl.classList.add("hidden");
+                successEl.classList.remove("hidden");
+                document.getElementById("bug-title").value = "";
+                document.getElementById("bug-desc").value = "";
+                
+                setTimeout(() => {
+                    if (modalBug) modalBug.classList.add("hidden");
+                    successEl.classList.add("hidden");
+                }, 2000);
+            })
+            .catch(e => {
+                errorEl.innerText = "Failed to submit report. Try again later.";
+                errorEl.classList.remove("hidden");
+            });
+    });
+}
+
+function wireGlobalChat() {
+    const toggleBtn = document.getElementById("chat-toggle-btn");
+    const chatPanel = document.getElementById("chat-panel");
+    const closeBtn = document.getElementById("close-chat-btn");
+    const chatInput = document.getElementById("chat-input");
+    const sendBtn = document.getElementById("btn-send-chat");
+    const messagesContainer = document.getElementById("chat-messages");
+
+    if (!toggleBtn || !chatPanel) return;
+
+    toggleBtn.addEventListener("click", () => {
+        playHubSound('click');
+        chatPanel.classList.toggle("hidden");
+        if (!chatPanel.classList.contains("hidden")) {
+            chatInput.focus();
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    });
+
+    closeBtn.addEventListener("click", () => {
+        playHubSound('click');
+        chatPanel.classList.add("hidden");
+    });
+
+    const sendMessage = () => {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        
+        if (!window.SystemAuth || !window.SystemAuth.isLoggedIn()) {
+            alert("You must be signed in to use the Global Chat.");
+            return;
+        }
+        
+        if (!navigator.onLine || !window.dbUpdate || !window.dbRef || !window.db) {
+            alert("You must be online to chat.");
+            return;
+        }
+
+        const profile = window.SystemProfile.getProfile();
+        const username = profile.name;
+        const avatar = profile.avatar || "👤";
+        const chatColor = profile.chatColor || "#ffffff";
+        const isDev = profile.isDev || false;
+        
+        const msgId = "msg_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+        const payload = {
+            text: text,
+            username: username,
+            avatar: avatar,
+            isDev: isDev,
+            chatColor: chatColor,
+            timestamp: Date.now()
+        };
+        
+        window.dbUpdate(window.dbRef(window.db, `global_chat/${msgId}`), payload).catch(e => console.error("Chat send failed", e));
+        chatInput.value = "";
+        playHubSound('click');
+    };
+
+    sendBtn.addEventListener("click", sendMessage);
+    chatInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    // Bootloader to wait for Firebase to initialize
+    let chatBooted = false;
+    const chatWaitInterval = setInterval(() => {
+        if (window.hubFirebaseReady && typeof window.db !== 'undefined' && typeof window.dbOnValue !== 'undefined') {
+            clearInterval(chatWaitInterval);
+            if (chatBooted) return;
+            chatBooted = true;
+            
+            const chatRef = window.dbRef(window.db, 'global_chat');
+            window.dbOnValue(chatRef, (snapshot) => {
+                const data = snapshot.val();
+                if (!data) return;
+
+                const msgs = Object.values(data).sort((a, b) => a.timestamp - b.timestamp);
+                const recentMsgs = msgs.slice(-50); // Keep only the latest 50 messages
+                
+                const isAtBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop <= messagesContainer.clientHeight + 50;
+
+                messagesContainer.innerHTML = recentMsgs.map(msg => {
+                    const date = new Date(msg.timestamp);
+                    const timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    const nameClass = msg.isDev ? "chat-username dev-name" : "chat-username";
+                    const nameColor = msg.chatColor || (msg.isDev ? '' : '#ffffff');
+                    const nameStyle = msg.isDev ? '' : `color: ${nameColor};`;
+                    
+                    // Basic sanitize to prevent code injection
+                    const safeText = msg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    
+                    return `
+                        <div class="chat-msg">
+                            <div class="chat-avatar">${msg.avatar || '👤'}</div>
+                            <div class="chat-content">
+                                <div class="chat-meta">
+                                    <span class="${nameClass}" style="${nameStyle}">${msg.username}</span>
+                                    <span class="chat-time">${timeStr}</span>
+                                </div>
+                                <div class="chat-text">${safeText}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                if (isAtBottom || chatPanel.classList.contains("hidden")) {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }
+            });
+        }
+    }, 200);
+}
+
+function wireLeaderboards() {
+    const lbBtns = document.querySelectorAll(".btn-leaderboards");
+    const modalLb = document.getElementById("modal-leaderboards");
+    const closeLb = document.getElementById("close-lb-btn");
+    const lbTabs = document.querySelectorAll(".lb-tab");
+    const lbList = document.getElementById("lb-list");
+    const lbLoading = document.getElementById("lb-loading");
+
+    let currentSort = "bankroll";
+    let cachedUsers = [];
+
+    const renderLb = () => {
+        lbList.innerHTML = "";
+        let sorted = [...cachedUsers];
+
+        if (currentSort === "bankroll") {
+            sorted.sort((a, b) => (b.profile?.bankroll || 0) - (a.profile?.bankroll || 0));
+        } else if (currentSort === "level") {
+            // Sort by exact XP
+            sorted.sort((a, b) => (b.profile?.xp || 0) - (a.profile?.xp || 0));
+        } else if (currentSort === "wins") {
+            sorted.sort((a, b) => {
+                const aWins = a.stats?.wins || a.profile?.wins || 0;
+                const bWins = b.stats?.wins || b.profile?.wins || 0;
+                return bWins - aWins;
+            });
+        }
+
+        // Take top 50 to prevent crazy lag
+        sorted = sorted.slice(0, 50);
+
+        sorted.forEach((u, index) => {
+            const rank = index + 1;
+            let rankHtml = `<span class="lb-rank">${rank}</span>`;
+            if (rank === 1) rankHtml = `<span class="lb-rank lb-rank-1">🥇</span>`;
+            else if (rank === 2) rankHtml = `<span class="lb-rank lb-rank-2">🥈</span>`;
+            else if (rank === 3) rankHtml = `<span class="lb-rank lb-rank-3">🥉</span>`;
+
+            let statText = "";
+            if (currentSort === "bankroll") {
+                statText = `$${(u.profile?.bankroll || 0).toLocaleString()}`;
+            } else if (currentSort === "level") {
+                statText = `Lv.${u.profile?.level || 1} <span style="font-size:0.6rem; color:#aaa;">(${u.profile?.xp || 0} XP)</span>`;
+            } else if (currentSort === "wins") {
+                statText = `${u.stats?.wins || u.profile?.wins || 0} Wins`;
+            }
+
+            const name = u.profile?.name || "Unknown";
+            const avatar = u.profile?.avatar || "👤";
+
+            const row = document.createElement("div");
+            row.className = "lb-row";
+            row.innerHTML = `
+                ${rankHtml}
+                <div class="lb-avatar">${avatar}</div>
+                <div class="lb-name">${name}</div>
+                <div class="lb-stat" style="color: ${currentSort==='bankroll' ? '#2ecc71' : currentSort==='level' ? '#f1c40f' : '#3498db'};">${statText}</div>
+            `;
+            lbList.appendChild(row);
+        });
+    };
+
+    const fetchAndRender = async () => {
+        lbLoading.classList.remove("hidden");
+        lbList.classList.add("hidden");
+        
+        if (!navigator.onLine || !window.dbGet || !window.dbRef || !window.db) {
+            lbLoading.innerText = "Leaderboards require an internet connection.";
+            return;
+        }
+
+        try {
+            const snap = await window.dbGet(window.dbRef(window.db, "users"));
+            if (snap.exists()) {
+                const data = snap.val();
+                cachedUsers = Object.values(data);
+                lbLoading.classList.add("hidden");
+                lbList.classList.remove("hidden");
+                renderLb();
+            } else {
+                lbLoading.innerText = "No players found.";
+            }
+        } catch(e) {
+            lbLoading.innerText = "Failed to fetch rankings.";
+        }
+    };
+
+    lbBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            playHubSound('click');
+            if (modalLb) modalLb.classList.remove("hidden");
+            fetchAndRender();
+        });
+    });
+
+    if (closeLb) closeLb.addEventListener("click", () => {
+        playHubSound('click');
+        if (modalLb) modalLb.classList.add("hidden");
+    });
+
+    lbTabs.forEach(tab => {
+        tab.addEventListener("click", (e) => {
+            playHubSound('click');
+            lbTabs.forEach(t => t.classList.remove("active"));
+            e.target.classList.add("active");
+            currentSort = e.target.dataset.sort;
+            renderLb();
+        });
+    });
+}
+
+function renderStore() {
+    if (!window.SystemStore) return;
+    const profile = window.SystemProfile.getProfile();
+    const balDisplay = document.getElementById('store-balance-display');
+    if (balDisplay) balDisplay.innerText = `$${profile.bankroll.toLocaleString()}`;
+    
+    const tabsConfig = {
+        'store-tab-profile': ['avatar', 'color'],
+        'store-tab-table': ['deck', 'cardback', 'dice'],
+        'store-tab-misc': ['title']
+    };
+
+    for (const [tabId, types] of Object.entries(tabsConfig)) {
+        const container = document.getElementById(tabId);
+        if (!container) continue;
+        container.innerHTML = '';
+        
+        const items = Object.values(SystemStore.CATALOG).filter(i => types.includes(i.type));
+        items.forEach(item => {
+            const owned = SystemStore.ownsItem(item.id);
+            const div = document.createElement('div');
+            div.className = `store-item ${owned ? 'owned' : ''}`;
+            
+            let iconHtml = '';
+            if (item.type === 'avatar') iconHtml = `<div class="store-icon" style="font-size:2.5rem;">${item.value}</div>`;
+            else if (item.type === 'color') iconHtml = `<div class="store-icon"><div class="color-preview" style="background:${item.value}"></div></div>`;
+            else if (item.type === 'cardback') iconHtml = `<div class="store-icon"><img src="system/images/cards/standard/${item.value}" /></div>`;
+            else if (item.type === 'deck') iconHtml = `<div class="store-icon" style="font-size:2.5rem;">🃏</div>`;
+            else if (item.type === 'dice') iconHtml = `<div class="store-icon" style="font-size:2.5rem;">🎲</div>`;
+            else if (item.type === 'title') iconHtml = `<div class="store-icon" style="font-size:2rem;">📜</div>`;
+            
+            div.innerHTML = `
+                ${iconHtml}
+                <div class="store-name">${item.name}</div>
+                <div class="store-desc">${item.desc}</div>
+                <button class="btn-buy hub-interactive" data-id="${item.id}">$${item.price.toLocaleString()}</button>
+            `;
+            container.appendChild(div);
+        });
+    }
+    
+    document.querySelectorAll('.btn-buy').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            playHubSound('click');
+            const id = e.target.dataset.id;
+            if (!window.SystemStore.ownsItem(id)) {
+                const originalText = e.target.innerText;
+                e.target.innerText = "...";
+                e.target.disabled = true;
+                const res = await window.SystemStore.buyItem(id);
+                if (res.ok) {
+                    playHubSound('win');
+                    renderStore(); // Re-render to show OWNED stamp and new balance
+                } else {
+                    alert(res.error);
+                    e.target.innerText = originalText;
+                    e.target.disabled = false;
+                }
+            }
+        });
+    });
+}
+
+function wireStore() {
+    const storeBtns = document.querySelectorAll(".btn-store");
+    const modalStore = document.getElementById("modal-store");
+    const closeStore = document.getElementById("close-store-btn");
+    const storeTabs = document.querySelectorAll(".store-tab");
+
+    storeBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            playHubSound('click');
+            if (!window.SystemAuth || !window.SystemAuth.isLoggedIn()) {
+                const modalLogin = document.getElementById('modal-login');
+                if (modalLogin) modalLogin.classList.remove('hidden');
+                return;
+            }
+            if (modalStore) {
+                modalStore.classList.remove("hidden");
+                renderStore();
+            }
+        });
+    });
+
+    if (closeStore) closeStore.addEventListener("click", () => {
+        playHubSound('click');
+        if (modalStore) modalStore.classList.add("hidden");
+    });
+
+    storeTabs.forEach(tab => {
+        tab.addEventListener("click", (e) => {
+            playHubSound('click');
+            storeTabs.forEach(t => t.classList.remove("active"));
+            e.target.classList.add("active");
+            
+            document.querySelectorAll(".store-grid").forEach(g => g.classList.add("hidden"));
+            const targetGrid = document.getElementById(e.target.dataset.tab);
+            if (targetGrid) targetGrid.classList.remove("hidden");
+        });
+    });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -387,18 +999,102 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("sys-logout-btn").addEventListener("click", systemLogout);
     }
 
+    const confirmLogoutBtn = document.getElementById("btn-confirm-logout");
+    const cancelLogoutBtn = document.getElementById("btn-cancel-logout");
+    
+    if (cancelLogoutBtn) {
+        cancelLogoutBtn.addEventListener("click", () => {
+            playHubSound('click');
+            document.getElementById("modal-logout").classList.add("hidden");
+        });
+    }
+    
+    if (confirmLogoutBtn) {
+        confirmLogoutBtn.addEventListener("click", () => {
+            playHubSound('click');
+            document.getElementById("modal-logout").classList.add("hidden");
+            if (window.SystemAuth && window.SystemAuth.isLoggedIn()) {
+                SystemAuth.logout();
+            } else {
+                SystemProfile.data.isDev = false;
+                SystemProfile.data.name = "Player";
+                SystemProfile.saveProfile();
+            }
+            updateBonusUI();
+            window.location.reload();
+        });
+    }
+
+    const syncBtn = document.getElementById("btn-cloud-sync");
+    if (syncBtn) {
+        syncBtn.addEventListener("click", async () => {
+            playHubSound('click');
+            const originalText = syncBtn.innerHTML;
+            syncBtn.innerHTML = "⏳ SYNCING...";
+            syncBtn.disabled = true;
+            
+            if (window.SystemAuth && typeof window.SystemAuth.forceSync === 'function') {
+                const res = await SystemAuth.forceSync();
+                alert(res.message || res.error);
+                updateBonusUI();
+                if (typeof openProfilePanel === 'function') openProfilePanel(); // refresh panel stats
+            } else {
+                alert("Cloud Sync is not available.");
+            }
+            
+            syncBtn.innerHTML = originalText;
+            syncBtn.disabled = false;
+        });
+    }
+
     wireAuthModals();
     wireDevModal();
+    wireProfileEdit();
+    wireBugReporter();
+    wireGlobalChat();
+    wireLeaderboards();
+    wireStore();
     setTimeout(updateBonusUI, 0);
     
     // If the Event Emitter is ready, listen for future money changes
     if (window.SystemUI && typeof window.SystemUI.on === 'function') {
         window.SystemUI.on("money_changed", updateBonusUI);
     }
+
+    // Global Escape key listener to close active modals
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            const modalsToClose = [
+                "modal-login", "modal-register", "modal-forgot-password",
+                "modal-dev-tools", "modal-logout", "achievements-modal",
+                "modal-edit-profile", "modal-bug-report", "modal-leaderboards",
+                "modal-store"
+            ];
+            modalsToClose.forEach(id => {
+                const m = document.getElementById(id);
+                if (m && !m.classList.contains("hidden")) {
+                    m.classList.add("hidden");
+                }
+            });
+            
+            const lpOverlay = document.getElementById("launch-panel-overlay");
+            if (lpOverlay && !lpOverlay.classList.contains("lp-hidden")) {
+                lpOverlay.classList.add("lp-hidden");
+            }
+
+            const chatPanel = document.getElementById("chat-panel");
+            if (chatPanel && !chatPanel.classList.contains("hidden")) {
+                chatPanel.classList.add("hidden");
+            }
+
+            if (typeof closeProfilePanel === 'function') closeProfilePanel();
+        }
+    });
 });
 
 bonusBtn.addEventListener("click", () => {
     if (bonusBtn.disabled) return;
+    if (window.SystemAuth && !window.SystemAuth.isLoggedIn()) return;
     playHubSound('click');
     if (window.SystemRewards) {
         // This will launch the new AAA reward modal
@@ -723,7 +1419,19 @@ function openProfilePanel() {
 
     // Header
     document.getElementById('pp-name').innerText = profile.name;
-    document.getElementById('pp-title').innerText = SystemProfile.getLevelTitle ? SystemProfile.getLevelTitle() : '';
+    const ppAvatar = document.getElementById('pp-avatar');
+    if (ppAvatar) ppAvatar.innerText = profile.avatar || "👤";
+    
+    // Custom purchased titles vs fallback
+    const ppTitle = document.getElementById('pp-title');
+    if (ppTitle) {
+        if (profile.title && profile.title !== "Newcomer") {
+            ppTitle.innerText = profile.title;
+        } else {
+            ppTitle.innerText = SystemProfile.getLevelTitle ? SystemProfile.getLevelTitle() : "Newcomer";
+        }
+    }
+
     document.getElementById('pp-level').innerText = `Lv.${profile.level}`;
     document.getElementById('pp-money').innerText = `$${profile.bankroll.toLocaleString()}`;
 
@@ -918,6 +1626,12 @@ function openLaunchPanel(cardEl) {
 
     if (hasOnline) {
         document.getElementById('lp-btn-online').addEventListener('click', () => {
+            if (window.SystemAuth && !window.SystemAuth.isLoggedIn()) {
+                overlay.classList.add('lp-hidden');
+                const modalLogin = document.getElementById('modal-login');
+                if (modalLogin) modalLogin.classList.remove('hidden');
+                return;
+            }
             overlay.classList.add('lp-hidden');
             addRecentlyPlayed(gameId);
             launchGame(gameUrl + '?mode=online' + iconParam);

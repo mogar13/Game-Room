@@ -23,7 +23,7 @@
     <div id="auth-logged-in" class="auth-wrapper" style="display: flex; width: 100%; justify-content: space-between;">
       <div class="profile-left">
         <div class="player-info-row">
-          <span class="profile-icon">👤</span>
+          <span id="display-player-avatar" class="profile-icon">👤</span>
           <span id="display-player-name" class="hub-interactive" style="cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px;" title="View Profile">Player</span>
           <span id="display-player-level" class="level-badge">Lv.1</span>
         </div>
@@ -39,7 +39,10 @@
           $<span id="display-player-money">5000</span>
         </div>
         <button id="daily-bonus-btn" class="hub-interactive">Claim +$1,000</button>
+        <button class="btn-store hub-interactive" style="background: #2ecc71; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);" title="Item Store">🛒</button>
         <button id="btn-achievements" class="hub-interactive" style="background: #3498db; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(52, 152, 219, 0.4);" title="Trophy Room">🏆</button>
+        <button class="btn-leaderboards hub-interactive" style="background: #f39c12; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(243, 156, 18, 0.4);" title="Leaderboards">🏅</button>
+        <button class="btn-report-bug hub-interactive" style="background: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2);" title="Report a Bug">🐞</button>
         <select id="theme-dropdown" class="hub-interactive" onchange="changeTheme(this.value)">
           <option value="default">Night Mode</option>
           <option value="casino">Casino Felt</option>
@@ -53,6 +56,9 @@
       <div class="logged-out-actions" style="display: flex; gap: 10px; align-items: center;">
         <button id="btn-open-login" class="hub-interactive" style="background: transparent; border: 2px solid var(--accent-color); color: var(--accent-color); padding: 6px 16px; border-radius: 20px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: 0.2s;">SIGN IN</button>
         <button id="btn-open-register" class="hub-interactive" style="background: var(--accent-color); border: 2px solid var(--accent-color); color: #000; padding: 6px 16px; border-radius: 20px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: 0.2s;">REGISTER</button>
+        <button class="btn-store hub-interactive" style="background: #2ecc71; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);" title="Item Store">🛒</button>
+        <button class="btn-leaderboards hub-interactive" style="background: #f39c12; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(243, 156, 18, 0.4);" title="Leaderboards">🏅</button>
+        <button class="btn-report-bug hub-interactive" style="background: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2);" title="Report a Bug">🐞</button>
         <select id="theme-dropdown-loggedout" class="hub-interactive" onchange="changeTheme(this.value)" style="background: rgba(0,0,0,0.6); color: var(--accent-color); border: 1px solid var(--accent-color); border-radius: 8px; padding: 3px 8px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; cursor: pointer; outline: none;">
           <option value="default">Night Mode</option>
           <option value="casino">Casino Felt</option>
@@ -72,6 +78,20 @@
   <div id="active-matches-bar" class="hidden">
     <span class="rp-label" style="color: #e74c3c;"><span class="live-dot"></span>LIVE MATCHES</span>
     <div class="am-list rp-list"></div>
+  </div>
+
+  <button id="chat-toggle-btn" class="hub-interactive" title="Global Chat">💬</button>
+  
+  <div id="chat-panel" class="hidden">
+    <div class="chat-header">
+      <span class="chat-title">🌐 GLOBAL CHAT</span>
+      <button id="close-chat-btn" class="hub-interactive">&times;</button>
+    </div>
+    <div id="chat-messages" class="chat-messages"></div>
+    <div class="chat-input-area">
+      <input type="text" id="chat-input" placeholder="Type a message..." maxlength="120" autocomplete="off">
+      <button id="btn-send-chat" class="hub-interactive">➤</button>
+    </div>
   </div>
 
   <header>
@@ -104,6 +124,53 @@
       <iframe id="os-game-frame" style="width: 100%; height: 100%; border: none;"></iframe>
   </div>
 
+  <div id="modal-store" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 200000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box auth-modal-box" style="border-color: #2ecc71; box-shadow: 0 10px 40px rgba(0,0,0,0.8), 0 0 20px rgba(46, 204, 113, 0.2); max-width: 600px; width: 95%;">
+      <button id="close-store-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: #2ecc71; font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h2 style="color: #2ecc71; font-family: 'Orbitron', sans-serif; margin: 0 0 5px 0; text-align: center; letter-spacing: 2px;">🛒 ITEM STORE</h2>
+      <div style="text-align: center; color: #aaa; font-size: 0.8rem; margin-bottom: 15px;">Balance: <span id="store-balance-display" style="color: #2ecc71; font-weight: bold;">$0</span></div>
+      
+      <div class="store-tabs">
+        <button class="store-tab active hub-interactive" data-tab="store-tab-profile">Profile</button>
+        <button class="store-tab hub-interactive" data-tab="store-tab-table">Table</button>
+        <button class="store-tab hub-interactive" data-tab="store-tab-misc">Misc</button>
+      </div>
+      
+      <div id="store-tab-profile" class="store-grid"></div>
+      <div id="store-tab-table" class="store-grid hidden"></div>
+      <div id="store-tab-misc" class="store-grid hidden"></div>
+    </div>
+  </div>
+
+  <div id="modal-leaderboards" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 200000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box auth-modal-box" style="border-color: #f39c12; box-shadow: 0 10px 40px rgba(0,0,0,0.8), 0 0 20px rgba(243, 156, 18, 0.2);">
+      <button id="close-lb-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: #f39c12; font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h2 style="color: #f39c12; font-family: 'Orbitron', sans-serif; margin: 0 0 15px 0; text-align: center; letter-spacing: 2px;">🏅 LEADERBOARDS</h2>
+      <div class="lb-tabs">
+        <button class="lb-tab active hub-interactive" data-sort="bankroll">💰 High Rollers</button>
+        <button class="lb-tab hub-interactive" data-sort="level">⭐ Sweats</button>
+        <button class="lb-tab hub-interactive" data-sort="wins">🏆 Champions</button>
+      </div>
+      <div id="lb-loading" style="text-align: center; color: #aaa; padding: 20px 0; font-size: 0.8rem;">Fetching live rankings...</div>
+      <div id="lb-list" class="ach-list hidden"></div>
+    </div>
+  </div>
+
+  <div id="modal-bug-report" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 200000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box auth-modal-box" style="border-color: #e74c3c; box-shadow: 0 10px 40px rgba(0,0,0,0.8), 0 0 20px rgba(231, 76, 60, 0.2);">
+      <button id="close-bug-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: #e74c3c; font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h2 style="color: #e74c3c; font-family: 'Orbitron', sans-serif; margin: 0 0 10px 0; text-align: center; letter-spacing: 2px;">🐞 REPORT BUG</h2>
+      <p style="color: #aaa; font-size: 0.75rem; text-align: center; margin-bottom: 15px;">Found a glitch? Let us know so we can squash it.</p>
+      <div class="auth-form" style="display: flex; flex-direction: column; gap: 12px;">
+        <input type="text" id="bug-title" placeholder="Short Title (e.g. Card didn't flip)" maxlength="50" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #e74c3c; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none;">
+        <textarea id="bug-desc" placeholder="Describe what happened and how to trigger it..." class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #e74c3c; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; resize: vertical; min-height: 100px;"></textarea>
+        <div id="bug-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Error</div>
+        <div id="bug-success" class="auth-success hidden" style="color: #2ecc71; font-size: 0.85rem; font-weight: bold; text-align: center;">Bug reported! Thank you!</div>
+        <button id="btn-submit-bug" class="hub-interactive auth-submit-btn" style="background: #e74c3c; color: #fff; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(231, 76, 60, 0.3);">SUBMIT REPORT</button>
+      </div>
+    </div>
+  </div>
+
   <div id="achievements-modal" class="hidden">
     <div class="ach-modal-box">
       <button id="close-ach-btn" class="hub-interactive">&times;</button>
@@ -121,7 +188,7 @@
       <button id="close-login-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
       <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">SIGN IN</h2>
       <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
-        <input type="text" id="login-username" placeholder="Username" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <input type="text" id="login-username" placeholder="Username" maxlength="16" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
         <input type="password" id="login-password" placeholder="Password" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
         <div id="login-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Invalid credentials</div>
         <button id="btn-submit-login" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">LOGIN</button>
@@ -138,16 +205,15 @@
       <button id="close-register-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
       <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">REGISTER</h2>
       <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
-        <input type="text" id="register-username" placeholder="Username" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <input type="text" id="register-username" placeholder="Username" maxlength="16" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
         <input type="password" id="register-password" placeholder="Password" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
         <select id="register-security-question" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.7); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; cursor: pointer;">
           <option value="" disabled selected>— Select a security question —</option>
-          <option value="pet">What was the name of your first pet?</option>
-          <option value="city">What city were you born in?</option>
-          <option value="mother">What is your mother's maiden name?</option>
-          <option value="school">What elementary school did you attend?</option>
-          <option value="car">What was the make of your first car?</option>
-          <option value="friend">What is the name of your childhood best friend?</option>
+          <option value="game">What is your favorite video game of all time?</option>
+          <option value="character">Who is your favorite fictional character?</option>
+          <option value="movie">What was the first movie you saw in theaters?</option>
+          <option value="karaoke">What is your go-to karaoke song?</option>
+          <option value="superpower">If you had a superpower, what would it be?</option>
         </select>
         <input type="text" id="register-security-answer" placeholder="Your answer" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
         <div id="register-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Error creating account</div>
@@ -165,7 +231,7 @@
       <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">RECOVERY</h2>
       <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
         <p style="color: #aaa; font-size: 0.85rem; margin: 0; text-align: center; line-height: 1.4;">Enter your username to reset your password.</p>
-        <input type="text" id="forgot-username" placeholder="Username" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <input type="text" id="forgot-username" placeholder="Username" maxlength="16" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
         <div id="forgot-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">User not found</div>
         <div id="forgot-success" class="auth-success hidden" style="color: #2ecc71; font-size: 0.85rem; font-weight: bold; text-align: center;">Password reset sent!</div>
         <div id="forgot-step-2" class="hidden" style="display: flex; flex-direction: column; gap: 12px;">
@@ -176,6 +242,41 @@
         <div class="auth-links" style="display: flex; justify-content: center; font-size: 0.8rem; margin-top: 5px;">
           <span id="link-back-to-login" class="hub-interactive auth-link" style="color: #aaa; cursor: pointer;">Back to Sign In</span>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-edit-profile" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 200005; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box auth-modal-box">
+      <button id="close-edit-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">EDIT PROFILE</h2>
+      <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
+        <div style="text-align: center; color: #aaa; font-size: 0.8rem; margin-bottom: -10px;">Select an Avatar</div>
+        <div id="avatar-grid" style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; font-size: 1.8rem; cursor: pointer;">
+            <span class="avatar-option active-avatar" style="border: 2px solid var(--accent-color); border-radius: 8px; padding: 2px; background: rgba(0,210,255,0.2);">👤</span>
+            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">🤖</span>
+            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">👽</span>
+            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">👾</span>
+            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">👻</span>
+            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">🤠</span>
+            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">🐱‍👤</span>
+        </div>
+        <input type="hidden" id="edit-avatar-val" value="👤">
+        <div style="text-align: center; color: #aaa; font-size: 0.8rem; margin-bottom: -10px; margin-top: 5px;">Username</div>
+        <input type="text" id="edit-username" placeholder="Username" maxlength="16" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none; text-align: center;">
+        <div id="edit-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Error</div>
+        <button id="btn-submit-edit" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">SAVE CHANGES</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-logout" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 100000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box auth-modal-box" style="text-align: center; padding: 30px;">
+      <h2 style="color: #e74c3c; font-family: 'Orbitron', sans-serif; margin: 0 0 15px 0; letter-spacing: 2px;">LOGOUT</h2>
+      <p id="logout-prompt-text" style="color: #aaa; margin-bottom: 25px; font-size: 0.9rem;">Are you sure you want to log out?</p>
+      <div style="display: flex; gap: 15px; justify-content: center;">
+        <button id="btn-cancel-logout" class="hub-interactive auth-submit-btn" style="flex: 1; background: transparent; color: #fff; border: 1px solid #555; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer;">CANCEL</button>
+        <button id="btn-confirm-logout" class="hub-interactive auth-submit-btn" style="flex: 1; background: #e74c3c; color: #fff; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer; box-shadow: 0 0 15px rgba(231, 76, 60, 0.3);">LOGOUT</button>
       </div>
     </div>
   </div>
@@ -239,7 +340,8 @@
   <div id="profile-panel" class="hidden">
     <div class="pp-header">
       <button id="pp-close-btn" class="hub-interactive">&times;</button>
-      <div class="pp-avatar">👤</div>
+      <button id="btn-edit-profile" class="hub-interactive" style="position: absolute; top: 10px; right: 14px; background: none; border: none; font-size: 1.2rem; cursor: pointer; line-height: 1;">✏️</button>
+      <div id="pp-avatar" class="pp-avatar">👤</div>
       <div id="pp-name" class="pp-name">Player</div>
       <div id="pp-title" class="pp-title">Newcomer</div>
       <div class="pp-level-row">
@@ -249,6 +351,7 @@
         </div>
         <span id="pp-xp-text" class="pp-xp-text">0 XP</span>
       </div>
+      <button id="btn-cloud-sync" class="hub-interactive" style="margin-top: 15px; background: rgba(0,0,0,0.5); border: 1px solid var(--accent-color); color: var(--accent-color); padding: 6px 12px; border-radius: 20px; font-family: 'Orbitron', sans-serif; font-size: 0.65rem; font-weight: bold; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: 0.2s;">☁️ SYNC TO CLOUD</button>
     </div>
 
     <div class="pp-section">
@@ -320,6 +423,7 @@
 
   <script src="system/system_profile.js"></script>
   <script src="system/system_auth.js"></script>
+  <script src="system/system_store.js"></script>
   <script src="system/system_stats.js"></script>
   <script src="system/system_achievements.js"></script>
   <script src="system/system_rewards.js"></script>

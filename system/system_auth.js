@@ -12,6 +12,20 @@ window.SystemAuth = {
 
     _users:      {},
     _activeUser: null,
+    
+    _salt:       "C4S1N0_OS_",
+
+    _encode: function(str) {
+        return btoa(this._salt + str);
+    },
+
+    _decode: function(str) {
+        try {
+            return atob(str).replace(this._salt, "");
+        } catch(e) {
+            return str; // Fallback for legacy plaintext accounts
+        }
+    },
 
     _defaultProfile: function(username) {
         return {
@@ -57,44 +71,149 @@ window.SystemAuth = {
     },
 
     // ── REGISTER ──────────────────────────────────
-    register: function(username, password, securityQuestion, securityAnswer) {
-        username       = (username       || "").trim().toLowerCase();
-        password       = (password       || "").trim();
-        securityAnswer = (securityAnswer || "").trim().toLowerCase();
+    register: async function(username, password, securityQuestion, securityAnswer) {
+        const rawUsername = username || "";
+        username          = rawUsername.trim().toLowerCase();
+        password          = (password       || "").trim();
+        securityAnswer    = (securityAnswer || "").trim().toLowerCase();
 
         if (!username || username.length < 2)
             return { ok: false, error: "Username must be at least 2 characters." };
+        if (username.length > 16)
+            return { ok: false, error: "Username cannot exceed 16 characters." };
         if (!password || password.length < 4)
             return { ok: false, error: "Password must be at least 4 characters." };
         if (!securityQuestion)
             return { ok: false, error: "Please select a security question." };
         if (!securityAnswer)
             return { ok: false, error: "Please provide an answer to your security question." };
+        
+        if (!navigator.onLine)
+            return { ok: false, error: "You must be online to create a new account." };
+
+        // Check Firebase if username taken globally
+        if (window.dbGet && window.dbRef && window.db) {
+            try {
+                const snap = await window.dbGet(window.dbRef(window.db, `users/${username}`));
+                if (snap.exists()) {
+                    return { ok: false, error: "Username already taken." };
+                }
+            } catch(e) {
+                return { ok: false, error: "Network error checking username." };
+            }
+        }
+
         if (this._users[username])
-            return { ok: false, error: "Username already taken." };
+            return { ok: false, error: "Username already taken locally." };
 
         // Initialize a brand new, completely isolated user
         this._users[username] = {
-            password:         password,
+            password:         this._encode(password),
             securityQuestion: securityQuestion,
-            securityAnswer:   securityAnswer,
-            profile:          this._defaultProfile(username),
+            securityAnswer:   this._encode(securityAnswer),
+            profile:          this._defaultProfile(rawUsername.trim()),
             stats:            this._defaultStats(),
             achievements:     this._defaultAchievements(),
-            rewards:          this._defaultRewards()
+            rewards:          this._defaultRewards(),
+            lastUpdated:      Date.now()
         };
         this._saveUsers();
+        this._pushToCloud(username);
         return this.login(username, password);
     },
 
+    // ── UPDATE PROFILE (EDIT) ─────────────────────
+    updateProfile: async function(newUsername, newAvatar) {
+        if (!this._activeUser) return { ok: false, error: "Not logged in." };
+        if (!navigator.onLine) return { ok: false, error: "You must be online to edit your profile." };
+        
+        const rawUsername = newUsername || "";
+        const cleanUsername = rawUsername.trim().toLowerCase();
+        const currentDbKey = this._activeUser;
+        
+        if (!cleanUsername || cleanUsername.length < 2) return { ok: false, error: "Username must be at least 2 characters." };
+        if (cleanUsername.length > 16) return { ok: false, error: "Username cannot exceed 16 characters." };
+
+        const isNameChange = (cleanUsername !== currentDbKey);
+
+        if (isNameChange) {
+            if (window.dbGet && window.dbRef && window.db) {
+                try {
+                    const snap = await window.dbGet(window.dbRef(window.db, `users/${cleanUsername}`));
+                    if (snap.exists()) return { ok: false, error: "Username already taken." };
+                } catch(e) {
+                    return { ok: false, error: "Network error checking username availability." };
+                }
+            } else {
+                return { ok: false, error: "Database not connected." };
+            }
+            if (this._users[cleanUsername]) return { ok: false, error: "Username already taken locally." };
+        }
+
+        // Everything is valid. Apply changes.
+        const userObj = this._users[currentDbKey];
+        userObj.profile.name = rawUsername.trim();
+        userObj.profile.avatar = newAvatar || "👤";
+        userObj.lastUpdated = Date.now();
+
+        if (isNameChange) {
+            this._users[cleanUsername] = userObj;
+            delete this._users[currentDbKey];
+            this._activeUser = cleanUsername;
+            localStorage.setItem(this.SESSION_KEY, cleanUsername);
+            
+            if (window.dbUpdate && window.dbRef && window.db && window.dbRemove) {
+                await window.dbUpdate(window.dbRef(window.db, `users/${cleanUsername}`), userObj);
+                await window.dbRemove(window.dbRef(window.db, `users/${currentDbKey}`));
+            }
+        }
+
+        this._saveUsers();
+        if (!isNameChange) {
+            this._pushToCloud(currentDbKey);
+        }
+        this._loadIntoProfile(this._activeUser);
+        return { ok: true };
+    },
+
     // ── LOGIN ─────────────────────────────────────
-    login: function(username, password) {
+    login: async function(username, password) {
         username = (username || "").trim().toLowerCase();
         password = (password || "").trim();
 
-        const user = this._users[username];
+        const encodedPassword = this._encode(password);
+        let user = this._users[username];
+
+        // Cloud Sync Check
+        if (navigator.onLine && window.dbGet && window.dbRef && window.db) {
+            try {
+                const snap = await window.dbGet(window.dbRef(window.db, `users/${username}`));
+                if (snap.exists()) {
+                    const cloudUser = snap.val();
+                    if (cloudUser.password !== encodedPassword && cloudUser.password !== password) {
+                        return { ok: false, error: "Incorrect password." };
+                    }
+                    const localTime = user && user.lastUpdated ? user.lastUpdated : 0;
+                    const cloudTime = cloudUser.lastUpdated || 0;
+                    
+                    if (cloudTime > localTime) {
+                        this._users[username] = cloudUser;
+                        user = cloudUser;
+                        this._saveUsers();
+                        console.log(`Casino OS: Pulled newer cloud save for ${username}`);
+                    } else if (localTime > cloudTime) {
+                        this._pushToCloud(username);
+                    }
+                }
+            } catch(e) {
+                console.warn("Casino OS: Cloud sync skipped due to network.", e);
+            }
+        }
+
+        user = this._users[username];
+
         if (!user)               return { ok: false, error: "User not found." };
-        if (user.password !== password) return { ok: false, error: "Incorrect password." };
+        if (user.password !== encodedPassword && user.password !== password) return { ok: false, error: "Incorrect password." };
 
         // isDev: strictly forerunner + exact password only
         user.profile.isDev = (username === "forerunner" && password === "luna&abi");
@@ -157,17 +276,61 @@ window.SystemAuth = {
         username = (username || "").trim().toLowerCase();
         answer   = (answer   || "").trim().toLowerCase();
         const user = this._users[username];
+        const encodedAnswer = this._encode(answer);
+        
         if (!user) return { ok: false, error: "User not found." };
         if (!user.securityAnswer) return { ok: false, error: "No security question set for this account." };
-        if (user.securityAnswer !== answer) return { ok: false, error: "Incorrect answer." };
-        return { ok: true, password: user.password };
+        if (user.securityAnswer !== encodedAnswer && user.securityAnswer !== answer) return { ok: false, error: "Incorrect answer." };
+        
+        return { ok: true, password: this._decode(user.password) };
     },
 
     saveCurrentUserData: function() {
         this._saveCurrentUserData();
     },
 
+    forceSync: async function() {
+        if (!this._activeUser) return { ok: false, error: "No active user." };
+        if (!navigator.onLine) return { ok: false, error: "You are offline." };
+        if (!window.dbGet || !window.dbRef || !window.db) return { ok: false, error: "Cloud database not connected." };
+
+        try {
+            this._saveCurrentUserData(); // Ensures local dict has absolute latest
+            const username = this._activeUser;
+            const snap = await window.dbGet(window.dbRef(window.db, `users/${username}`));
+            
+            if (snap.exists()) {
+                const cloudUser = snap.val();
+                const localTime = this._users[username].lastUpdated || 0;
+                const cloudTime = cloudUser.lastUpdated || 0;
+
+                if (cloudTime > localTime) {
+                    this._users[username] = cloudUser;
+                    this._saveUsers();
+                    this._loadIntoProfile(username);
+                    return { ok: true, message: "Cloud save downloaded! Your stats have been updated." };
+                } else if (localTime > cloudTime) {
+                    await window.dbUpdate(window.dbRef(window.db, `users/${username}`), this._users[username]);
+                    return { ok: true, message: "Local save backed up to cloud!" };
+                } else {
+                    return { ok: true, message: "Cloud and Local are already perfectly in sync." };
+                }
+            } else {
+                await window.dbUpdate(window.dbRef(window.db, `users/${username}`), this._users[username]);
+                return { ok: true, message: "First cloud backup created successfully!" };
+            }
+        } catch(e) {
+            return { ok: false, error: "Sync failed: " + e.message };
+        }
+    },
+
     // ── INTERNAL ──────────────────────────────────
+    _pushToCloud: function(username) {
+        if (navigator.onLine && window.dbUpdate && window.dbRef && window.db) {
+            window.dbUpdate(window.dbRef(window.db, `users/${username}`), this._users[username]).catch(()=>{});
+        }
+    },
+
     _saveCurrentUserData: function() {
         if (!this._activeUser) return;
         if (!this._users[this._activeUser]) return;
@@ -187,7 +350,9 @@ window.SystemAuth = {
             this._users[this._activeUser].rewards = { ...window.SystemRewards.data };
         }
 
+        this._users[this._activeUser].lastUpdated = Date.now();
         this._saveUsers();
+        this._pushToCloud(this._activeUser);
     },
 
     _loadIntoProfile: function(username) {
@@ -244,7 +409,9 @@ window.SystemAuth = {
                 window.SystemProfile.saveProfile();
                 if (typeof window.SystemProfile._notifyMoneyChange === 'function') window.SystemProfile._notifyMoneyChange();
             }
+            window.SystemAuth._users[target].lastUpdated = Date.now();
             window.SystemAuth._saveUsers();
+            window.SystemAuth._pushToCloud(target);
             return { ok: true, message: `Modified money for ${target}. New balance: $${user.profile.bankroll}` };
         },
 
@@ -275,7 +442,9 @@ window.SystemAuth = {
                 window.SystemProfile.data.level = user.profile.level;
                 window.SystemProfile.saveProfile();
             }
+            window.SystemAuth._users[target].lastUpdated = Date.now();
             window.SystemAuth._saveUsers();
+            window.SystemAuth._pushToCloud(target);
             return { ok: true, message: `Modified XP for ${target}. New Level: ${user.profile.level}` };
         },
 
@@ -286,6 +455,10 @@ window.SystemAuth = {
             
             delete window.SystemAuth._users[target];
             window.SystemAuth._saveUsers();
+            
+            if (navigator.onLine && window.dbRemove && window.dbRef && window.db) {
+                window.dbRemove(window.dbRef(window.db, `users/${target}`));
+            }
             
             if (target === window.SystemAuth._activeUser) {
                 window.SystemAuth.logout();
@@ -313,7 +486,9 @@ window.SystemAuth = {
             if (target === window.SystemAuth._activeUser) {
                 window.SystemAuth._loadIntoProfile(target);
             }
+            window.SystemAuth._users[target].lastUpdated = Date.now();
             window.SystemAuth._saveUsers();
+            window.SystemAuth._pushToCloud(target);
             return { ok: true, message: `Account progress reset for ${target}.` };
         },
 
@@ -338,7 +513,9 @@ window.SystemAuth = {
                 window.SystemAchievements.data.unlocked = [...user.achievements.unlocked];
                 if (typeof window.SystemAchievements.saveData === 'function') window.SystemAchievements.saveData();
             }
+            window.SystemAuth._users[target].lastUpdated = Date.now();
             window.SystemAuth._saveUsers();
+            window.SystemAuth._pushToCloud(target);
             return { ok: true, message: `Achievement '${achId}' ${unlock ? 'unlocked' : 'locked'} for ${target}.` };
         },
 
@@ -354,7 +531,9 @@ window.SystemAuth = {
                 window.SystemRewards.data.lastClaim = "";
                 if (typeof window.SystemRewards.saveData === 'function') window.SystemRewards.saveData();
             }
+            window.SystemAuth._users[target].lastUpdated = Date.now();
             window.SystemAuth._saveUsers();
+            window.SystemAuth._pushToCloud(target);
             return { ok: true, message: `Daily bonus timer reset for ${target}.` };
         }
     }
