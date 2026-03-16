@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>War</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../system/system_ui.css">
+    <link rel="stylesheet" href="war_style.css">
+</head>
+<body>
+<div id="game-container">
+
+    <div id="war-game">
+
+        <!-- Opponent area -->
+        <div id="opponent-area">
+            <div class="player-label">
+                <span id="opp-name">OPPONENT</span>
+                <span class="card-count-badge" id="opp-count">26</span>
+            </div>
+            <div id="opp-card-slot" class="card-slot">
+                <div id="opp-card-stack" class="card-stack"></div>
+                <div id="opp-flip-card" class="flip-card hidden">
+                    <div class="flip-card-inner">
+                        <div class="flip-card-back"></div>
+                        <div class="flip-card-front"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Battle area -->
+        <div id="battle-area">
+            <div id="battle-status">PLACE YOUR BET</div>
+            <div id="war-pile-display" class="hidden">
+                <span id="war-pile-count">0</span> cards at war
+            </div>
+            <div id="result-banner" class="hidden"></div>
+        </div>
+
+        <!-- Player area -->
+        <div id="player-area">
+            <div id="player-card-slot" class="card-slot">
+                <div id="player-card-stack" class="card-stack"></div>
+                <div id="player-flip-card" class="flip-card hidden">
+                    <div class="flip-card-inner">
+                        <div class="flip-card-back"></div>
+                        <div class="flip-card-front"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="player-label">
+                <span id="player-name">YOU</span>
+                <span class="card-count-badge" id="player-count">26</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Controls -->
+    <div id="controls-area">
+        <div id="betting-controls">
+            <div id="os-betting-rack"></div>
+            <div id="table-bet-chips"></div>
+            <div id="table-pot-display" class="hidden"></div>
+            <button id="deal-btn" class="war-btn primary" disabled>FLIP (Min $5)</button>
+        </div>
+        <div id="playing-controls" class="hidden">
+            <button id="flip-btn" class="war-btn primary">⚔️ FLIP CARDS</button>
+            <button id="war-btn-action" class="war-btn war hidden">🔥 DECLARE WAR</button>
+        </div>
+        <div id="gameover-controls" class="hidden">
+            <button id="play-again-btn" class="war-btn primary">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <!-- Toast modal -->
+    <div id="toast-modal" class="hidden">
+        <div id="toast-box">
+            <div id="modal-title"></div>
+            <div id="modal-message"></div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+<script src="../../system/system_profile.js"></script>
+<script src="../../system/system_audio.js"></script>
+<script src="../../system/system_stats.js"></script>
+<script src="../../system/system_achievements.js"></script>
+<script src="../../system/system_betting.js"></script>
+<script src="../../system/system_lobby.js"></script>
+<script src="../../system/system_chat.js"></script>
+<script src="../../system/system_ui.js"></script>
+<script src="../../system/system_match.js"></script>
+<script src="war_app.js"></script>
+</body>
+</html>

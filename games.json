@@ -8,8 +8,8 @@
     "iconStyle": "",
     "url": "games/backgammon/bg.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "bg_rooms"
   },
@@ -22,8 +22,8 @@
     "iconStyle": "",
     "url": "games/battleship/battleship.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "bs_rooms"
   },
@@ -36,8 +36,8 @@
     "iconStyle": "",
     "url": "games/blackjack/blackjack.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "bj_rooms"
   },
@@ -50,8 +50,8 @@
     "iconStyle": "",
     "url": "games/checkers/checkers.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "checkers_rooms"
   },
@@ -64,8 +64,8 @@
     "iconStyle": "",
     "url": "games/chess/chess.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "chess_rooms"
   },
@@ -78,8 +78,8 @@
     "iconStyle": "",
     "url": "games/clue/clue.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "clue_rooms"
   },
@@ -92,8 +92,8 @@
     "iconStyle": "",
     "url": "games/connect4/c4.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "c4_rooms"
   },
@@ -106,8 +106,8 @@
     "iconStyle": "",
     "url": "games/domino/domino.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "domino_rooms"
   },
@@ -120,8 +120,8 @@
     "iconStyle": "",
     "url": "games/family-feud/feud.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "feud_rooms"
   },
@@ -134,8 +134,8 @@
     "iconStyle": "border-radius: 5px;",
     "url": "games/memory/memory.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "memory_rooms"
   },
@@ -148,8 +148,8 @@
     "iconStyle": "border-radius: 5px;",
     "url": "games/monopoly/monopoly.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "mono_rooms"
   },
@@ -162,9 +162,9 @@
     "iconStyle": "border-radius: 50%;",
     "url": "games/risk/risk.html",
     "badges": [
-      "\ud83e\udd16 Solo"
+      "🤖 Solo"
     ],
-    "roomPath": null
+    "roomPath": "risk_rooms"
   },
   {
     "id": "roulette",
@@ -175,7 +175,7 @@
     "iconStyle": "border-radius: 50%;",
     "url": "games/roulette/roulette.html",
     "badges": [
-      "\ud83e\udd16 Solo"
+      "🤖 Solo"
     ],
     "roomPath": null
   },
@@ -188,8 +188,8 @@
     "iconStyle": "",
     "url": "games/rps/rps.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "rps_rooms"
   },
@@ -202,8 +202,8 @@
     "iconStyle": "",
     "url": "games/rummy/rummy.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "rummy_rooms"
   },
@@ -216,7 +216,7 @@
     "iconStyle": "border-radius: 8px;",
     "url": "games/slots/slots.html",
     "badges": [
-      "\ud83e\udd16 Solo"
+      "🤖 Solo"
     ],
     "roomPath": null
   },
@@ -229,8 +229,8 @@
     "iconStyle": "border-radius: 8px;",
     "url": "games/scrabble/scrabble.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "scrabble_rooms"
   },
@@ -243,8 +243,8 @@
     "iconStyle": "",
     "url": "games/snakes-and-ladders/snl.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "snl_rooms"
   },
@@ -257,7 +257,7 @@
     "iconStyle": "",
     "url": "games/solitaire/solitaire.html",
     "badges": [
-      "\ud83e\udd16 Solo"
+      "🤖 Solo"
     ],
     "roomPath": null
   },
@@ -270,8 +270,8 @@
     "iconStyle": "",
     "url": "games/holdem/texas_holdem.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": null
   },
@@ -284,7 +284,7 @@
     "iconStyle": "",
     "url": "games/tic-tac-toe/ttt.html",
     "badges": [
-      "\ud83d\udc65 Online"
+      "👥 Online"
     ],
     "roomPath": "rooms"
   },
@@ -297,7 +297,7 @@
     "iconStyle": "",
     "url": "games/trivial-pursuit/trivia.html",
     "badges": [
-      "\ud83d\udc65 Online"
+      "👥 Online"
     ],
     "roomPath": "trivia_rooms"
   },
@@ -310,8 +310,8 @@
     "iconStyle": "",
     "url": "games/uno/uno.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "uno_rooms"
   },
@@ -324,9 +324,23 @@
     "iconStyle": "",
     "url": "games/yahtzee/yahtzee.html",
     "badges": [
-      "\ud83d\udc65 Online",
-      "\ud83e\udd16 Solo"
+      "👥 Online",
+      "🤖 Solo"
     ],
     "roomPath": "yahtzee_rooms"
+  },
+  {
+    "id": "war",
+    "name": "War",
+    "searchTags": "war cards battle flip",
+    "category": "casino",
+    "icon": "system/images/cards/standard/cardSpadesA.png",
+    "iconStyle": "",
+    "url": "games/war/war.html",
+    "badges": [
+      "👥 Online",
+      "🤖 Solo"
+    ],
+    "roomPath": "war_rooms"
   }
 ]

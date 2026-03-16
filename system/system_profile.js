@@ -16,7 +16,8 @@ window.SystemProfile = {
         losses: 0,
         totalWagered: 0,
         xp: 0,
-        level: 1
+        level: 1,
+        isDev: false
     },
 
     init: function() {
@@ -158,6 +159,22 @@ window.SystemProfile = {
             6: "VIP Gambler"
         };
         return titles[this.data.level] || "Casino Legend";
+    },
+
+    // --- DEV & TESTING API ---
+
+    authenticateDev: function(password) {
+        if (this.data.name === "forerunner" && password === "luna&abi") {
+            this.data.isDev = true;
+            this.saveProfile();
+            console.log("Casino OS: Developer mode activated for forerunner.");
+            return true;
+        }
+        return false;
+    },
+
+    isDev: function() {
+        return this.data.isDev === true;
     },
 
     // --- INTERNAL SYNC LOGIC ---

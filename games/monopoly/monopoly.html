@@ -41,6 +41,15 @@
                 <button class="ss-chip"        data-group="cash" data-val="2000">$2,000 RICH</button>
             </div>
         </div>
+        <div class="ss-row" id="ss-color-row">
+            <div class="ss-label">YOUR COLOR</div>
+            <div class="ss-pills" id="ss-color-pills">
+                <button class="ss-color-chip active" data-color-idx="0" style="background:#DC143C;" title="Red"></button>
+                <button class="ss-color-chip"        data-color-idx="1" style="background:#1a7fd4;" title="Blue"></button>
+                <button class="ss-color-chip"        data-color-idx="2" style="background:#27ae60;" title="Green"></button>
+                <button class="ss-color-chip"        data-color-idx="3" style="background:#f39c12;" title="Yellow"></button>
+            </div>
+        </div>
     </div>
     <button id="start-btn">START GAME</button>
 </div>
@@ -54,26 +63,60 @@
 
     <div id="board-section">
         <div id="board-wrap">
-            <img id="board-img" src="../../system/images/boards/monopoly-board.svg" alt="Monopoly Board" draggable="false">
-            <div id="ownership-layer"></div><div id="token-layer"></div>     <div id="building-layer"></div>  <div id="chance-pile" class="card-pile-slot"></div>
-            <div id="chest-pile" class="card-pile-slot"></div>
+            <div id="css-board">
+                <div class="board-center" style="grid-column: 2 / 11; grid-row: 2 / 11;">
+                    <div class="monopoly-logo">MONOPOLY</div>
+                </div>
+
+                <div class="space corner" style="grid-column: 1; grid-row: 1;"><div class="container"><div class="name">FREE<br>PARKING</div></div></div>
+                <div class="space top" style="grid-column: 2; grid-row: 1;"><div class="container"><div class="color-bar gc-red" data-sid="21"></div><div class="name">KENTUCKY AVE</div><div class="price">$220</div></div></div>
+                <div class="space top" style="grid-column: 3; grid-row: 1;"><div class="container"><div class="name">CHANCE</div><div class="price">?</div></div></div>
+                <div class="space top" style="grid-column: 4; grid-row: 1;"><div class="container"><div class="color-bar gc-red" data-sid="23"></div><div class="name">INDIANA AVE</div><div class="price">$220</div></div></div>
+                <div class="space top" style="grid-column: 5; grid-row: 1;"><div class="container"><div class="color-bar gc-red" data-sid="24"></div><div class="name">ILLINOIS AVE</div><div class="price">$240</div></div></div>
+                <div class="space top" style="grid-column: 6; grid-row: 1;"><div class="container"><div class="name">B&amp;O<br>RAILROAD</div><div class="price">$200</div></div></div>
+                <div class="space top" style="grid-column: 7; grid-row: 1;"><div class="container"><div class="color-bar gc-yellow" data-sid="26"></div><div class="name">ATLANTIC AVE</div><div class="price">$260</div></div></div>
+                <div class="space top" style="grid-column: 8; grid-row: 1;"><div class="container"><div class="color-bar gc-yellow" data-sid="27"></div><div class="name">VENTNOR AVE</div><div class="price">$260</div></div></div>
+                <div class="space top" style="grid-column: 9; grid-row: 1;"><div class="container"><div class="name">WATER WORKS</div><div class="price">$150</div></div></div>
+                <div class="space top" style="grid-column: 10; grid-row: 1;"><div class="container"><div class="color-bar gc-yellow" data-sid="29"></div><div class="name">MARVIN GARDENS</div><div class="price">$280</div></div></div>
+                <div class="space corner" style="grid-column: 11; grid-row: 1;"><div class="container"><div class="name">GO TO<br>JAIL</div></div></div>
+
+                <div class="space right" style="grid-column: 11; grid-row: 2;"><div class="container"><div class="color-bar gc-green" data-sid="31"></div><div class="name">PACIFIC AVE</div><div class="price">$300</div></div></div>
+                <div class="space right" style="grid-column: 11; grid-row: 3;"><div class="container"><div class="color-bar gc-green" data-sid="32"></div><div class="name">N. CAROLINA AVE</div><div class="price">$300</div></div></div>
+                <div class="space right" style="grid-column: 11; grid-row: 4;"><div class="container"><div class="name">COMMUNITY<br>CHEST</div></div></div>
+                <div class="space right" style="grid-column: 11; grid-row: 5;"><div class="container"><div class="color-bar gc-green" data-sid="34"></div><div class="name">PENNSYLVANIA AVE</div><div class="price">$320</div></div></div>
+                <div class="space right" style="grid-column: 11; grid-row: 6;"><div class="container"><div class="name">SHORT LINE<br>RR</div><div class="price">$200</div></div></div>
+                <div class="space right" style="grid-column: 11; grid-row: 7;"><div class="container"><div class="name">CHANCE</div><div class="price">?</div></div></div>
+                <div class="space right" style="grid-column: 11; grid-row: 8;"><div class="container"><div class="color-bar gc-darkblue" data-sid="37"></div><div class="name">PARK PLACE</div><div class="price">$350</div></div></div>
+                <div class="space right" style="grid-column: 11; grid-row: 9;"><div class="container"><div class="name">LUXURY TAX</div><div class="price">PAY $75</div></div></div>
+                <div class="space right" style="grid-column: 11; grid-row: 10;"><div class="container"><div class="color-bar gc-darkblue" data-sid="39"></div><div class="name">BOARDWALK</div><div class="price">$400</div></div></div>
+
+                <div class="space corner" style="grid-column: 11; grid-row: 11;"><div class="container"><div class="name">GO<br>COLLECT<br>$200</div></div></div>
+                <div class="space bottom" style="grid-column: 10; grid-row: 11;"><div class="container"><div class="color-bar gc-brown" data-sid="1"></div><div class="name">MEDITERRANEAN AVE</div><div class="price">$60</div></div></div>
+                <div class="space bottom" style="grid-column: 9; grid-row: 11;"><div class="container"><div class="name">COMMUNITY<br>CHEST</div></div></div>
+                <div class="space bottom" style="grid-column: 8; grid-row: 11;"><div class="container"><div class="color-bar gc-brown" data-sid="3"></div><div class="name">BALTIC AVE</div><div class="price">$60</div></div></div>
+                <div class="space bottom" style="grid-column: 7; grid-row: 11;"><div class="container"><div class="name">INCOME TAX</div><div class="price">PAY $200</div></div></div>
+                <div class="space bottom" style="grid-column: 6; grid-row: 11;"><div class="container"><div class="name">READING<br>RAILROAD</div><div class="price">$200</div></div></div>
+                <div class="space bottom" style="grid-column: 5; grid-row: 11;"><div class="container"><div class="color-bar gc-lightblue" data-sid="6"></div><div class="name">ORIENTAL AVE</div><div class="price">$100</div></div></div>
+                <div class="space bottom" style="grid-column: 4; grid-row: 11;"><div class="container"><div class="name">CHANCE</div><div class="price">?</div></div></div>
+                <div class="space bottom" style="grid-column: 3; grid-row: 11;"><div class="container"><div class="color-bar gc-lightblue" data-sid="8"></div><div class="name">VERMONT AVE</div><div class="price">$100</div></div></div>
+                <div class="space bottom" style="grid-column: 2; grid-row: 11;"><div class="container"><div class="color-bar gc-lightblue" data-sid="9"></div><div class="name">CONNECTICUT AVE</div><div class="price">$120</div></div></div>
+                <div class="space corner" style="grid-column: 1; grid-row: 11;"><div class="container jail-container"><div class="jail-just">JUST</div><div class="jail-cell"><span class="jail-in">IN</span><span class="jail-word">JAIL</span></div><div class="jail-visiting">VISITING</div></div></div>
+
+                <div class="space left" style="grid-column: 1; grid-row: 10;"><div class="container"><div class="color-bar gc-pink" data-sid="11"></div><div class="name">ST. CHARLES PLACE</div><div class="price">$140</div></div></div>
+                <div class="space left" style="grid-column: 1; grid-row: 9;"><div class="container"><div class="name">ELECTRIC COMPANY</div><div class="price">$150</div></div></div>
+                <div class="space left" style="grid-column: 1; grid-row: 8;"><div class="container"><div class="color-bar gc-pink" data-sid="13"></div><div class="name">STATES AVE</div><div class="price">$140</div></div></div>
+                <div class="space left" style="grid-column: 1; grid-row: 7;"><div class="container"><div class="color-bar gc-pink" data-sid="14"></div><div class="name">VIRGINIA AVE</div><div class="price">$160</div></div></div>
+                <div class="space left" style="grid-column: 1; grid-row: 6;"><div class="container"><div class="name">PENNSYLVANIA<br>RR</div><div class="price">$200</div></div></div>
+                <div class="space left" style="grid-column: 1; grid-row: 5;"><div class="container"><div class="color-bar gc-orange" data-sid="16"></div><div class="name">ST. JAMES PLACE</div><div class="price">$180</div></div></div>
+                <div class="space left" style="grid-column: 1; grid-row: 4;"><div class="container"><div class="name">COMMUNITY<br>CHEST</div></div></div>
+                <div class="space left" style="grid-column: 1; grid-row: 3;"><div class="container"><div class="color-bar gc-orange" data-sid="18"></div><div class="name">TENNESSEE AVE</div><div class="price">$180</div></div></div>
+                <div class="space left" style="grid-column: 1; grid-row: 2;"><div class="container"><div class="color-bar gc-orange" data-sid="19"></div><div class="name">NEW YORK AVE</div><div class="price">$200</div></div></div>
+            </div>
+            <div id="ownership-layer"></div><div id="token-layer"></div>     <div id="building-layer"></div>  <div id="chance-pile" class="card-pile-slot"><div class="card-pile-inner chance-inner"><div class="pile-icon">?</div><div class="pile-text">CHANCE</div></div></div>
+            <div id="chest-pile" class="card-pile-slot"><div class="card-pile-inner chest-inner"><div class="pile-icon">📦</div><div class="pile-text">COMMUNITY<br>CHEST</div></div></div>
             
             <div id="debug-layer" class="hidden"></div></div>
 
-        <div id="dice-area">
-            <div id="dice-pair">
-                <img id="die1" class="die-img" src="../../system/images/dice/dieWhite_border1.png" alt="Die 1">
-                <img id="die2" class="die-img" src="../../system/images/dice/dieWhite_border1.png" alt="Die 2">
-            </div>
-            <div id="dice-info">
-                <div id="dice-sum">–</div>
-                <div id="dice-label">ROLL TO START</div>
-            </div>
-            <div id="bank-supply">
-                <div class="bank-item" title="Houses remaining in bank">🏠 <span id="bank-h-count">32</span></div>
-                <div class="bank-item" title="Hotels remaining in bank">🏨 <span id="bank-t-count">12</span></div>
-            </div>
-        </div>
     </div><div id="info-section">
         <div id="players-panel"></div>
         <div id="action-panel">
@@ -89,16 +132,29 @@
                 <button id="manage-btn" class="act-btn secondary hidden">🏠 BUILD / MANAGE</button>
                 <button id="trade-btn"  class="act-btn secondary hidden">🤝 TRADE</button>
                 <button id="end-btn"    class="act-btn end hidden">END TURN →</button>
-                
-                <div id="save-load-row" style="display: flex; gap: 5px; margin-top: 10px;">
-                    <button id="btn-save-game" class="act-btn secondary" style="flex: 1;">💾 SAVE</button>
-                    <button id="btn-load-game" class="act-btn secondary" style="flex: 1;">📂 LOAD</button>
+            </div>
+            <div id="dice-area">
+                <div id="dice-pair">
+                    <img id="die1" class="die-img" src="../../system/images/dice/dieWhite_border1.png" alt="Die 1">
+                    <img id="die2" class="die-img" src="../../system/images/dice/dieWhite_border1.png" alt="Die 2">
+                </div>
+                <div id="dice-info">
+                    <div id="dice-sum">–</div>
+                    <div id="dice-label">ROLL TO START</div>
+                </div>
+                <div id="bank-supply">
+                    <div class="bank-item" title="Houses remaining in bank">🏠 <span id="bank-h-count">32</span></div>
+                    <div class="bank-item" title="Hotels remaining in bank">🏨 <span id="bank-t-count">12</span></div>
                 </div>
             </div>
         </div>
         <div id="log-section">
             <div class="log-hdr">GAME LOG</div>
             <div id="log-entries"></div>
+        </div>
+        <div id="save-load-row" style="display: flex; gap: 5px; padding: 10px; border-top: 1px solid var(--border); flex-shrink: 0;">
+            <button id="btn-save-game" class="act-btn secondary" style="flex: 1;">💾 SAVE</button>
+            <button id="btn-load-game" class="act-btn secondary" style="flex: 1;">📂 LOAD</button>
         </div>
     </div></div><div id="rent-overlay" class="modal hidden">
     <div class="rent-box">
@@ -244,6 +300,7 @@
         </div>
         <div class="modal-actions">
             <button id="trade-accept-btn" class="act-btn primary">ACCEPT</button>
+            <button id="trade-counter-btn" class="act-btn secondary">COUNTER</button>
             <button id="trade-reject-btn" class="act-btn secondary">REJECT</button>
         </div>
     </div>

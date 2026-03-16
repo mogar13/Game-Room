@@ -20,30 +20,45 @@
 <body>
 
   <div class="profile-banner">
-    <div class="profile-left">
-      <div class="player-info-row">
-        <span class="profile-icon">👤</span>
-        <span id="display-player-name" class="hub-interactive" id="btn-open-profile" style="cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px;" title="View Profile">Player</span>
-        <span id="display-player-level" class="level-badge">Lv.1</span>
+    <div id="auth-logged-in" class="auth-wrapper" style="display: flex; width: 100%; justify-content: space-between;">
+      <div class="profile-left">
+        <div class="player-info-row">
+          <span class="profile-icon">👤</span>
+          <span id="display-player-name" class="hub-interactive" style="cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px;" title="View Profile">Player</span>
+          <span id="display-player-level" class="level-badge">Lv.1</span>
+        </div>
+        <div class="xp-bar-container">
+          <div id="xp-bar-fill" class="xp-bar-fill"></div>
+          <span id="xp-text" class="xp-text">0 / 500 XP</span>
+        </div>
+        <div id="display-player-title" class="player-title">Newcomer</div>
       </div>
-      <div class="xp-bar-container">
-        <div id="xp-bar-fill" class="xp-bar-fill"></div>
-        <span id="xp-text" class="xp-text">0 / 500 XP</span>
+      <div class="profile-right" style="display: flex; align-items: center; gap: 10px;">
+        <div class="money-display">
+          <span class="profile-icon">💰</span> 
+          $<span id="display-player-money">5000</span>
+        </div>
+        <button id="daily-bonus-btn" class="hub-interactive">Claim +$1,000</button>
+        <button id="btn-achievements" class="hub-interactive" style="background: #3498db; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(52, 152, 219, 0.4);" title="Trophy Room">🏆</button>
+        <select id="theme-dropdown" class="hub-interactive" onchange="changeTheme(this.value)">
+          <option value="default">Night Mode</option>
+          <option value="casino">Casino Felt</option>
+          <option value="arcade">Deep Arcade</option>
+        </select>
       </div>
-      <div id="display-player-title" class="player-title">Newcomer</div>
     </div>
-    <div class="profile-right" style="display: flex; align-items: center; gap: 10px;">
-      <div class="money-display">
-        <span class="profile-icon">💰</span> 
-        $<span id="display-player-money">5000</span>
+
+    <div id="auth-logged-out" class="auth-wrapper hidden" style="display: flex; width: 100%; justify-content: space-between; align-items: center;">
+      <div class="logged-out-welcome" style="font-family: 'Orbitron', sans-serif; font-size: 1rem; color: #fff; letter-spacing: 2px; font-weight: bold;">WELCOME GUEST</div>
+      <div class="logged-out-actions" style="display: flex; gap: 10px; align-items: center;">
+        <button id="btn-open-login" class="hub-interactive" style="background: transparent; border: 2px solid var(--accent-color); color: var(--accent-color); padding: 6px 16px; border-radius: 20px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: 0.2s;">SIGN IN</button>
+        <button id="btn-open-register" class="hub-interactive" style="background: var(--accent-color); border: 2px solid var(--accent-color); color: #000; padding: 6px 16px; border-radius: 20px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: 0.2s;">REGISTER</button>
+        <select id="theme-dropdown-loggedout" class="hub-interactive" onchange="changeTheme(this.value)" style="background: rgba(0,0,0,0.6); color: var(--accent-color); border: 1px solid var(--accent-color); border-radius: 8px; padding: 3px 8px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; cursor: pointer; outline: none;">
+          <option value="default">Night Mode</option>
+          <option value="casino">Casino Felt</option>
+          <option value="arcade">Deep Arcade</option>
+        </select>
       </div>
-      <button id="daily-bonus-btn" class="hub-interactive">Claim +$1,000</button>
-      <button id="btn-achievements" class="hub-interactive" style="background: #3498db; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(52, 152, 219, 0.4);" title="Trophy Room">🏆</button>
-      <select id="theme-dropdown" class="hub-interactive" onchange="changeTheme(this.value)">
-        <option value="default">Night Mode</option>
-        <option value="casino">Casino Felt</option>
-        <option value="arcade">Deep Arcade</option>
-      </select>
     </div>
   </div>
 
@@ -101,6 +116,124 @@
     </div>
   </div>
   
+  <div id="modal-login" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 100000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box auth-modal-box">
+      <button id="close-login-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">SIGN IN</h2>
+      <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
+        <input type="text" id="login-username" placeholder="Username" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <input type="password" id="login-password" placeholder="Password" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <div id="login-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Invalid credentials</div>
+        <button id="btn-submit-login" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">LOGIN</button>
+        <div class="auth-links" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-top: 5px;">
+          <span id="link-forgot-password" class="hub-interactive auth-link" style="color: #aaa; cursor: pointer; text-decoration: underline;">Forgot Password?</span>
+          <span id="link-goto-register" class="hub-interactive auth-link" style="color: var(--accent-color); cursor: pointer; font-weight: bold;">Create Account</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-register" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 100000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box auth-modal-box">
+      <button id="close-register-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">REGISTER</h2>
+      <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
+        <input type="text" id="register-username" placeholder="Username" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <input type="password" id="register-password" placeholder="Password" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <select id="register-security-question" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.7); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; cursor: pointer;">
+          <option value="" disabled selected>— Select a security question —</option>
+          <option value="pet">What was the name of your first pet?</option>
+          <option value="city">What city were you born in?</option>
+          <option value="mother">What is your mother's maiden name?</option>
+          <option value="school">What elementary school did you attend?</option>
+          <option value="car">What was the make of your first car?</option>
+          <option value="friend">What is the name of your childhood best friend?</option>
+        </select>
+        <input type="text" id="register-security-answer" placeholder="Your answer" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <div id="register-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Error creating account</div>
+        <button id="btn-submit-register" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">CREATE ACCOUNT</button>
+        <div class="auth-links" style="display: flex; justify-content: center; font-size: 0.8rem; margin-top: 5px;">
+          <span id="link-goto-login" class="hub-interactive auth-link" style="color: #aaa; cursor: pointer;">Already have an account? <span style="color: var(--accent-color); font-weight: bold;">Sign In</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-forgot-password" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 100000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box auth-modal-box">
+      <button id="close-forgot-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">RECOVERY</h2>
+      <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
+        <p style="color: #aaa; font-size: 0.85rem; margin: 0; text-align: center; line-height: 1.4;">Enter your username to reset your password.</p>
+        <input type="text" id="forgot-username" placeholder="Username" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <div id="forgot-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">User not found</div>
+        <div id="forgot-success" class="auth-success hidden" style="color: #2ecc71; font-size: 0.85rem; font-weight: bold; text-align: center;">Password reset sent!</div>
+        <div id="forgot-step-2" class="hidden" style="display: flex; flex-direction: column; gap: 12px;">
+          <div id="forgot-question-text" style="color: #aaa; font-size: 0.85rem; text-align: center; line-height: 1.5;"></div>
+          <input type="text" id="forgot-security-answer" placeholder="Your answer" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        </div>
+        <button id="btn-submit-forgot" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">CONTINUE</button>
+        <div class="auth-links" style="display: flex; justify-content: center; font-size: 0.8rem; margin-top: 5px;">
+          <span id="link-back-to-login" class="hub-interactive auth-link" style="color: #aaa; cursor: pointer;">Back to Sign In</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-dev-tools" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 100000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+    <div class="ach-modal-box dev-modal-box" style="border-color: #f1c40f; box-shadow: 0 10px 40px rgba(0,0,0,0.8), 0 0 20px rgba(241, 196, 15, 0.2); max-width: 500px; width: 95%;">
+      <button id="close-dev-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: #f1c40f; font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h2 style="color: #f1c40f; font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">🛠️ DEV DASHBOARD</h2>
+      
+      <div class="dev-tabs" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; justify-content: center; flex-wrap: wrap;">
+        <button class="dev-tab active" data-target="dev-tab-economy" style="background: transparent; color: #f1c40f; border: none; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; border-bottom: 2px solid #f1c40f; padding-bottom: 5px; transition: 0.2s;">Economy</button>
+        <button class="dev-tab" data-target="dev-tab-progression" style="background: transparent; color: #888; border: none; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; padding-bottom: 5px; transition: 0.2s;">Progression</button>
+        <button class="dev-tab" data-target="dev-tab-admin" style="background: transparent; color: #888; border: none; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; padding-bottom: 5px; transition: 0.2s;">Admin (Danger)</button>
+        <button class="dev-tab" data-target="dev-tab-rewards" style="background: transparent; color: #888; border: none; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; padding-bottom: 5px; transition: 0.2s;">Rewards</button>
+      </div>
+      
+      <div id="dev-tab-economy" class="dev-tab-content" style="display: flex; flex-direction: column; gap: 15px; text-align: center;">
+        <input type="text" id="dev-econ-target" placeholder="Target Username (leave blank for self)" class="auth-input dev-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #f1c40f; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; text-align: center;">
+        <input type="number" id="dev-econ-amount" placeholder="Amount (e.g. 5000)" class="auth-input dev-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #f1c40f; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none; text-align: center;">
+        <div style="display: flex; gap: 10px;">
+          <button id="dev-econ-add" class="hub-interactive auth-submit-btn dev-submit" style="flex: 1; background: #2ecc71; color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: 0.2s;">+ ADD</button>
+          <button id="dev-econ-sub" class="hub-interactive auth-submit-btn dev-submit" style="flex: 1; background: #e74c3c; color: #fff; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: 0.2s;">- REMOVE</button>
+        </div>
+      </div>
+      
+      <div id="dev-tab-progression" class="dev-tab-content hidden" style="display: flex; flex-direction: column; gap: 15px; text-align: center;">
+        <input type="text" id="dev-prog-target" placeholder="Target Username (leave blank for self)" class="auth-input dev-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3498db; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; text-align: center;">
+        <input type="number" id="dev-prog-amount" placeholder="XP Amount (e.g. 1000)" class="auth-input dev-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3498db; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none; text-align: center;">
+        <div style="display: flex; gap: 10px;">
+          <button id="dev-prog-add" class="hub-interactive auth-submit-btn dev-submit" style="flex: 1; background: #3498db; color: #fff; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: 0.2s;">+ ADD XP</button>
+          <button id="dev-prog-sub" class="hub-interactive auth-submit-btn dev-submit" style="flex: 1; background: #e67e22; color: #fff; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: 0.2s;">- REMOVE XP</button>
+        </div>
+      </div>
+
+      <div id="dev-tab-admin" class="dev-tab-content hidden" style="display: flex; flex-direction: column; gap: 15px; text-align: center;">
+        <input type="text" id="dev-admin-target" placeholder="Target Username (REQUIRED)" class="auth-input dev-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #e74c3c; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; text-align: center;">
+        <button id="dev-admin-reset" class="hub-interactive auth-submit-btn dev-submit" style="background: transparent; color: #e67e22; border: 2px solid #e67e22; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: 0.2s;">RESET ACCOUNT PROGRESS</button>
+        <button id="dev-admin-delete" class="hub-interactive auth-submit-btn dev-submit" style="background: #c0392b; color: #fff; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: 0.2s;">DELETE ACCOUNT</button>
+      </div>
+
+      <div id="dev-tab-rewards" class="dev-tab-content hidden" style="display: flex; flex-direction: column; gap: 15px; text-align: center;">
+        <input type="text" id="dev-rew-target" placeholder="Target Username (leave blank for self)" class="auth-input dev-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #9b59b6; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; text-align: center;">
+        
+        <div style="border: 1px solid #333; padding: 15px; border-radius: 8px; background: rgba(0,0,0,0.3);">
+            <h3 style="color: #9b59b6; font-family: 'Orbitron', sans-serif; font-size: 0.8rem; margin: 0 0 10px 0;">ACHIEVEMENTS</h3>
+            <input type="text" id="dev-rew-ach-id" placeholder="Achievement ID (e.g. first_win)" class="auth-input dev-input" autocomplete="off" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #555; background: #111; color: #fff; font-size: 0.85rem; margin-bottom: 10px; outline: none; text-align: center; box-sizing: border-box;">
+            <div style="display: flex; gap: 10px;">
+              <button id="dev-rew-unlock" class="hub-interactive auth-submit-btn dev-submit" style="flex: 1; background: #f1c40f; color: #000; border: none; padding: 10px; border-radius: 6px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.8rem; cursor: pointer;">🔓 UNLOCK</button>
+              <button id="dev-rew-lock" class="hub-interactive auth-submit-btn dev-submit" style="flex: 1; background: #555; color: #fff; border: none; padding: 10px; border-radius: 6px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.8rem; cursor: pointer;">🔒 LOCK</button>
+            </div>
+        </div>
+
+        <button id="dev-rew-daily" class="hub-interactive auth-submit-btn dev-submit" style="background: #9b59b6; color: #fff; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 0.9rem; cursor: pointer; transition: 0.2s;">RESET DAILY BONUS TIMER</button>
+      </div>
+      
+    </div>
+  </div>
+
   <div id="profile-panel-overlay" class="hidden"></div>
 
   <div id="profile-panel" class="hidden">
@@ -186,6 +319,7 @@
   </script>
 
   <script src="system/system_profile.js"></script>
+  <script src="system/system_auth.js"></script>
   <script src="system/system_stats.js"></script>
   <script src="system/system_achievements.js"></script>
   <script src="system/system_rewards.js"></script>

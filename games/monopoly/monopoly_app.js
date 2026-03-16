@@ -16,6 +16,7 @@ let currentRoomId= null;
 let seats        = [];
 
 let p1Name = SystemUI.getPlayerName();
+let p1ColorIdx = 0;
 
 SystemUI.init({
     gameName: "MONOPOLY",
@@ -110,28 +111,28 @@ const GROUPS = {
     utility:  { spaces:[12,28],     size:2 },
 };
 
-// ── 3. SPACE POSITIONS (Nailing the alignment for 300x300 SVG) ──
+// ── 3. SPACE POSITIONS (Updated for CSS Grid 1.4/1/1.4 Ratio) ──
 /*
- * Calibrated center points for each tile slot based on SVG geometry.
+ * Exact percentage mapping for the 11.8fr CSS Grid layout.
  */
 const SPACE_POS = (() => {
     const pos = new Array(40);
-    const start = 94.2; 
-    const end = 5.8;
-    const step = (start - end) / 10; 
+    const start = 94.0678; 
+    const end = 5.9322;    
+    const edges = [83.898, 75.423, 66.949, 58.474, 50.0, 41.525, 33.05, 24.576, 16.101];
 
-    for (let i = 0; i <= 10; i++) {
-        pos[i] = { x: start - (i * step), y: start };
-    }
-    for (let i = 11; i <= 20; i++) {
-        pos[i] = { x: end, y: start - ((i - 10) * step) };
-    }
-    for (let i = 21; i <= 30; i++) {
-        pos[i] = { x: end + ((i - 20) * step), y: end };
-    }
-    for (let i = 31; i <= 39; i++) {
-        pos[i] = { x: start, y: end + ((i - 30) * step) };
-    }
+    pos[0] = { x: start, y: start };
+    for (let i = 1; i <= 9; i++) pos[i] = { x: edges[i - 1], y: start };
+    pos[10] = { x: end, y: start };
+
+    for (let i = 11; i <= 19; i++) pos[i] = { x: end, y: edges[i - 11] };
+    pos[20] = { x: end, y: end };
+
+    for (let i = 21; i <= 29; i++) pos[i] = { x: 100 - edges[i - 21], y: end };
+    pos[30] = { x: start, y: end };
+
+    for (let i = 31; i <= 39; i++) pos[i] = { x: start, y: 100 - edges[i - 31] };
+    
     return pos;
 })();
 
@@ -139,6 +140,10 @@ const TOKEN_OFFSETS = [
     { dx: -2.0, dy: -2.0 }, { dx: 2.0, dy: -2.0 },
     { dx: -2.0, dy: 2.0 },  { dx: 2.0, dy: 2.0 },
 ];
+
+const sfxDieShuffle = new Audio('../../system/audio/dieShuffle1.ogg');
+const sfxDiceThrow = new Audio('../../system/audio/dice-throw-2.ogg');
+const sfxCardSlide = new Audio('../../system/audio/card-slide-6.ogg');
 
 // ── 4. CARD DECKS ─────────────────────────────
 let chanceIdx = 0;
@@ -195,10 +200,10 @@ function shuffleDeck(arr) {
 const PLAYER_COLORS = ["red","blue","green","yellow"];
 const PLAYER_HEX    = ["#DC143C","#1a7fd4","#27ae60","#f39c12"];
 const PLAYER_PIECES = [
-    "../../system/images/pieces/red/pieceRed_border03.png",
-    "../../system/images/pieces/blue/pieceBlue_border04.png",
-    "../../system/images/pieces/green/pieceGreen_border03.png",
-    "../../system/images/pieces/yellow/pieceYellow_border02.png",
+    "../../system/images/pieces/red/pawn_red.png",
+    "../../system/images/pieces/blue/pawn_blue.png",
+    "../../system/images/pieces/green/pawn_green.png",
+    "../../system/images/pieces/yellow/pawn_yellow.png",
 ];
 const DICE_FACES = [
     "../../system/images/dice/dieWhite_border1.png",
@@ -215,12 +220,13 @@ const GROUP_HEX = {
     railroad:"#666", utility:"#888"
 };
 
-function createPlayer(idx, name, isAI) {
+function createPlayer(idx, name, isAI, colorIdx) {
+    const ci = (colorIdx !== undefined) ? colorIdx : idx;
     return {
         id: idx + 1, idx, name, isAI,
-        color: PLAYER_COLORS[idx],
-        hex:   PLAYER_HEX[idx],
-        piece: PLAYER_PIECES[idx],
+        color: PLAYER_COLORS[ci],
+        hex:   PLAYER_HEX[ci],
+        piece: PLAYER_PIECES[ci],
         position:     0,
         money:        startingCash,
         properties:   [],
@@ -244,6 +250,7 @@ let gameLog      = [];
 let bankHouses   = 32;
 let bankHotels   = 12;
 let pendingTrade = null;
+let aiLastTradeTurn = {};
 
 // ── 7. HELPERS ────────────────────────────────
 function getOwner(spaceId) {
@@ -321,6 +328,7 @@ function renderLog() {
 // ── 9. RENDERING ──────────────────────────────
 function renderAll() {
     renderOwnership();
+    renderOwnershipOnBoard();
     renderTokens();
     renderBuildings();
     renderPlayerCards();
@@ -343,20 +351,84 @@ function renderTokens() {
     });
 
     activePlayers().forEach(p => {
-        const key  = p.inJail ? "10j" : String(p.position);
-        const slot = byPos[key].indexOf(p);
-        const sp   = SPACE_POS[p.position];
-        const off  = TOKEN_OFFSETS[slot] || { dx:0, dy:0 };
-        const jailNudge = p.inJail ? { dx: -1.8, dy: -1.8 } : { dx:0, dy:0 };
+        const key   = p.inJail ? "10j" : String(p.position);
+        const group = byPos[key];
+        const slot  = group.indexOf(p);
+        const count = group.length;
+        const sp    = SPACE_POS[p.position];
+
+        let off = { dx: 0, dy: 0 };
+        if (count === 2) {
+            if (slot === 0) off = { dx: -1.5, dy: 0 };
+            if (slot === 1) off = { dx: 1.5, dy: 0 };
+        } else if (count === 3) {
+            if (slot === 0) off = { dx: 0, dy: -1.5 };
+            if (slot === 1) off = { dx: -1.5, dy: 1.5 };
+            if (slot === 2) off = { dx: 1.5, dy: 1.5 };
+        } else if (count >= 4) {
+            if (slot === 0) off = { dx: -1.5, dy: -1.5 };
+            if (slot === 1) off = { dx: 1.5, dy: -1.5 };
+            if (slot === 2) off = { dx: -1.5, dy: 1.5 };
+            if (slot === 3) off = { dx: 1.5, dy: 1.5 };
+        }
+
+        let spaceNudge = { dx: 0, dy: 0 };
+        if (p.position === 10) {
+            if (p.inJail) {
+                spaceNudge = { dx: 2.0, dy: -2.0 };
+            } else {
+                spaceNudge = { dx: -2.5, dy: 2.5 };
+            }
+        }
 
         const img = document.createElement("img");
         img.className = "token";
         img.id        = `token-p${p.id}`;
         img.src       = p.piece;
         img.alt       = p.name;
-        img.style.left= `${sp.x + off.dx + jailNudge.dx}%`;
-        img.style.top = `${sp.y + off.dy + jailNudge.dy}%`;
+        img.style.left= `${sp.x + off.dx + spaceNudge.dx}%`;
+        img.style.top = `${sp.y + off.dy + spaceNudge.dy}%`;
         layer.appendChild(img);
+    });
+}
+
+function renderOwnershipOnBoard() {
+    document.querySelectorAll('.color-bar[data-sid]').forEach(bar => {
+        const sid = parseInt(bar.dataset.sid);
+        const space = BOARD[sid];
+        if (!space || !space.group) return;
+        const owner = getOwner(sid);
+        if (!owner) {
+            bar.style.background = '';
+            bar.style.opacity = '';
+            bar.classList.remove('color-bar-monopoly');
+        } else if (owner.mortgaged.includes(sid)) {
+            bar.style.background = owner.hex;
+            bar.style.opacity = '0.35';
+            bar.classList.remove('color-bar-monopoly');
+        } else {
+            bar.style.background = owner.hex;
+            bar.style.opacity = '';
+            if (hasMonopoly(owner, space.group)) {
+                bar.classList.add('color-bar-monopoly');
+            } else {
+                bar.classList.remove('color-bar-monopoly');
+            }
+        }
+    });
+
+    document.querySelectorAll('.color-bar[data-sid]').forEach(bar => {
+        const sid = parseInt(bar.dataset.sid);
+        const spaceEl = bar.closest('.space');
+        if (!spaceEl) return;
+        const owner = getOwner(sid);
+        if (owner) {
+            spaceEl.style.cursor = 'pointer';
+            spaceEl.onclick = (e) => { e.stopPropagation(); openDeedModal(sid); };
+        } else {
+            spaceEl.style.cursor = '';
+            spaceEl.onclick = null;
+        }
     });
 }
 
@@ -368,13 +440,26 @@ function renderOwnership() {
     players.forEach(p => {
         if (p.bankrupt) return;
         p.properties.forEach(sid => {
+            const space = BOARD[sid];
+            if (space.type !== "railroad" && space.type !== "utility") return;
             const sp  = SPACE_POS[sid];
             const dot = document.createElement("div");
             dot.className = "ownership-ring";
-            dot.style.left       = `${sp.x}%`;
-            dot.style.top        = `${sp.y}%`;
-            dot.style.background = p.hex;
-            dot.dataset.sid      = sid;
+
+            let finalX = sp.x;
+            let finalY = sp.y;
+            if (sid >= 1 && sid <= 9) finalY = 85.5;
+            else if (sid >= 11 && sid <= 19) finalX = 14.5;
+            else if (sid >= 21 && sid <= 29) finalY = 14.5;
+            else if (sid >= 31 && sid <= 39) finalX = 85.5;
+
+            dot.style.left        = `${finalX}%`;
+            dot.style.top         = `${finalY}%`;
+            dot.style.borderRadius = "4px";
+            dot.style.width       = "4.5%";
+            dot.style.height      = "4.5%";
+            dot.style.background  = p.hex;
+            dot.dataset.sid       = sid;
             dot.addEventListener("click", () => openDeedModal(sid));
             layer.appendChild(dot);
         });
@@ -413,8 +498,8 @@ function renderBuildings() {
 function renderCardPiles() {
     const chance = document.getElementById("chance-pile");
     const chest = document.getElementById("chest-pile");
-    if (chance) chance.innerHTML = `<div style="width:100%;height:100%;background:rgba(230,92,0,0.3);border:1px solid #000;"></div>`;
-    if (chest) chest.innerHTML = `<div style="width:100%;height:100%;background:rgba(26,35,126,0.3);border:1px solid #000;"></div>`;
+    if (chance) chance.innerHTML = `<div class="card-pile-inner chance-inner"><div class="pile-icon">?</div><div class="pile-text">CHANCE</div></div>`;
+    if (chest) chest.innerHTML = `<div class="card-pile-inner chest-inner"><div class="pile-icon">📦</div><div class="pile-text">COMMUNITY<br>CHEST</div></div>`;
 }
 
 function renderPlayerCards() {
@@ -497,7 +582,7 @@ function renderActionPanel() {
         if (isMyTurn && !cp.isAI) {
             if (cp.properties.length > 0)
                 document.getElementById("manage-btn").classList.remove("hidden");
-            if (activePlayers().some(p => p.id !== cp.id && !p.isAI))
+            if (activePlayers().some(p => p.id !== cp.id))
                 document.getElementById("trade-btn").classList.remove("hidden");
             document.getElementById("end-btn").classList.remove("hidden");
         } else if (cp.isAI) {
@@ -517,6 +602,7 @@ function renderBankSupply() {
 async function animateDice() {
     const d1 = document.getElementById("die1");
     const d2 = document.getElementById("die2");
+    sfxDieShuffle.play().catch(e=>{});
     d1.classList.add("rolling");
     d2.classList.add("rolling");
     for (let i = 0; i < 14; i++) {
@@ -533,7 +619,7 @@ async function animateDice() {
     const dbl = diceVal[0] === diceVal[1];
     document.getElementById("dice-sum").textContent   = sum;
     document.getElementById("dice-label").textContent = dbl ? `⚡ DOUBLES  (${diceVal[0]}+${diceVal[1]})` : `${diceVal[0]} + ${diceVal[1]}`;
-    new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
+    sfxDiceThrow.play().catch(e=>{});
 }
 
 function rollDiceValues() {
@@ -547,6 +633,13 @@ async function movePlayer(player, steps) {
         player.position = (player.position + 1) % 40;
         renderTokens();
         new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
+        const tok = document.getElementById(`token-p${player.id}`);
+        if (tok) {
+            tok.classList.remove("hop");
+            void tok.offsetWidth;
+            tok.classList.add("hop");
+            setTimeout(() => tok.classList.remove("hop"), 320);
+        }
         if (player.position === 0 && i < steps - 1) {
             player.money += 200;
             logP(player, "passed GO — +$200 ✓", "good");
@@ -564,8 +657,9 @@ async function movePlayer(player, steps) {
 // ── 13. TURN ENGINE ───────────────────────────
 async function startTurn() {
     phase = "roll";
-    renderAll();
     const cp = currentPlayer();
+    if (!cp.isAI) doublesRolled = 0;
+    renderAll();
     if (cp.isAI) {
         await sleep(1800); 
         await aiDoTurn(cp);
@@ -637,7 +731,7 @@ async function landOnSpace(player, diceTotal) {
         case "utility":  await handlePropertyLand(player, sid, diceTotal, false); break;
     }
 
-    if (!player.inJail && phase !== "gameover") {
+    if (phase !== "gameover") {
         phase = "build";
         renderAll();
         if (player.isAI) await aiEndTurn(player);
@@ -675,6 +769,7 @@ async function handleCard(player, diceTotal, type) {
 
 function showCardModal(type, card) {
     return new Promise(resolve => {
+        sfxCardSlide.play().catch(e=>{});
         const box     = document.getElementById("card-modal-box");
         const typeLbl = document.getElementById("card-type-lbl");
         const deco    = document.getElementById("card-deco");
@@ -693,7 +788,7 @@ function showCardModal(type, card) {
         else if (card.action === "jailfree") effect.textContent = "🃏 CARD KEPT";
         else                              effect.textContent = "";
 
-        document.getElementById("card-modal").classList.remove("hidden");
+        if (!currentPlayer().isAI) document.getElementById("card-modal").classList.remove("hidden");
         const btn = document.getElementById("card-ok-btn");
 
         const done = () => {
@@ -848,7 +943,7 @@ function offerBuy(player, sid) {
         const hEl = document.getElementById("br-h");
         if (hEl) hEl.textContent = hasHouses ? `$${space.houseCost}` : "—";
 
-        document.getElementById("buy-modal").classList.remove("hidden");
+        if (!player.isAI) document.getElementById("buy-modal").classList.remove("hidden");
         const buyBtn  = document.getElementById("btn-buy");
         const passBtn = document.getElementById("btn-pass");
 
@@ -1230,6 +1325,7 @@ async function endTurn() {
     while (players[next].bankrupt && guard++ < players.length) {
         next = (next + 1) % players.length;
     }
+    if (next === turnIdx && players[next].bankrupt) return;
     turnIdx = next;
     if (gameMode === "online") pushOnlineState();
     await sleep(500);
@@ -1280,7 +1376,15 @@ async function aiEndTurn(player) {
                 if (player.mortgaged.includes(sid)) continue;
                 if (player.hotels[sid]) continue;
                 const houses = player.houses[sid] || 0;
-                if (houses < 4 && bankHouses > 0
+                if (houses === 4 && bankHotels > 0
+                    && player.money >= BOARD[sid].houseCost * 1.8) {
+                    delete player.houses[sid];
+                    player.hotels[sid] = true;
+                    player.money -= BOARD[sid].houseCost;
+                    bankHouses += 4;
+                    bankHotels--;
+                    logP(player, `built a hotel on ${BOARD[sid].name}`);
+                } else if (houses < 4 && bankHouses > 0
                     && player.money >= BOARD[sid].houseCost * 1.8
                     && canBuildEven(player, group, sid)) {
                     player.houses[sid] = houses + 1;
@@ -1292,7 +1396,113 @@ async function aiEndTurn(player) {
         }
     }
     await sleep(1200);
+    const proposal = aiConsiderTrade(player);
+    if (proposal) {
+        aiLastTradeTurn[player.id] = turnIdx;
+        const { target, offerSids, wantSids, offerCash, wantCash } = proposal;
+        const offerNames = offerSids.map(s => BOARD[s].name).join(", ") || ("$" + offerCash);
+        const wantNames  = wantSids.map(s => BOARD[s].name).join(", ");
+        logP(player, `proposes trade: ${offerNames}${offerSids.length && offerCash ? " + $" + offerCash : ""} for ${wantNames}`);
+        await sleep(600);
+        if (target.isAI) {
+            const accepted = aiEvaluateTrade(target, offerSids, wantSids, offerCash, wantCash);
+            if (accepted) {
+                executeTrade(player, target, offerSids, wantSids, offerCash, wantCash);
+                log(`${target.name} accepted the trade!`, "good");
+            } else {
+                log(`${target.name} rejected the trade.`, "bad");
+            }
+        } else {
+            await new Promise(resolve => {
+                pendingTrade = { proposer: player, target, offerSids: [...offerSids], wantSids: [...wantSids], offerCash, wantCash, onResolve: resolve };
+                showTradeResponseModal(pendingTrade);
+            });
+        }
+    }
     await endTurn();
+}
+
+function aiConsiderTrade(player) {
+    const lastTrade = aiLastTradeTurn[player.id] || -99;
+    if (turnIdx - lastTrade < 3) return null;
+    const others = activePlayers().filter(p => p.id !== player.id && p.properties.length > 0);
+    if (others.length === 0) return null;
+    if (aiDifficulty === "easy") {
+        if (Math.random() > 0.25) return null;
+        if (player.properties.length === 0) return null;
+        const target   = others[Math.floor(Math.random() * others.length)];
+        const offerSid = player.properties[Math.floor(Math.random() * player.properties.length)];
+        const wantSid  = target.properties[Math.floor(Math.random() * target.properties.length)];
+        if (offerSid === undefined || wantSid === undefined) return null;
+        const offerPrice = BOARD[offerSid].price || 0;
+        const wantPrice  = BOARD[wantSid].price  || 0;
+        const offerCash  = wantPrice > offerPrice ? Math.min(wantPrice - offerPrice, Math.floor(player.money * 0.2)) : 0;
+        return { target, offerSids: [offerSid], wantSids: [wantSid], offerCash: Math.floor(offerCash), wantCash: 0 };
+    }
+    for (const [group, g] of Object.entries(GROUPS)) {
+        if (group === "railroad" || group === "utility") continue;
+        const aiOwns  = g.spaces.filter(sid => player.properties.includes(sid));
+        const missing = g.spaces.filter(sid => !player.properties.includes(sid));
+        if (aiOwns.length === 0 || missing.length !== 1) continue;
+        const neededSid   = missing[0];
+        const neededOwner = getOwner(neededSid);
+        if (!neededOwner || neededOwner.id === player.id) continue;
+        const neededPrice = BOARD[neededSid].price || 0;
+        const fairOffer   = Math.floor(neededPrice * (aiDifficulty === "hard" ? 1.6 : 1.3));
+        if (player.money < fairOffer) continue;
+        let offerSids = [];
+        const offerCash = Math.min(fairOffer, Math.floor(player.money * 0.5));
+        if (aiDifficulty === "hard" && offerCash < fairOffer) {
+            const sweetener = player.properties.find(sid => {
+                const grp = BOARD[sid].group;
+                if (!grp || !GROUPS[grp]) return false;
+                return GROUPS[grp].spaces.some(s => neededOwner.properties.includes(s));
+            });
+            if (sweetener) offerSids = [sweetener];
+        }
+        return { target: neededOwner, offerSids, wantSids: [neededSid], offerCash, wantCash: 0 };
+    }
+    if (aiDifficulty === "hard") {
+        for (const other of others) {
+            if (other.isAI) continue;
+            for (const [group, g] of Object.entries(GROUPS)) {
+                if (group === "railroad" || group === "utility") continue;
+                if (!hasMonopoly(other, group)) continue;
+                const cheapestSid = g.spaces.slice().sort((a, b) => (BOARD[a].price || 0) - (BOARD[b].price || 0))[0];
+                if (cheapestSid === undefined) continue;
+                if (other.hotels[cheapestSid] || (other.houses[cheapestSid] || 0) > 0) continue;
+                const offerCash = Math.min(Math.floor((BOARD[cheapestSid].price || 0) * 1.5), Math.floor(player.money * 0.4));
+                if (offerCash <= 0 || player.money < offerCash) continue;
+                return { target: other, offerSids: [], wantSids: [cheapestSid], offerCash, wantCash: 0 };
+            }
+        }
+    }
+    return null;
+}
+
+function aiEvaluateTrade(target, offerSids, wantSids, offerCash, wantCash) {
+    const offerVal = offerSids.reduce((s, id) => s + ((BOARD[id] && BOARD[id].price) || 0), offerCash);
+    const wantVal  = wantSids.reduce((s, id)  => s + ((BOARD[id] && BOARD[id].price) || 0), wantCash);
+    const completesTargetMonopoly = wantSids.some(sid => {
+        const grp = BOARD[sid] && BOARD[sid].group;
+        if (!grp || !GROUPS[grp]) return false;
+        return GROUPS[grp].spaces.filter(s => target.properties.includes(s) && s !== sid).length === GROUPS[grp].size - 1;
+    });
+    const completesProposerMonopoly = offerSids.some(sid => {
+        const grp = BOARD[sid] && BOARD[sid].group;
+        if (!grp || !GROUPS[grp]) return false;
+        const proposer = players.find(p => p.properties.includes(sid));
+        return proposer && GROUPS[grp].spaces.filter(s => proposer.properties.includes(s) && s !== sid).length === GROUPS[grp].size - 1;
+    });
+    if (aiDifficulty === "easy") return offerVal >= wantVal * 0.6;
+    if (aiDifficulty === "medium") {
+        const threshold     = completesTargetMonopoly   ? 0.7  : 0.9;
+        const penalisedWant = completesProposerMonopoly ? wantVal * 1.4 : wantVal;
+        return offerVal >= penalisedWant * threshold;
+    }
+    const monopolyBonus   = completesTargetMonopoly   ? 0.75 : 1.0;
+    const monopolyPenalty = completesProposerMonopoly ? 1.6  : 1.0;
+    return offerVal >= wantVal * 0.95 * monopolyBonus * monopolyPenalty;
 }
 
 function aiDecideBuy(player, sid) {
@@ -1309,14 +1519,17 @@ function startGame() {
     phase = "idle"; doublesRolled = 0; turnIdx = 0;
     gameLog = []; chanceIdx = 0; chestIdx = 0;
     bankHouses = 32; bankHotels = 12;
+    aiLastTradeTurn = {};
     const total = playerCount;
     players = [];
     if (gameMode === "ai") {
-        players.push(createPlayer(0, p1Name, false));
-        for (let i = 1; i < total; i++) players.push(createPlayer(i, `AI ${i}`, true));
+        players.push(createPlayer(0, p1Name, false, p1ColorIdx));
+        const aiColorIdxs = [0,1,2,3].filter(i => i !== p1ColorIdx);
+        for (let i = 1; i < total; i++) players.push(createPlayer(i, `AI ${i}`, true, aiColorIdxs[i-1]));
     } else {
         for (let i = 0; i < total; i++) {
-            players.push(createPlayer(i, i === 0 ? p1Name : `Player ${i + 1}`, false));
+            const colorIdx = i === 0 ? p1ColorIdx : [0,1,2,3].filter(c => c !== p1ColorIdx)[i-1];
+            players.push(createPlayer(i, i === 0 ? p1Name : `Player ${i + 1}`, false, colorIdx));
         }
     }
     document.getElementById("start-screen").classList.add("hidden");
@@ -1341,6 +1554,13 @@ document.getElementById("start-btn").addEventListener("click", startGame);
 
 document.getElementById("start-settings").addEventListener("click", e => {
     const chip = e.target.closest(".ss-chip");
+    const colorChip = e.target.closest(".ss-color-chip");
+    if (colorChip) {
+        document.querySelectorAll(".ss-color-chip").forEach(c => c.classList.remove("active"));
+        colorChip.classList.add("active");
+        p1ColorIdx = parseInt(colorChip.dataset.colorIdx);
+        return;
+    }
     if (!chip) return;
     const group = chip.dataset.group;
     const val   = chip.dataset.val;
@@ -1475,7 +1695,11 @@ function populateTradeCols(proposer, target) {
 }
 
 document.getElementById("trade-send-btn")?.addEventListener("click", () => {
-    const cp     = currentPlayer();
+    // Use pendingTrade.proposer if we're in a counter flow, otherwise currentPlayer
+    const cp     = (pendingTrade && pendingTrade.proposer) ? pendingTrade.proposer : currentPlayer();
+    const onResolve = pendingTrade ? pendingTrade.onResolve : null;
+    pendingTrade = null;
+
     const target = players.find(p => p.id === tradeState.targetId);
     if (!target) return;
 
@@ -1487,19 +1711,18 @@ document.getElementById("trade-send-btn")?.addEventListener("click", () => {
     document.getElementById("trade-modal").classList.add("hidden");
 
     if (target.isAI) {
-        const offerVal = tradeState.offerSids.reduce((s, id) => s + (BOARD[id].price || 0), offerCash);
-        const wantVal  = tradeState.wantSids.reduce((s, id)  => s + (BOARD[id].price || 0), wantCash);
-        const aiAccepts= offerVal >= wantVal * 0.9;
+        const aiAccepts = aiEvaluateTrade(target, tradeState.offerSids, tradeState.wantSids, offerCash, wantCash);
         if (aiAccepts) {
             executeTrade(cp, target, tradeState.offerSids, tradeState.wantSids, offerCash, wantCash);
             log(`${target.name} accepted the trade!`, "good");
         } else {
             log(`${target.name} rejected the trade.`, "bad");
         }
+        if (onResolve) onResolve();
         return;
     }
 
-    pendingTrade = { proposer: cp, target, offerSids: [...tradeState.offerSids], wantSids: [...tradeState.wantSids], offerCash, wantCash };
+    pendingTrade = { proposer: cp, target, offerSids: [...tradeState.offerSids], wantSids: [...tradeState.wantSids], offerCash, wantCash, onResolve };
     showTradeResponseModal(pendingTrade);
 });
 
@@ -1520,18 +1743,89 @@ function showTradeResponseModal(trade) {
 document.getElementById("trade-accept-btn")?.addEventListener("click", () => {
     document.getElementById("trade-response-modal").classList.add("hidden");
     if (!pendingTrade) return;
-    const { proposer, target, offerSids, wantSids, offerCash, wantCash } = pendingTrade;
+    const { proposer, target, offerSids, wantSids, offerCash, wantCash, onResolve } = pendingTrade;
     executeTrade(proposer, target, offerSids, wantSids, offerCash, wantCash);
     log(`${target.name} accepted the trade!`, "good");
     pendingTrade = null;
+    if (onResolve) onResolve();
 });
 
 document.getElementById("trade-reject-btn")?.addEventListener("click", () => {
     document.getElementById("trade-response-modal").classList.add("hidden");
     if (pendingTrade) {
         log(`${pendingTrade.target.name} rejected the trade.`, "bad");
+        const onResolve = pendingTrade.onResolve;
         pendingTrade = null;
+        if (onResolve) onResolve();
     }
+});
+
+document.getElementById("trade-counter-btn")?.addEventListener("click", () => {
+    document.getElementById("trade-response-modal").classList.add("hidden");
+    if (!pendingTrade) return;
+
+    const { proposer, target, offerSids, wantSids, offerCash, wantCash, onResolve } = pendingTrade;
+    log(`${target.name} counters the trade offer.`);
+
+    // Open trade modal with flipped terms — target becomes proposer, proposer becomes target
+    tradeState = { targetId: proposer.id, offerSids: [...wantSids], wantSids: [...offerSids] };
+
+    // Pre-fill the trade modal UI
+    const offerDiv = document.getElementById("trade-offer-props");
+    const wantDiv  = document.getElementById("trade-want-props");
+    offerDiv.innerHTML = "";
+    wantDiv.innerHTML  = "";
+
+    const makePropBtn = (sid, side) => {
+        const sp  = BOARD[sid];
+        const hex = sp.group ? GROUP_HEX[sp.group] : GROUP_HEX[sp.type] || "#888";
+        const btn = document.createElement("button");
+        btn.className = "trade-prop-btn selected";
+        btn.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${hex};display:inline-block;flex-shrink:0"></span>${sp.name}`;
+        btn.addEventListener("click", () => {
+            btn.classList.toggle("selected");
+            if (btn.classList.contains("selected")) {
+                if (side === "offer") tradeState.offerSids.push(sid);
+                else                  tradeState.wantSids.push(sid);
+            } else {
+                if (side === "offer") tradeState.offerSids = tradeState.offerSids.filter(s => s !== sid);
+                else                  tradeState.wantSids  = tradeState.wantSids.filter(s => s !== sid);
+            }
+        });
+        return btn;
+    };
+
+    // target is now the counter-proposer — they offer what was originally wanted, want what was originally offered
+    // Also show all their other properties so they can adjust
+    target.properties.forEach(sid => {
+        const btn = makePropBtn(sid, "offer");
+        if (!tradeState.offerSids.includes(sid)) btn.classList.remove("selected");
+        offerDiv.appendChild(btn);
+    });
+    proposer.properties.forEach(sid => {
+        const btn = makePropBtn(sid, "want");
+        if (!tradeState.wantSids.includes(sid)) btn.classList.remove("selected");
+        wantDiv.appendChild(btn);
+    });
+
+    // Pre-fill cash fields flipped
+    document.getElementById("trade-offer-cash").value = wantCash || 0;
+    document.getElementById("trade-want-cash").value  = offerCash || 0;
+
+    // Wire the target pills to show the original proposer
+    const pills = document.getElementById("trade-target-pills");
+    pills.innerHTML = "";
+    const btn = document.createElement("button");
+    btn.className = "trade-target-pill active";
+    btn.dataset.id = proposer.id;
+    btn.style.borderColor = proposer.hex;
+    btn.textContent = proposer.name.toUpperCase();
+    pills.appendChild(btn);
+
+    // Store onResolve so if the counter goes to an AI, the AI turn can resume after
+    pendingTrade = { proposer: target, target: proposer, offerSids: [...tradeState.offerSids], wantSids: [...tradeState.wantSids], offerCash: wantCash || 0, wantCash: offerCash || 0, onResolve };
+
+    document.getElementById("trade-modal").classList.remove("hidden");
 });
 
 function executeTrade(proposer, target, offerSids, wantSids, offerCash, wantCash) {
@@ -1702,5 +1996,3 @@ function syncOnlineState(stateJson) {
         }
     } catch (e) { console.error("Sync error:", e); }
 }
-
-resetGame();

@@ -53,6 +53,7 @@ setTimeout(() => {
     syncDiffVisibility();
 }, 10);
 
+let onlineSetupDone = false;
 document.getElementById("sys-poker-mode").addEventListener("change", (e) => {
     gameMode = e.target.value;
     localStorage.setItem("poker_mode", gameMode);
@@ -60,7 +61,13 @@ document.getElementById("sys-poker-mode").addEventListener("change", (e) => {
     syncDiffVisibility();
 
     if (gameMode === "online") {
-        SystemUI.v2Lobby.show();
+        if (!onlineSetupDone) {
+            SystemUI.v2Lobby.hide();
+            setupOnlineMode();
+            onlineSetupDone = true;
+        } else {
+            SystemUI.v2Lobby.show();
+        }
     } else {
         SystemUI.v2Lobby.hide();
         SystemUI.stopChat(); chatStarted = false;
@@ -102,6 +109,46 @@ let activeTurn = 1; // 1 = player, 2 = opponent
 let lastAction = "";
 let isGameOver = false;
 let gameIsActive = false;
+let allCommunityCards = [];
+let lastActionTs      = 0;
+let joinerBoughtIn    = false;
+
+// ── UNIVERSAL BETTING SETUP ───────────────────
+let selectedBet = 0;
+SystemUI.setupBetting("os-betting-rack", {
+    onBet: function(val) {
+        if (!gameIsActive || isGameOver) return;
+        const diff = opponentBet - playerBet;
+        const minRaise = diff > 0 ? diff + BIG_BLIND : BIG_BLIND;
+        
+        if (selectedBet + val > playerStack) {
+            showToast("Not Enough Cash", "You don't have enough chips for that bet.");
+            return;
+        }
+        if (selectedBet === 0) SystemUI.playSound('chipTable');
+        else SystemUI.playSound('chipStack');
+
+        selectedBet += val;
+        SystemUI.updateBetDisplay(selectedBet);
+        
+        const raiseBtn = document.getElementById("btn-raise");
+        if (selectedBet >= minRaise) {
+            raiseBtn.disabled = false;
+            raiseBtn.innerText = "Raise $" + selectedBet;
+        } else {
+            raiseBtn.disabled = true;
+            raiseBtn.innerText = "Raise (Min $" + minRaise + ")";
+        }
+    },
+    onClear: function() {
+        if (!gameIsActive || isGameOver) return;
+        selectedBet = 0;
+        SystemUI.updateBetDisplay(selectedBet);
+        const raiseBtn = document.getElementById("btn-raise");
+        raiseBtn.disabled = true;
+        raiseBtn.innerText = "Raise";
+    }
+});
 
 // ── 3. CARD & HAND LOGIC ──────────────────────
 const SUITS = ['s', 'h', 'd', 'c'];
@@ -284,14 +331,24 @@ function createCardUI(card, isHidden = false) {
 
 function updateControls() {
     const ctrl = document.getElementById("poker-controls");
-    if (!gameIsActive || isGameOver || activeTurn !== 1) {
+    const myTurn = (gameMode === "online") ? (activeTurn === myId) : (activeTurn === 1);
+    if (!gameIsActive || isGameOver || !myTurn) {
         ctrl.classList.add("hidden");
+        if (window.SystemUI && SystemUI.enableBetting) SystemUI.enableBetting(false);
         return;
     }
     ctrl.classList.remove("hidden");
+    if (window.SystemUI && SystemUI.enableBetting) SystemUI.enableBetting(true);
     
     const callBtn = document.getElementById("btn-check-call");
+    const raiseBtn = document.getElementById("btn-raise");
     const diff = opponentBet - playerBet;
+    
+    selectedBet = 0;
+    if (window.SystemUI && SystemUI.updateBetDisplay) SystemUI.updateBetDisplay(selectedBet);
+    raiseBtn.disabled = true;
+    raiseBtn.innerText = "Raise";
+
     if (diff > 0) {
         callBtn.innerText = "Call $" + diff;
         callBtn.className = "action-btn safe-btn";
@@ -354,6 +411,13 @@ function startNewHand() {
     renderTable();
     
     if (activeTurn === 2 && gameMode === "ai") setTimeout(aiAction, 1200);
+    if (gameMode === "online") {
+        allCommunityCards = [deck.pop(), deck.pop(), deck.pop(), deck.pop(), deck.pop()];
+    }
+    if (gameMode === "online" && isHost) {
+        const preflopStatus = "Pre-flop: " + (activeTurn === 1 ? "Your Turn" : "Opponent's Turn...");
+        pushHostState(preflopStatus, false, 0);
+    }
 }
 
 function postBet(player, amt) {
@@ -369,7 +433,13 @@ function postBet(player, amt) {
 }
 
 function handleAction(type, amount = 0) {
-    if (activeTurn !== 1 || isGameOver) return;
+    const notMyTurn = (gameMode === "online") ? (activeTurn !== myId) : (activeTurn !== 1);
+    if (notMyTurn || isGameOver) return;
+
+    if (gameMode === "online" && !isHost) {
+        sendJoinerAction(type, amount);
+        return;
+    }
     
     if (type === 'fold') {
         fold(1);
@@ -384,7 +454,11 @@ function handleAction(type, amount = 0) {
             advancePhase();
         }
     } else if (type === 'raise') {
-        // Logic for raise can be added if slider exists
+        if (amount > 0) {
+            postBet(1, amount);
+            SystemUI.playSound('chipStack');
+            advancePhase();
+        }
     }
 }
 
@@ -394,7 +468,12 @@ function fold(player) {
     resolvePot(winner);
     setStatus(getPlayerName(player) + " folds.");
     SystemUI.playSound('card');
+    if (gameMode === "online" && isHost) pushHostState(getPlayerName(player) + " folds.", false, 0);
     setTimeout(checkMatchOver, 2000);
+}
+
+function getPlayerName(player) {
+    return player === 1 ? p1Name : p2Name;
 }
 
 function advancePhase() {
@@ -405,15 +484,15 @@ function advancePhase() {
     
     if (currentPhase === "preflop") {
         currentPhase = "flop";
-        communityCards.push(deck.pop(), deck.pop(), deck.pop());
+        if (gameMode === "online") { communityCards = allCommunityCards.slice(0, 3); } else { communityCards.push(deck.pop(), deck.pop(), deck.pop()); }
         SystemUI.playSound('card');
     } else if (currentPhase === "flop") {
         currentPhase = "turn";
-        communityCards.push(deck.pop());
+        if (gameMode === "online") { communityCards = allCommunityCards.slice(0, 4); } else { communityCards.push(deck.pop()); }
         SystemUI.playSound('card');
     } else if (currentPhase === "turn") {
         currentPhase = "river";
-        communityCards.push(deck.pop());
+        if (gameMode === "online") { communityCards = allCommunityCards.slice(0, 5); } else { communityCards.push(deck.pop()); }
         SystemUI.playSound('card');
     } else if (currentPhase === "river") {
         currentPhase = "showdown";
@@ -426,6 +505,7 @@ function advancePhase() {
     renderTable();
 
     if (activeTurn === 2 && gameMode === "ai") setTimeout(aiAction, 1200);
+    if (gameMode === "online" && isHost) pushHostState(currentPhase.toUpperCase(), false, 0);
 }
 
 function showdown() {
@@ -456,6 +536,7 @@ function showdown() {
     }
     
     setStatus(msg);
+    if (gameMode === "online" && isHost) pushHostState(msg, false, 0);
     setTimeout(checkMatchOver, 3000);
 }
 
@@ -477,6 +558,8 @@ function checkMatchOver() {
         // AUDIT: Tracking loss
         if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("poker");
         
+        if (gameMode === "online" && isHost) pushHostState("Match Over — " + p2Name + " wins!", true, opponentStack);
+        joinerBoughtIn = false;
         resetGame();
     } else if (opponentStack <= 0) {
         showToast("Match Over", "You cleaned them out! You win the match.");
@@ -486,6 +569,8 @@ function checkMatchOver() {
         
         SystemUI.money += playerStack;
         SystemUI.updateMoneyDisplay();
+        if (gameMode === "online" && isHost) pushHostState("Match Over — " + p1Name + " wins!", true, 0);
+        joinerBoughtIn = false;
         resetGame();
     } else {
         startNewHand();
@@ -538,6 +623,7 @@ document.getElementById("cash-out-btn").addEventListener("click", () => {
 
 document.getElementById("btn-fold").addEventListener("click", () => handleAction('fold'));
 document.getElementById("btn-check-call").addEventListener("click", () => handleAction('check-call'));
+document.getElementById("btn-raise").addEventListener("click", () => handleAction('raise', selectedBet));
 
 document.getElementById("btn-show-guide").addEventListener("click", () => {
     document.getElementById("hand-guide-modal").classList.remove("hidden");
@@ -553,6 +639,201 @@ function showToast(title, msg) {
     setTimeout(() => {
         document.getElementById("toast-modal").classList.add("hidden");
     }, 3000);
+}
+
+// ── 8. ONLINE MULTIPLAYER (Match Controller) ──────────────────────────────
+
+function setupOnlineMode() {
+    SystemMatch.setup({
+        gameId:   "holdem",
+        roomPath: "holdem_rooms",
+        onHost:   function(roomId) { listenToHoldemRoom(); },
+        onJoin:   function(roomId) { listenToHoldemRoom(); },
+        onLeave:  function() {
+            gameMode = "ai"; myId = 1; isHost = true; chatStarted = false;
+            resetGame();
+        },
+        onStart:  function() { /* host fires after clicking Start — markRoomStarted handled inside SystemMatch */ },
+        onClose:  function() { if (!gameIsActive) { /* no-op */ } }
+    });
+}
+
+function listenToHoldemRoom() {
+    const roomId  = SystemMatch.getRoomId();
+    const roomRef = window.dbRef(window.db, 'holdem_rooms/' + roomId);
+    const unsub   = window.dbOnValue(roomRef, function(snap) {
+        const data = snap.val();
+        if (!data) return;
+
+        SystemMatch.setSeats(data.seats || []);
+        SystemUI.v2Lobby.renderSeats(SystemMatch.getSeats());
+
+        // Host: update p2Name and enable Start button when seat 2 fills
+        if (isHost && data.seats && data.seats[1] && data.seats[1].type === 'human') {
+            p2Name = data.seats[1].name || "Opponent";
+            updateNames();
+            const startBtn = document.getElementById('v2-btn-start');
+            if (startBtn) startBtn.classList.remove('sys-hidden');
+        }
+
+        // Both players: room is now 'playing'
+        if (data.status === 'playing') {
+            SystemUI.v2Lobby.hide();
+            myId   = SystemMatch.getMyId();
+            isHost = SystemMatch.isHost();
+            if (!chatStarted) {
+                SystemUI.startChat(roomId, SystemUI.getPlayerName());
+                chatStarted = true;
+            }
+            // Host starts the first hand
+            if (isHost && !gameIsActive) {
+                p1Name = SystemMatch.getSeatName(1);
+                p2Name = SystemMatch.getSeatName(2);
+                updateNames();
+                startGame();
+            }
+            // Joiner: set own name, wait for host to deal
+            if (!isHost) {
+                p1Name = SystemUI.getPlayerName();
+                setStatus("Waiting for host to deal...");
+            }
+        }
+
+        // Joiner receives full authoritative state from host
+        if (!isHost && data.gameState) {
+            applyHostState(data.gameState);
+        }
+
+        // Host receives action from joiner
+        if (isHost && data.playerAction && data.playerAction.ts !== lastActionTs) {
+            lastActionTs = data.playerAction.ts;
+            processJoinerAction(data.playerAction);
+        }
+    });
+    SystemMatch.setListener(unsub);
+}
+
+function pushHostState(statusMsg, matchOver, joinerPayout) {
+    if (gameMode !== "online" || !isHost || !window.db) return;
+    const roomId = SystemMatch.getRoomId();
+    if (!roomId) return;
+    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + roomId), {
+        gameState: {
+            p1Hand:            playerHand,
+            p2Hand:            opponentHand,
+            allCommunityCards: allCommunityCards,
+            communityCards:    communityCards,
+            pot:               pot,
+            p1Bet:             playerBet,
+            p2Bet:             opponentBet,
+            p1Stack:           playerStack,
+            p2Stack:           opponentStack,
+            activeTurn:        activeTurn,
+            currentPhase:      currentPhase,
+            dealerButton:      dealerButton,
+            isGameOver:        isGameOver,
+            gameIsActive:      gameIsActive,
+            statusMsg:         statusMsg || currentPhase.toUpperCase(),
+            p1Name:            p1Name,
+            matchOver:         matchOver    || false,
+            joinerPayout:      joinerPayout || 0
+        }
+    });
+}
+
+function sendJoinerAction(type, amount = 0) {
+    if (gameMode !== "online" || isHost || !window.db) return;
+    const roomId = SystemMatch.getRoomId();
+    if (!roomId) return;
+    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + roomId), {
+        playerAction: { action: type, amount: amount, ts: Date.now() }
+    });
+}
+
+function processJoinerAction(payload) {
+    const action = payload.action;
+    const amount = payload.amount || 0;
+
+    if (activeTurn !== 2 || isGameOver) return;
+    if (action === 'fold') {
+        isGameOver = true;
+        resolvePot(1);
+        const foldMsg = p2Name + " folds.";
+        setStatus(foldMsg);
+        SystemUI.playSound('card');
+        renderTable();
+        pushHostState(foldMsg, false, 0);
+        setTimeout(checkMatchOver, 2000);
+    } else if (action === 'check-call') {
+        const diff = playerBet - opponentBet;
+        if (diff > 0) {
+            postBet(2, diff);
+            SystemUI.playSound('chipStack');
+        } else {
+            SystemUI.playSound('click');
+        }
+        advancePhase();
+    } else if (action === 'raise') {
+        if (amount > 0) {
+            postBet(2, amount);
+            SystemUI.playSound('chipStack');
+        }
+        advancePhase();
+    }
+}
+
+function applyHostState(state) {
+    if (!state) return;
+    // Map host's p1/p2 fields to local player/opponent vars (joiner is always seat 2)
+    playerHand        = state.p2Hand            || [];
+    opponentHand      = state.p1Hand            || [];
+    allCommunityCards = state.allCommunityCards  || [];
+    communityCards    = state.communityCards     || [];
+    pot               = state.pot               || 0;
+    playerBet         = state.p2Bet             || 0;
+    opponentBet       = state.p1Bet             || 0;
+    playerStack       = state.p2Stack           || 0;
+    opponentStack     = state.p1Stack           || 0;
+    activeTurn        = state.activeTurn        || 1;
+    currentPhase      = state.currentPhase      || "preflop";
+    dealerButton      = state.dealerButton      || 1;
+    isGameOver        = state.isGameOver        || false;
+    gameIsActive      = state.gameIsActive      || false;
+    if (state.p1Name) { p2Name = state.p1Name; updateNames(); }
+
+    // Deduct joiner's buy-in on first active hand
+    if (gameIsActive && !joinerBoughtIn) {
+        joinerBoughtIn = true;
+        if (SystemUI.money >= BUY_IN) {
+            SystemUI.money -= BUY_IN;
+            SystemUI.updateMoneyDisplay();
+            if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("poker");
+        }
+    }
+
+    if (gameIsActive) {
+        document.getElementById("start-game-btn").classList.add("hidden");
+        document.getElementById("cash-out-btn").classList.remove("hidden");
+    }
+
+    renderTable();
+    setStatus(state.statusMsg || (activeTurn === 2 ? "YOUR TURN" : "Opponent's Turn..."));
+
+    if (state.matchOver) {
+        if (state.joinerPayout > 0) {
+            SystemUI.money += state.joinerPayout;
+            SystemUI.updateMoneyDisplay();
+            if (typeof SystemStats !== 'undefined') SystemStats.recordWin("poker", state.joinerPayout);
+        } else {
+            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("poker");
+        }
+        joinerBoughtIn = false;
+        setTimeout(function() {
+            resetGame();
+            document.getElementById("start-game-btn").classList.add("hidden");
+            setStatus("Waiting for host to start new match...");
+        }, 3000);
+    }
 }
 
 renderTable();

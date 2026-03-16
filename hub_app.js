@@ -19,8 +19,16 @@ document.querySelectorAll('.hub-interactive').forEach(el => {
 const bonusBtn = document.getElementById("daily-bonus-btn");
 
 function updateBonusUI() {
-    // Failsafe in case modules aren't loaded
     if (!window.SystemProfile || !window.SystemRewards) return;
+
+    const loggedIn = window.SystemAuth ? window.SystemAuth.isLoggedIn() : false;
+
+    const loggedInEl  = document.getElementById("auth-logged-in");
+    const loggedOutEl = document.getElementById("auth-logged-out");
+    if (loggedInEl)  loggedInEl.classList.toggle("hidden",  !loggedIn);
+    if (loggedOutEl) loggedOutEl.classList.toggle("hidden", loggedIn);
+
+    if (!loggedIn) return;
 
     // 1. Sync the HUD securely through the Profile API
     const profile = SystemProfile.getProfile();
@@ -37,17 +45,13 @@ function updateBonusUI() {
     if (titleText) titleText.innerText = SystemProfile.getLevelTitle();
 
     if (xpFill && xpText) {
-        // XP Math based on system_profile thresholds
         const thresholds = [0, 500, 2000, 5000, 10000, 25000];
         let nextLvlXP = thresholds[profile.level] || 25000; 
         let prevLvlXP = thresholds[profile.level - 1] || 0;
-
         let xpIntoLevel = profile.xp - prevLvlXP;
         let xpNeeded = nextLvlXP - prevLvlXP;
         let pct = (xpIntoLevel / xpNeeded) * 100;
-        
         if (pct > 100) pct = 100;
-        
         if (profile.level >= 6) {
             xpFill.style.width = `100%`;
             xpText.innerText = "MAX LEVEL";
@@ -70,13 +74,322 @@ function updateBonusUI() {
         bonusBtn.style.background = "#2ecc71";
         bonusBtn.style.color = "#000";
     }
+
+    // 4. Handle Dev & Logout Visibility (FIXED)
+    const devBtn = document.getElementById("sys-dev-btn");
+    const logoutBtn = document.getElementById("sys-logout-btn");
+    const isForerunner = window.SystemAuth && SystemAuth.getActiveUsername() === "forerunner" && SystemProfile.isDev();
+    
+    if (devBtn) {
+        if (isForerunner) devBtn.classList.remove("dev-only");
+        else devBtn.classList.add("dev-only");
+    }
+    if (logoutBtn) {
+        if (loggedIn) logoutBtn.classList.remove("dev-only");
+        else logoutBtn.classList.add("dev-only");
+    }
 }
 
 // Make globally available so system_rewards.js can trigger UI updates after claiming
 window.updateBonusButton = updateBonusUI;
 
+// --- DEV TOOLS & LOGOUT ---
+function openDevMenu() {
+    const modal = document.getElementById("modal-dev-tools");
+    if (modal) { modal.classList.remove("hidden"); return; }
+}
+
+function wireAuthModals() {
+    const modalLogin    = document.getElementById("modal-login");
+    const modalRegister = document.getElementById("modal-register");
+
+    const openLogin = document.getElementById("btn-open-login");
+    const openReg   = document.getElementById("btn-open-register");
+    if (openLogin) openLogin.addEventListener("click", () => {
+        if (modalLogin)    modalLogin.classList.remove("hidden");
+        if (modalRegister) modalRegister.classList.add("hidden");
+    });
+    if (openReg) openReg.addEventListener("click", () => {
+        if (modalRegister) modalRegister.classList.remove("hidden");
+        if (modalLogin)    modalLogin.classList.add("hidden");
+    });
+
+    const closeLogin = document.getElementById("close-login-btn");
+    const closeReg   = document.getElementById("close-register-btn");
+    if (closeLogin) closeLogin.addEventListener("click", () => modalLogin && modalLogin.classList.add("hidden"));
+    if (closeReg)   closeReg.addEventListener("click",   () => modalRegister && modalRegister.classList.add("hidden"));
+
+    const gotoReg   = document.getElementById("link-goto-register");
+    const gotoLogin = document.getElementById("link-goto-login");
+    if (gotoReg) gotoReg.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (modalLogin)    modalLogin.classList.add("hidden");
+        if (modalRegister) modalRegister.classList.remove("hidden");
+    });
+    if (gotoLogin) gotoLogin.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (modalRegister) modalRegister.classList.add("hidden");
+        if (modalLogin)    modalLogin.classList.remove("hidden");
+    });
+
+    const submitLogin = document.getElementById("btn-submit-login");
+    if (submitLogin) submitLogin.addEventListener("click", () => {
+        const username = (document.getElementById("login-username")?.value || "").trim();
+        const password = (document.getElementById("login-password")?.value || "").trim();
+        const errorEl  = document.getElementById("login-error");
+        if (errorEl) errorEl.classList.add("hidden");
+        const result = window.SystemAuth ? SystemAuth.login(username, password) : { ok: false, error: "Auth not loaded." };
+        if (result.ok) {
+            if (modalLogin) modalLogin.classList.add("hidden");
+            playHubSound('win');
+            setTimeout(updateBonusUI, 0);
+        } else {
+            if (errorEl) { errorEl.innerText = result.error; errorEl.classList.remove("hidden"); }
+        }
+    });
+
+    const submitReg = document.getElementById("btn-submit-register");
+    if (submitReg) submitReg.addEventListener("click", () => {
+        const username = (document.getElementById("register-username")?.value || "").trim();
+        const password = (document.getElementById("register-password")?.value || "").trim();
+        const question = (document.getElementById("register-security-question")?.value || "").trim();
+        const answer   = (document.getElementById("register-security-answer")?.value || "").trim();
+        const errorEl  = document.getElementById("register-error");
+        if (errorEl) errorEl.classList.add("hidden");
+        const result = window.SystemAuth ? SystemAuth.register(username, password, question, answer) : { ok: false, error: "Auth not loaded." };
+        if (result.ok) {
+            if (modalRegister) modalRegister.classList.add("hidden");
+            playHubSound('win');
+            setTimeout(updateBonusUI, 0);
+        } else {
+            if (errorEl) { errorEl.innerText = result.error; errorEl.classList.remove("hidden"); }
+        }
+    });
+
+    const modalForgot = document.getElementById("modal-forgot-password");
+    const linkForgot  = document.getElementById("link-forgot-password");
+    const closeForgot = document.getElementById("close-forgot-btn");
+    if (linkForgot) linkForgot.addEventListener("click", () => {
+        if (modalForgot) modalForgot.classList.remove("hidden");
+        if (modalLogin)  modalLogin.classList.add("hidden");
+        const errEl = document.getElementById("forgot-error");
+        const sucEl = document.getElementById("forgot-success");
+        if (errEl) errEl.classList.add("hidden");
+        if (sucEl) sucEl.classList.add("hidden");
+    });
+    if (closeForgot) closeForgot.addEventListener("click", () => modalForgot && modalForgot.classList.add("hidden"));
+
+    const submitForgot = document.getElementById("btn-submit-forgot");
+    let forgotStep = 1;
+    if (submitForgot) submitForgot.addEventListener("click", () => {
+        const errEl = document.getElementById("forgot-error");
+        const sucEl = document.getElementById("forgot-success");
+        if (errEl) errEl.classList.add("hidden");
+        if (sucEl) sucEl.classList.add("hidden");
+
+        if (forgotStep === 1) {
+            const username = (document.getElementById("forgot-username")?.value || "").trim().toLowerCase();
+            const question = window.SystemAuth ? SystemAuth.getSecurityQuestion(username) : null;
+            if (!question) {
+                if (errEl) { errEl.innerText = "User not found."; errEl.classList.remove("hidden"); }
+                return;
+            }
+            const questionLabels = {
+                pet:    "What was the name of your first pet?",
+                city:   "What city were you born in?",
+                mother: "What is your mother's maiden name?",
+                school: "What elementary school did you attend?",
+                car:    "What was the make of your first car?",
+                friend: "What is the name of your childhood best friend?"
+            };
+            const step2 = document.getElementById("forgot-step-2");
+            const qText = document.getElementById("forgot-question-text");
+            if (qText) qText.innerText = questionLabels[question] || question;
+            if (step2) step2.classList.remove("hidden");
+            submitForgot.innerText = "VERIFY ANSWER";
+            forgotStep = 2;
+        } else {
+            const username = (document.getElementById("forgot-username")?.value || "").trim().toLowerCase();
+            const answer   = (document.getElementById("forgot-security-answer")?.value || "").trim();
+            const result   = window.SystemAuth ? SystemAuth.verifySecurityAnswer(username, answer) : { ok: false, error: "Auth not loaded." };
+            if (result.ok) {
+                if (sucEl) { sucEl.innerText = `Your password is: ${result.password}`; sucEl.classList.remove("hidden"); }
+                const step2 = document.getElementById("forgot-step-2");
+                if (step2) step2.classList.add("hidden");
+                submitForgot.innerText = "CONTINUE";
+                forgotStep = 1;
+            } else {
+                if (errEl) { errEl.innerText = result.error; errEl.classList.remove("hidden"); }
+            }
+        }
+    });
+
+    document.querySelectorAll(".dev-tab").forEach(tab => {
+        tab.addEventListener("click", () => {
+            document.querySelectorAll(".dev-tab").forEach(t => t.classList.remove("active"));
+            document.querySelectorAll(".dev-tab-content").forEach(c => c.classList.add("hidden"));
+            tab.classList.add("active");
+            const panel = document.getElementById(tab.dataset.target);
+            if (panel) panel.classList.remove("hidden");
+        });
+    });
+}
+
+function wireDevModal() {
+    const modal = document.getElementById("modal-dev-tools");
+    const closeBtn = document.getElementById("close-dev-btn");
+
+    if (!modal) return;
+
+    if (closeBtn) closeBtn.addEventListener("click", () => modal.classList.add("hidden"));
+    modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
+
+    // Economy Tab
+    const econTarget = document.getElementById("dev-econ-target");
+    const econAmount = document.getElementById("dev-econ-amount");
+    const econAdd = document.getElementById("dev-econ-add");
+    const econSub = document.getElementById("dev-econ-sub");
+
+    if (econAdd) econAdd.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const target = econTarget.value;
+        const amount = parseInt(econAmount.value) || 0;
+        if (amount > 0) {
+            const res = SystemAuth.admin.modifyMoney(target, amount);
+            alert(res.message || res.error);
+            updateBonusUI();
+        }
+    });
+    
+    if (econSub) econSub.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const target = econTarget.value;
+        const amount = parseInt(econAmount.value) || 0;
+        if (amount > 0) {
+            const res = SystemAuth.admin.modifyMoney(target, -amount);
+            alert(res.message || res.error);
+            updateBonusUI();
+        }
+    });
+
+    // Progression Tab
+    const progTarget = document.getElementById("dev-prog-target");
+    const progAmount = document.getElementById("dev-prog-amount");
+    const progAdd = document.getElementById("dev-prog-add");
+    const progSub = document.getElementById("dev-prog-sub");
+
+    if (progAdd) progAdd.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const target = progTarget.value;
+        const amount = parseInt(progAmount.value) || 0;
+        if (amount > 0) {
+            const res = SystemAuth.admin.modifyXP(target, amount);
+            alert(res.message || res.error);
+            updateBonusUI();
+        }
+    });
+
+    if (progSub) progSub.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const target = progTarget.value;
+        const amount = parseInt(progAmount.value) || 0;
+        if (amount > 0) {
+            const res = SystemAuth.admin.modifyXP(target, -amount);
+            alert(res.message || res.error);
+            updateBonusUI();
+        }
+    });
+
+    // Admin Tab
+    const adminTarget = document.getElementById("dev-admin-target");
+    const adminReset = document.getElementById("dev-admin-reset");
+    const adminDelete = document.getElementById("dev-admin-delete");
+
+    if (adminReset) adminReset.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const target = adminTarget.value;
+        if (!target) { alert("Target Username is REQUIRED for Admin actions."); return; }
+        if (confirm(`Are you absolutely sure you want to RESET progress for '${target}'?`)) {
+            const res = SystemAuth.admin.resetProgress(target);
+            alert(res.message || res.error);
+            updateBonusUI();
+        }
+    });
+
+    if (adminDelete) adminDelete.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const target = adminTarget.value;
+        if (!target) { alert("Target Username is REQUIRED for Admin actions."); return; }
+        if (confirm(`Are you absolutely sure you want to DELETE the account '${target}'? This cannot be undone.`)) {
+            const res = SystemAuth.admin.deleteAccount(target);
+            alert(res.message || res.error);
+            if (res.ok && (!SystemAuth.isLoggedIn() || SystemAuth.getActiveUsername() === target)) {
+                window.location.reload(); 
+            }
+        }
+    });
+
+    // Rewards Tab
+    const rewTarget = document.getElementById("dev-rew-target");
+    const rewAchId = document.getElementById("dev-rew-ach-id");
+    const rewUnlock = document.getElementById("dev-rew-unlock");
+    const rewLock = document.getElementById("dev-rew-lock");
+    const rewDaily = document.getElementById("dev-rew-daily");
+
+    if (rewUnlock) rewUnlock.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const res = SystemAuth.admin.toggleAchievement(rewTarget.value, rewAchId.value, true);
+        alert(res.message || res.error);
+        if (res.ok && typeof renderTrophyRoom === 'function') renderTrophyRoom();
+    });
+
+    if (rewLock) rewLock.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const res = SystemAuth.admin.toggleAchievement(rewTarget.value, rewAchId.value, false);
+        alert(res.message || res.error);
+        if (res.ok && typeof renderTrophyRoom === 'function') renderTrophyRoom();
+    });
+
+    if (rewDaily) rewDaily.addEventListener("click", () => {
+        if (!window.SystemAuth || !window.SystemAuth.admin) return;
+        const res = SystemAuth.admin.resetDailyBonus(rewTarget.value);
+        alert(res.message || res.error);
+        updateBonusUI();
+    });
+}
+
+function systemLogout() {
+    if (window.SystemAuth && window.SystemAuth.isLoggedIn()) {
+        if (!confirm("Log out of your account?")) return;
+        SystemAuth.logout();
+        updateBonusUI();
+        window.location.reload();
+    } else {
+        // Legacy fallback
+        if (!confirm("Deactivate Developer Mode and return to standard Player account?")) return;
+        SystemProfile.data.isDev = false;
+        SystemProfile.data.name = "Player";
+        SystemProfile.saveProfile();
+        window.location.reload();
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-    updateBonusUI();
+    // Inject Dev/Logout buttons into the banner if they don't exist
+    const bannerActions = document.querySelector(".profile-right");
+    if (bannerActions && !document.getElementById("sys-dev-btn")) {
+        const devBtnHTML = `<button id="sys-dev-btn" class="sys-btn dev-only" style="background:#f1c40f; color:#000; border:none; margin-bottom:10px;">🛠️ DEV TOOLS</button>`;
+        const logoutBtnHTML = `<button id="sys-logout-btn" class="sys-btn-logout dev-only">LOGOUT</button>`;
+        bannerActions.insertAdjacentHTML('afterbegin', logoutBtnHTML);
+        bannerActions.insertAdjacentHTML('afterbegin', devBtnHTML);
+
+        document.getElementById("sys-dev-btn").addEventListener("click", openDevMenu);
+        document.getElementById("sys-logout-btn").addEventListener("click", systemLogout);
+    }
+
+    wireAuthModals();
+    wireDevModal();
+    setTimeout(updateBonusUI, 0);
     
     // If the Event Emitter is ready, listen for future money changes
     if (window.SystemUI && typeof window.SystemUI.on === 'function') {
@@ -354,7 +667,9 @@ window.addEventListener('message', function(event) {
         frame.src = '';
 
         // Force the Hub to re-read localStorage so stats & achievements from the iframe sync instantly
+        // CRITICAL FIX: Save the new data back to the user's auth account immediately
         if (window.SystemProfile) window.SystemProfile.loadProfile();
+        if (window.SystemAuth) window.SystemAuth.saveCurrentUserData(); 
         if (window.SystemStats) window.SystemStats.loadData();
         if (window.SystemAchievements) window.SystemAchievements.loadData();
 

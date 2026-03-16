@@ -92,6 +92,15 @@ body {
 .ss-chip:hover  { border-color: var(--teal); color: var(--teal); background: var(--teal-faint); }
 .ss-chip.active { border-color: var(--teal); background: var(--teal); color: #000; }
 
+.ss-color-chip {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid transparent;
+    cursor: pointer; transition: all 0.15s;
+    outline: none;
+}
+.ss-color-chip:hover  { transform: scale(1.15); }
+.ss-color-chip.active { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); transform: scale(1.15); }
+
 #start-btn {
     font-family: 'Syne', sans-serif; font-size: 0.8rem; font-weight: 800;
     letter-spacing: 3px; padding: 14px 48px; border-radius: 50px;
@@ -136,6 +145,7 @@ body {
     border-radius: 4px; overflow: visible;
     box-shadow: 0 0 40px rgba(0,0,0,0.7);
     background: #d0e9da; 
+    margin: 15px; /* Adds safe breathing room so the chips don't clip off-screen */
 }
 
 #board-img {
@@ -181,6 +191,14 @@ body {
     100%{ transform: translate(-50%,-50%) scale(1); }
 }
 
+.token.hop { animation: tokenHop 0.32s ease-out; }
+@keyframes tokenHop {
+    0%   { transform: translate(-50%, -50%) scale(1); }
+    40%  { transform: translate(-50%, calc(-50% - 16px)) scale(1.15); }
+    75%  { transform: translate(-50%, calc(-50% + 5px)) scale(0.88); }
+    100% { transform: translate(-50%, -50%) scale(1); }
+}
+
 /* ── BUILDING MARKERS ───────────────────── */
 .build-marker {
     position: absolute;
@@ -199,15 +217,15 @@ body {
     z-index: 2;
 }
 
-#chance-pile { left: 63%; top: 63%; background: rgba(230, 92, 0, 0.05); }
-#chest-pile  { left: 19%; top: 21%; background: rgba(26, 35, 126, 0.05); }
+#chance-pile { left: 58%; top: 58%; background: rgba(230, 92, 0, 0.05); }
+#chest-pile  { left: 24%; top: 26%; background: rgba(26, 35, 126, 0.05); }
 
 /* ── DICE AREA ──────────────────────────── */
 #dice-area {
     display: flex; align-items: center; gap: 12px;
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 12px; padding: 8px 14px;
-    width: auto;
+    width: 100%; box-sizing: border-box; margin-top: 8px;
 }
 
 #dice-pair { display: flex; gap: 8px; }
@@ -276,7 +294,7 @@ body {
 .act-btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
 
 /* ── GAME LOG ───────────────────────────── */
-#log-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#log-section { flex: 0 1 160px; display: flex; flex-direction: column; overflow: hidden; }
 #log-entries { flex: 1; overflow-y: auto; padding: 10px; font-size: 0.65rem; color: #aaa; line-height: 1.6; }
 
 /* ── MODALS ─────────────────────────────── */
@@ -293,11 +311,11 @@ body {
 
 /* ── MOBILE OPTIMIZATION ────────────────── */
 @media (max-width: 800px) {
-    #game-area { flex-direction: column; overflow-y: auto; }
+    #game-area { flex-direction: column; overflow: hidden; }
     
     #board-section { padding: 8px 4px; flex: 0 0 auto; width: 100%; }
     
-    #board-wrap { width: 96vw; height: 96vw; border-radius: 0; }
+    #board-wrap { width: 96vw; height: 96vw; border-radius: 0; margin: 10px; }
 
     #info-section { width: 100%; max-width: 100%; min-width: 0; border-left: none; border-top: 1px solid var(--border); height: auto; overflow: visible; }
 
@@ -310,6 +328,10 @@ body {
     #dice-area { max-width: 100vw; border-radius: 0; border-left: none; border-right: none; }
 
     #log-section { height: 200px; }
+
+    /* TRADE MODAL MOBILE FIXES */
+    #trade-columns { flex-direction: column; align-items: stretch; }
+    .trade-sep { padding: 10px 0; padding-top: 0; transform: rotate(90deg); align-self: center; }
 }
 
 /* ── GROUP COLORS ───────────────────────── */
@@ -323,10 +345,6 @@ body {
 .gc-darkblue  { background: var(--g-darkblue); }
 .gc-railroad  { background: var(--g-railroad); }
 .gc-utility   { background: var(--g-utility); }
-/* ════════════════════════════════════════════
-   MISSING STYLES — modal interiors, buttons,
-   log entries, rent overlay, game-over, etc.
-   ════════════════════════════════════════════ */
 
 /* ── SCROLLBAR ───────────────────────────── */
 ::-webkit-scrollbar { width: 4px; }
@@ -361,6 +379,12 @@ body {
     background: transparent; color: var(--teal); border: 1px solid var(--teal);
 }
 .act-btn.end:hover:not(:disabled) { background: var(--teal-faint); }
+
+@keyframes rollGlow {
+    0%, 100% { box-shadow: 0 0 6px rgba(0,229,200,0.4); }
+    50%       { box-shadow: 0 0 18px rgba(0,229,200,0.85), 0 0 8px rgba(0,229,200,0.3); }
+}
+#roll-btn:not(.hidden) { animation: rollGlow 1.6s ease-in-out infinite; }
 
 /* ── CURRENT PLAYER HEADER ──────────────── */
 #current-player-header {
@@ -524,39 +548,40 @@ body {
 .mg-btn.is-mortgaged { color: #f87171; border-color: rgba(248,113,113,0.3); }
 
 /* ── TRADE MODAL ─────────────────────────── */
-.trade-box { width: 420px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
-.trade-box .modal-body { flex: 1; overflow-y: auto; }
-.trade-target-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-.trade-section-lbl { font-size: 0.5rem; letter-spacing: 3px; color: var(--muted); font-weight: 700; flex-shrink: 0; }
-#trade-target-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.trade-box { width: 90vw; max-width: 650px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
+.trade-box .modal-body { flex: 1; overflow-y: auto; padding: 24px; }
+.trade-target-row { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.trade-section-lbl { font-size: 0.7rem; letter-spacing: 3px; color: var(--muted); font-weight: 700; flex-shrink: 0; }
+#trade-target-pills { display: flex; gap: 8px; flex-wrap: wrap; }
 .trade-target-pill {
-    font-family: 'Syne', sans-serif; font-size: 0.58rem; font-weight: 700;
-    padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);
+    font-family: 'Syne', sans-serif; font-size: 0.8rem; font-weight: 700;
+    padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);
     background: transparent; color: var(--text); cursor: pointer; transition: all 0.12s;
 }
 .trade-target-pill.active, .trade-target-pill:hover { background: rgba(255,255,255,0.07); }
-#trade-columns { display: flex; gap: 10px; align-items: flex-start; }
+#trade-columns { display: flex; gap: 20px; align-items: flex-start; }
 .trade-col { flex: 1; }
 .trade-col-hdr {
-    font-size: 0.5rem; letter-spacing: 3px; font-weight: 700;
-    margin-bottom: 8px; padding: 4px 8px; border-radius: 6px; text-align: center;
+    font-size: 0.75rem; letter-spacing: 3px; font-weight: 700;
+    margin-bottom: 12px; padding: 8px 12px; border-radius: 6px; text-align: center;
 }
 .offer-hdr { background: rgba(0,229,200,0.1); color: var(--teal); }
 .want-hdr  { background: rgba(248,113,113,0.1); color: #f87171; }
-.trade-sep { font-size: 1.2rem; color: var(--muted); padding-top: 28px; flex-shrink: 0; }
-.trade-props { display: flex; flex-direction: column; gap: 4px; min-height: 40px; margin-bottom: 8px; }
+.trade-sep { font-size: 2rem; color: var(--muted); padding-top: 40px; flex-shrink: 0; }
+.trade-props { display: flex; flex-direction: column; gap: 8px; min-height: 50px; margin-bottom: 12px; }
 .trade-prop-btn {
-    font-family: 'JetBrains Mono', monospace; font-size: 0.58rem;
-    padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+    padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);
     background: transparent; color: var(--text); cursor: pointer;
-    text-align: left; display: flex; align-items: center; gap: 6px; transition: all 0.12s;
+    text-align: left; display: flex; align-items: center; gap: 8px; transition: all 0.12s;
 }
+.trade-prop-btn span { width: 12px !important; height: 12px !important; }
 .trade-prop-btn:hover  { border-color: var(--teal); }
 .trade-prop-btn.selected { background: var(--teal-faint); border-color: var(--teal); color: var(--teal); }
-.trade-cash-row { display: flex; align-items: center; gap: 6px; font-size: 0.62rem; color: var(--muted); }
+.trade-cash-row { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--muted); font-weight: 700;}
 .trade-cash-row input {
     flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
-    color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; padding: 4px 8px;
+    color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; padding: 8px 12px;
 }
 
 /* ── TRADE RESPONSE MODAL ────────────────── */
@@ -579,3 +604,203 @@ body {
     padding: 0 22px 16px; font-size: 0.68rem; color: rgba(255,255,255,0.6);
     line-height: 2; font-family: 'JetBrains Mono', monospace; text-align: left;
 }
+
+/*======================================================
+  CSS MONOPOLY BOARD
+========================================================*/
+#css-board {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1.4fr repeat(9, 1fr) 1.4fr;
+    grid-template-rows: 1.4fr repeat(9, 1fr) 1.4fr;
+    background: #d0e9da;
+    border: 2px solid #000;
+    box-sizing: border-box;
+}
+
+.board-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.monopoly-logo {
+    background: #e74c3c;
+    color: white;
+    border: 3px solid white;
+    padding: 8px 25px;
+    font-size: clamp(1rem, 3vw, 2.5rem);
+    font-weight: 900;
+    letter-spacing: 2px;
+    transform: rotate(-45deg);
+    box-shadow: 3px 3px 0px rgba(0,0,0,0.5);
+    font-family: 'Syne', sans-serif;
+}
+
+.space {
+    border: 1px solid #000;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #d0e9da;
+    overflow: hidden;
+    position: relative; 
+}
+
+.space .container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+/* Top doesn't need dimension swapping, just 180 flip */
+.space.top .container { transform: rotate(180deg); }
+
+/* Left and Right need exact dimension swapping to un-squish text */
+/* Scaled slightly over 100% to push the color bars completely flush against the black borders */
+.space.left .container, .space.right .container {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 76%;   /* Slightly larger to cover the gap */
+    height: 145%; /* Slightly larger to cover the gap */
+}
+.space.left .container { transform: translate(-50%, -50%) rotate(90deg); }
+.space.right .container { transform: translate(-50%, -50%) rotate(-90deg); }
+
+/* Corners need diagonal rotation for text */
+.space[style*="grid-column: 11; grid-row: 11;"] .container { transform: rotate(-45deg); justify-content: center; } /* GO */
+.space[style*="grid-column: 1; grid-row: 11;"] .container { transform: rotate(0deg); justify-content: center; } /* Jail */
+.space[style*="grid-column: 1; grid-row: 1;"] .container { transform: rotate(135deg); justify-content: center; } /* Free Parking */
+.space[style*="grid-column: 11; grid-row: 1;"] .container { transform: rotate(-135deg); justify-content: center; } /* Go to Jail */
+
+.space.corner .name {
+    font-size: clamp(5.5px, 1.1vw, 11px);
+    word-break: normal;
+    overflow-wrap: normal;
+    white-space: nowrap;
+}
+
+.color-bar {
+    width: 100%;
+    height: 22%;
+    border-bottom: 2px solid #000;
+    box-sizing: border-box;
+    transition: background-color 0.6s ease;
+}
+
+@keyframes monopolyPulse {
+    0%, 100% { filter: brightness(1);    box-shadow: none; }
+    50%       { filter: brightness(1.35); box-shadow: 0 0 6px 2px currentColor; }
+}
+.color-bar-monopoly { animation: monopolyPulse 1.8s ease-in-out infinite; }
+
+.space.left .color-bar, .space.right .color-bar {
+    order: -1;
+}
+
+.space .name {
+    /* ── SLOT NAME TEXT — edit these ── */
+    color: #000;
+    font-size: clamp(3px, 0.58vw, 6px);   /* clamp(min, viewport-scale, max) */
+    font-weight: 800;                       /* 400=normal 700=bold 800=extra-bold */
+    font-family: 'Syne', sans-serif;        /* swap to: 'JetBrains Mono' or any loaded font */
+    text-transform: uppercase;              /* uppercase / capitalize / none */
+    text-align: center;
+    line-height: 1.1;
+    letter-spacing: 0px;                    /* increase for spacing between letters */
+    padding: 2px;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.space .price {
+    /* ── SLOT PRICE TEXT — edit these ── */
+    color: #000;
+    font-size: clamp(6.5px, 1.1vw, 10.5px);
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace; /* swap to: 'Syne' or any loaded font */
+    text-align: center;
+    letter-spacing: 0px;
+    padding-bottom: 4px;
+}
+
+/* Center text vertically for Chance, Chest, and Tax slots, leaving price at bottom */
+.space[style*="grid-column: 3; grid-row: 1;"] .name,
+.space[style*="grid-column: 11; grid-row: 7;"] .name,
+.space[style*="grid-column: 4; grid-row: 11;"] .name,
+.space[style*="grid-column: 11; grid-row: 4;"] .name,
+.space[style*="grid-column: 9; grid-row: 11;"] .name,
+.space[style*="grid-column: 1; grid-row: 4;"] .name,
+.space[style*="grid-column: 7; grid-row: 11;"] .name,
+.space[style*="grid-column: 11; grid-row: 9;"] .name {
+    margin-top: auto;
+    margin-bottom: auto;
+}
+
+/* ── NEW: JAIL STYLING ── */
+.jail-container {
+    display: block !important;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    padding: 0 !important;
+}
+.jail-cell {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 70%;
+    height: 70%;
+    background: #e67e22;
+    border-left: 2px solid #000;
+    border-bottom: 2px solid #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+}
+.jail-in { font-size: clamp(4px, 0.7vw, 8px); font-weight: 800; line-height: 1.1; color: #000; }
+.jail-word { font-size: clamp(6px, 1.2vw, 14px); font-weight: 900; line-height: 1; color: #000; }
+.jail-just {
+    position: absolute;
+    top: 15%;
+    left: 20%;
+    transform: rotate(90deg);
+    transform-origin: left top;
+    font-size: clamp(5px, 0.9vw, 9px);
+    font-weight: 800;
+    color: #000;
+}
+.jail-visiting {
+    position: absolute;
+    bottom: 12%;
+    left: 45%;
+    transform: translateX(-50%);
+    font-size: clamp(5px, 0.9vw, 9px);
+    font-weight: 800;
+    color: #000;
+}
+
+/* ── NEW: CARD PILES ── */
+.card-pile-inner {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    border: 2px solid rgba(0,0,0,0.8);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.9);
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.1), 3px 3px 6px rgba(0,0,0,0.4);
+}
+.chance-inner { color: #f59e0b; border-color: #f59e0b; }
+.chest-inner { color: #3b82f6; border-color: #3b82f6; }
+.pile-icon { font-size: clamp(16px, 3vw, 36px); font-weight: 900; line-height: 1.2; margin-bottom: 2px; }
+.pile-text { font-size: clamp(5px, 0.8vw, 10px); font-weight: 800; text-align: center; letter-spacing: 1px; line-height: 1.1; color: #000; }

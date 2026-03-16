@@ -131,6 +131,14 @@ body {
   transition: opacity 0.5s ease;
 }
 
+/* --- FIX: ADDED MISSING .hidden-card CLASS --- */
+.hidden-card {
+  width: 58px; height: 82px;
+  background: url('../../system/images/cards/standard/cardBack_red2.png') center/cover no-repeat;
+  border-radius: 6px; box-shadow: 2px 4px 8px rgba(0,0,0,0.6);
+  border: 1px solid rgba(0,0,0,0.3);
+}
+
 .dim { opacity: 0.3 !important; filter: grayscale(50%); }
 
 @keyframes dealAnim {

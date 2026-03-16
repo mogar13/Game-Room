@@ -60,7 +60,8 @@
   </div>
 
   <div id="game-container">
-    <div class="hud-buttons-row">
+    <div class="hud-buttons-row" style="gap: 10px;">
+      <button id="cash-out-btn" class="action-btn danger-btn hidden" style="flex: none; padding: 4px 15px; font-size: 0.85rem; border-radius: 20px; margin: 0; border: 1px solid #e74c3c;">CASH OUT</button>
       <button id="btn-show-guide" class="info-btn">ℹ️ Hands Guide</button>
     </div>
 
@@ -109,7 +110,6 @@
     <div id="action-zone">
       <div id="pre-game-controls" style="display:flex; gap:10px; justify-content:center; max-width: 500px; margin: 0 auto;">
         <button id="start-game-btn" class="action-btn primary-btn" style="margin: 0;">BUY IN ($1000)</button>
-        <button id="cash-out-btn" class="action-btn danger-btn hidden">CASH OUT</button>
       </div>
 
       <div id="poker-controls" class="hidden">
@@ -139,6 +139,7 @@
   <script src="../../system/system_lobby.js"></script>
   <script src="../../system/system_chat.js"></script>
   <script src="../../system/system_ui.js"></script> 
+  <script src="../../system/system_match.js"></script>
   <script src="texas_holdem_app.js"></script>
 </body>
 </html>
