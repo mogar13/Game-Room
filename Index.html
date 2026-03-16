@@ -247,23 +247,21 @@
   </div>
 
   <div id="modal-edit-profile" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 200005; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
-    <div class="ach-modal-box auth-modal-box">
+    <div class="ach-modal-box auth-modal-box" style="max-height: 90vh; overflow-y: auto;">
       <button id="close-edit-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
       <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">EDIT PROFILE</h2>
       <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
         <div style="text-align: center; color: #aaa; font-size: 0.8rem; margin-bottom: -10px;">Select an Avatar</div>
         <div id="avatar-grid" style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; font-size: 1.8rem; cursor: pointer;">
-            <span class="avatar-option active-avatar" style="border: 2px solid var(--accent-color); border-radius: 8px; padding: 2px; background: rgba(0,210,255,0.2);">👤</span>
-            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">🤖</span>
-            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">👽</span>
-            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">👾</span>
-            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">👻</span>
-            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">🤠</span>
-            <span class="avatar-option" style="border: 2px solid transparent; border-radius: 8px; padding: 2px; transition: 0.2s;">🐱‍👤</span>
-        </div>
+            </div>
         <input type="hidden" id="edit-avatar-val" value="👤">
+        
         <div style="text-align: center; color: #aaa; font-size: 0.8rem; margin-bottom: -10px; margin-top: 5px;">Username</div>
         <input type="text" id="edit-username" placeholder="Username" maxlength="16" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none; text-align: center;">
+        
+        <div id="edit-extra-controls" style="display: flex; flex-direction: column; gap: 10px;">
+          </div>
+
         <div id="edit-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Error</div>
         <button id="btn-submit-edit" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">SAVE CHANGES</button>
       </div>

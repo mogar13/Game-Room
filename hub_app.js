@@ -664,16 +664,35 @@ function wireGlobalChat() {
 
     toggleBtn.addEventListener("click", () => {
         playHubSound('click');
-        chatPanel.classList.toggle("hidden");
-        if (!chatPanel.classList.contains("hidden")) {
+        
+        // REFACTORED: Remove the invisibility cloak first
+        chatPanel.classList.remove("hidden");
+        
+        // REFACTORED: Toggle slide class
+        chatPanel.classList.toggle("chat-panel-open");
+        
+        if (chatPanel.classList.contains("chat-panel-open")) {
             chatInput.focus();
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        } else {
+            // Wait for slide animation (220ms) then add hidden back for performance
+            setTimeout(() => {
+                if (!chatPanel.classList.contains("chat-panel-open")) {
+                    chatPanel.classList.add("hidden");
+                }
+            }, 230);
         }
     });
 
     closeBtn.addEventListener("click", () => {
         playHubSound('click');
-        chatPanel.classList.add("hidden");
+        // REFACTORED: Close correctly
+        chatPanel.classList.remove("chat-panel-open");
+        setTimeout(() => {
+            if (!chatPanel.classList.contains("chat-panel-open")) {
+                chatPanel.classList.add("hidden");
+            }
+        }, 230);
     });
 
     const sendMessage = () => {
@@ -761,7 +780,7 @@ function wireGlobalChat() {
                     `;
                 }).join('');
 
-                if (isAtBottom || chatPanel.classList.contains("hidden")) {
+                if (isAtBottom || !chatPanel.classList.contains("chat-panel-open")) {
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 }
             });
@@ -1079,8 +1098,14 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             const chatPanel = document.getElementById("chat-panel");
-            if (chatPanel && !chatPanel.classList.contains("hidden")) {
-                chatPanel.classList.add("hidden");
+            // REFACTORED: Close correctly
+            if (chatPanel && chatPanel.classList.contains("chat-panel-open")) {
+                chatPanel.classList.remove("chat-panel-open");
+                setTimeout(() => {
+                    if (!chatPanel.classList.contains("chat-panel-open")) {
+                        chatPanel.classList.add("hidden");
+                    }
+                }, 230);
             }
 
             if (typeof closeProfilePanel === 'function') closeProfilePanel();
@@ -1878,322 +1903,3 @@ function removeMatchesForGame(gameId) {
         bar.classList.add('hidden');
     }
 }
-
-function wireLeaderboards() {
-    const lbBtns = document.querySelectorAll(".btn-leaderboards");
-    const modalLb = document.getElementById("modal-leaderboards");
-    const closeLb = document.getElementById("close-lb-btn");
-    const lbTabs = document.querySelectorAll(".lb-tab");
-    const lbList = document.getElementById("lb-list");
-    const lbLoading = document.getElementById("lb-loading");
-
-    let currentSort = "bankroll";
-    let cachedUsers = [];
-
-    const renderLb = () => {
-        lbList.innerHTML = "";
-        let sorted = [...cachedUsers];
-
-        if (currentSort === "bankroll") {
-            sorted.sort((a, b) => (b.profile?.bankroll || 0) - (a.profile?.bankroll || 0));
-        } else if (currentSort === "level") {
-            // Sort by exact XP
-            sorted.sort((a, b) => (b.profile?.xp || 0) - (a.profile?.xp || 0));
-        } else if (currentSort === "wins") {
-            sorted.sort((a, b) => {
-                const aWins = a.stats?.wins || a.profile?.wins || 0;
-                const bWins = b.stats?.wins || b.profile?.wins || 0;
-                return bWins - aWins;
-            });
-        }
-
-        // Take top 50 to prevent crazy lag
-        sorted = sorted.slice(0, 50);
-
-        sorted.forEach((u, index) => {
-            const rank = index + 1;
-            let rankHtml = `<span class="lb-rank">${rank}</span>`;
-            if (rank === 1) rankHtml = `<span class="lb-rank lb-rank-1">🥇</span>`;
-            else if (rank === 2) rankHtml = `<span class="lb-rank lb-rank-2">🥈</span>`;
-            else if (rank === 3) rankHtml = `<span class="lb-rank lb-rank-3">🥉</span>`;
-
-            let statText = "";
-            if (currentSort === "bankroll") {
-                statText = `$${(u.profile?.bankroll || 0).toLocaleString()}`;
-            } else if (currentSort === "level") {
-                statText = `Lv.${u.profile?.level || 1} <span style="font-size:0.6rem; color:#aaa;">(${u.profile?.xp || 0} XP)</span>`;
-            } else if (currentSort === "wins") {
-                statText = `${u.stats?.wins || u.profile?.wins || 0} Wins`;
-            }
-
-            const name = u.profile?.name || "Unknown";
-            const avatar = u.profile?.avatar || "👤";
-
-            const row = document.createElement("div");
-            row.className = "lb-row";
-            row.innerHTML = `
-                ${rankHtml}
-                <div class="lb-avatar">${avatar}</div>
-                <div class="lb-name">${name}</div>
-                <div class="lb-stat" style="color: ${currentSort==='bankroll' ? '#2ecc71' : currentSort==='level' ? '#f1c40f' : '#3498db'};">${statText}</div>
-            `;
-            lbList.appendChild(row);
-        });
-    };
-
-    const fetchAndRender = async () => {
-        lbLoading.classList.remove("hidden");
-        lbList.classList.add("hidden");
-        
-        if (!navigator.onLine || !window.dbGet || !window.dbRef || !window.db) {
-            lbLoading.innerText = "Leaderboards require an internet connection.";
-            return;
-        }
-
-        try {
-            const snap = await window.dbGet(window.dbRef(window.db, "users"));
-            if (snap.exists()) {
-                const data = snap.val();
-                cachedUsers = Object.values(data);
-                lbLoading.classList.add("hidden");
-                lbList.classList.remove("hidden");
-                renderLb();
-            } else {
-                lbLoading.innerText = "No players found.";
-            }
-        } catch(e) {
-            lbLoading.innerText = "Failed to fetch rankings.";
-        }
-    };
-
-    lbBtns.forEach(btn => {
-        btn.addEventListener("click", () => {
-            playHubSound('click');
-            if (modalLb) modalLb.classList.remove("hidden");
-            fetchAndRender();
-        });
-    });
-
-    if (closeLb) closeLb.addEventListener("click", () => {
-        playHubSound('click');
-        if (modalLb) modalLb.classList.add("hidden");
-    });
-
-    lbTabs.forEach(tab => {
-        tab.addEventListener("click", (e) => {
-            playHubSound('click');
-            lbTabs.forEach(t => t.classList.remove("active"));
-            e.target.classList.add("active");
-            currentSort = e.target.dataset.sort;
-            renderLb();
-        });
-    });
-}
-
-function renderStore() {
-    if (!window.SystemStore) return;
-    const profile = window.SystemProfile.getProfile();
-    const balDisplay = document.getElementById('store-balance-display');
-    if (balDisplay) balDisplay.innerText = `$${profile.bankroll.toLocaleString()}`;
-    
-    const tabsConfig = {
-        'store-tab-profile': ['avatar', 'color'],
-        'store-tab-table': ['deck', 'cardback', 'dice'],
-        'store-tab-misc': ['title']
-    };
-
-    for (const [tabId, types] of Object.entries(tabsConfig)) {
-        const container = document.getElementById(tabId);
-        if (!container) continue;
-        container.innerHTML = '';
-        
-        const items = Object.values(SystemStore.CATALOG).filter(i => types.includes(i.type));
-        items.forEach(item => {
-            const owned = SystemStore.ownsItem(item.id);
-            const div = document.createElement('div');
-            div.className = `store-item ${owned ? 'owned' : ''}`;
-            
-            let iconHtml = '';
-            if (item.type === 'avatar') iconHtml = `<div class="store-icon" style="font-size:2.5rem;">${item.value}</div>`;
-            else if (item.type === 'color') iconHtml = `<div class="store-icon"><div class="color-preview" style="background:${item.value}"></div></div>`;
-            else if (item.type === 'cardback') iconHtml = `<div class="store-icon"><img src="system/images/cards/standard/${item.value}" /></div>`;
-            else if (item.type === 'deck') iconHtml = `<div class="store-icon" style="font-size:2.5rem;">🃏</div>`;
-            else if (item.type === 'dice') iconHtml = `<div class="store-icon" style="font-size:2.5rem;">🎲</div>`;
-            else if (item.type === 'title') iconHtml = `<div class="store-icon" style="font-size:2rem;">📜</div>`;
-            
-            div.innerHTML = `
-                ${iconHtml}
-                <div class="store-name">${item.name}</div>
-                <div class="store-desc">${item.desc}</div>
-                <button class="btn-buy hub-interactive" data-id="${item.id}">$${item.price.toLocaleString()}</button>
-            `;
-            container.appendChild(div);
-        });
-    }
-    
-    document.querySelectorAll('.btn-buy').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            playHubSound('click');
-            const id = e.target.dataset.id;
-            if (!window.SystemStore.ownsItem(id)) {
-                const originalText = e.target.innerText;
-                e.target.innerText = "...";
-                e.target.disabled = true;
-                const res = await window.SystemStore.buyItem(id);
-                if (res.ok) {
-                    playHubSound('win');
-                    renderStore(); // Re-render to show OWNED stamp and new balance
-                } else {
-                    alert(res.error);
-                    e.target.innerText = originalText;
-                    e.target.disabled = false;
-                }
-            }
-        });
-    });
-}
-
-function wireStore() {
-    const storeBtns = document.querySelectorAll(".btn-store");
-    const modalStore = document.getElementById("modal-store");
-    const closeStore = document.getElementById("close-store-btn");
-    const storeTabs = document.querySelectorAll(".store-tab");
-
-    storeBtns.forEach(btn => {
-        btn.addEventListener("click", () => {
-            playHubSound('click');
-            if (!window.SystemAuth || !window.SystemAuth.isLoggedIn()) {
-                const modalLogin = document.getElementById('modal-login');
-                if (modalLogin) modalLogin.classList.remove('hidden');
-                return;
-            }
-            if (modalStore) {
-                modalStore.classList.remove("hidden");
-                renderStore();
-            }
-        });
-    });
-
-    if (closeStore) closeStore.addEventListener("click", () => {
-        playHubSound('click');
-        if (modalStore) modalStore.classList.add("hidden");
-    });
-
-    storeTabs.forEach(tab => {
-        tab.addEventListener("click", (e) => {
-            playHubSound('click');
-            storeTabs.forEach(t => t.classList.remove("active"));
-            e.target.classList.add("active");
-            
-            document.querySelectorAll(".store-grid").forEach(g => g.classList.add("hidden"));
-            const targetGrid = document.getElementById(e.target.dataset.tab);
-            if (targetGrid) targetGrid.classList.remove("hidden");
-        });
-    });
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-    // Inject Dev/Logout buttons into the banner if they don't exist
-    const bannerActions = document.querySelector(".profile-right");
-    if (bannerActions && !document.getElementById("sys-dev-btn")) {
-        const devBtnHTML = `<button id="sys-dev-btn" class="sys-btn dev-only" style="background:#f1c40f; color:#000; border:none; margin-bottom:10px;">🛠️ DEV TOOLS</button>`;
-        const logoutBtnHTML = `<button id="sys-logout-btn" class="sys-btn-logout dev-only">LOGOUT</button>`;
-        bannerActions.insertAdjacentHTML('afterbegin', logoutBtnHTML);
-        bannerActions.insertAdjacentHTML('afterbegin', devBtnHTML);
-
-        document.getElementById("sys-dev-btn").addEventListener("click", openDevMenu);
-        document.getElementById("sys-logout-btn").addEventListener("click", systemLogout);
-    }
-
-    const confirmLogoutBtn = document.getElementById("btn-confirm-logout");
-    const cancelLogoutBtn = document.getElementById("btn-cancel-logout");
-    
-    if (cancelLogoutBtn) {
-        cancelLogoutBtn.addEventListener("click", () => {
-            playHubSound('click');
-            document.getElementById("modal-logout").classList.add("hidden");
-        });
-    }
-    
-    if (confirmLogoutBtn) {
-        confirmLogoutBtn.addEventListener("click", () => {
-            playHubSound('click');
-            document.getElementById("modal-logout").classList.add("hidden");
-            if (window.SystemAuth && window.SystemAuth.isLoggedIn()) {
-                SystemAuth.logout();
-            } else {
-                SystemProfile.data.isDev = false;
-                SystemProfile.data.name = "Player";
-                SystemProfile.saveProfile();
-            }
-            updateBonusUI();
-            window.location.reload();
-        });
-    }
-
-    const syncBtn = document.getElementById("btn-cloud-sync");
-    if (syncBtn) {
-        syncBtn.addEventListener("click", async () => {
-            playHubSound('click');
-            const originalText = syncBtn.innerHTML;
-            syncBtn.innerHTML = "⏳ SYNCING...";
-            syncBtn.disabled = true;
-            
-            if (window.SystemAuth && typeof window.SystemAuth.forceSync === 'function') {
-                const res = await SystemAuth.forceSync();
-                alert(res.message || res.error);
-                updateBonusUI();
-                if (typeof openProfilePanel === 'function') openProfilePanel(); // refresh panel stats
-            } else {
-                alert("Cloud Sync is not available.");
-            }
-            
-            syncBtn.innerHTML = originalText;
-            syncBtn.disabled = false;
-        });
-    }
-
-    wireAuthModals();
-    wireDevModal();
-    wireProfileEdit();
-    wireBugReporter();
-    wireGlobalChat();
-    wireLeaderboards();
-    wireStore();
-    setTimeout(updateBonusUI, 0);
-    
-    // If the Event Emitter is ready, listen for future money changes
-    if (window.SystemUI && typeof window.SystemUI.on === 'function') {
-        window.SystemUI.on("money_changed", updateBonusUI);
-    }
-
-    // Global Escape key listener to close active modals
-    document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-            const modalsToClose = [
-                "modal-login", "modal-register", "modal-forgot-password",
-                "modal-dev-tools", "modal-logout", "achievements-modal",
-                "modal-edit-profile", "modal-bug-report", "modal-leaderboards",
-                "modal-store"
-            ];
-            modalsToClose.forEach(id => {
-                const m = document.getElementById(id);
-                if (m && !m.classList.contains("hidden")) {
-                    m.classList.add("hidden");
-                }
-            });
-            
-            const lpOverlay = document.getElementById("launch-panel-overlay");
-            if (lpOverlay && !lpOverlay.classList.contains("lp-hidden")) {
-                lpOverlay.classList.add("lp-hidden");
-            }
-
-            const chatPanel = document.getElementById("chat-panel");
-            if (chatPanel && !chatPanel.classList.contains("hidden")) {
-                chatPanel.classList.add("hidden");
-            }
-
-            if (typeof closeProfilePanel === 'function') closeProfilePanel();
-        }
-    });
-});

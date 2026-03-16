@@ -1,5 +1,5 @@
 /**
- * CASINO OS - MAIN CONTROLLER (v2.0)
+ * CASINO OS - MAIN CONTROLLER (v2.1)
  * Acts as the Event Hub and API wrapper for all games.
  * Preserves 100% backward compatibility with V1 games.
  */
@@ -99,6 +99,9 @@ window.SystemUI = {
                         CHAT
                         <span id="sys-chat-badge"></span>
                     </button>
+                    <button class="hud-btn" id="sys-btn-bug" title="Report a Bug" style="background: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; padding: 2px 5px; font-size: 1rem;">
+                        🐞
+                    </button>
                     <button class="hud-btn" id="sys-btn-sound" title="Toggle Sound">
                         <img id="sys-sound-icon" src="../../system/images/icons/${this.isMuted ? 'mute' : 'sound'}.png" class="hud-icon">
                     </button>
@@ -134,6 +137,21 @@ window.SystemUI = {
                     </div>
                     
                     <button id="sys-close-btn">BACK TO GAME</button>
+                </div>
+            </div>
+
+            <div id="sys-bug-modal" class="sys-hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 4, 16, 0.95); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+                <div class="sys-bug-modal-box">
+                    <button id="sys-close-bug-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: #e74c3c; font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+                    <h2 style="color: #e74c3c; font-family: 'Orbitron', sans-serif; margin: 0 0 10px 0; text-align: center; letter-spacing: 2px;">🐞 REPORT BUG</h2>
+                    <p style="color: #aaa; font-size: 0.75rem; text-align: center; margin-bottom: 15px;">Found a glitch in ${config.gameName || 'this game'}? Let us know.</p>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <input type="text" id="sys-bug-title" placeholder="Short Title (e.g. Card didn't flip)" maxlength="50" class="sys-bug-input" autocomplete="off">
+                        <textarea id="sys-bug-desc" placeholder="Describe what happened..." class="sys-bug-input" style="resize: vertical; min-height: 100px;"></textarea>
+                        <div id="sys-bug-error" class="sys-hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Error</div>
+                        <div id="sys-bug-success" class="sys-hidden" style="color: #2ecc71; font-size: 0.85rem; font-weight: bold; text-align: center;">Bug reported! Thank you!</div>
+                        <button id="sys-btn-submit-bug" class="sys-btn" style="background: #e74c3c; border: none; box-shadow: 0 0 15px rgba(231, 76, 60, 0.3);">SUBMIT REPORT</button>
+                    </div>
                 </div>
             </div>
 
@@ -232,6 +250,66 @@ window.SystemUI = {
         document.getElementById('sys-close-btn').addEventListener('click', () => {
             this.playSound('click');
             document.getElementById('sys-modal').classList.add('sys-hidden');
+        });
+
+        // BUG REPORT EVENTS
+        document.getElementById('sys-btn-bug').addEventListener('click', () => {
+            this.playSound('click');
+            document.getElementById('sys-bug-title').value = "";
+            document.getElementById('sys-bug-desc').value = "";
+            document.getElementById('sys-bug-error').classList.add('sys-hidden');
+            document.getElementById('sys-bug-success').classList.add('sys-hidden');
+            document.getElementById('sys-bug-modal').classList.remove('sys-hidden');
+        });
+
+        document.getElementById('sys-close-bug-btn').addEventListener('click', () => {
+            this.playSound('click');
+            document.getElementById('sys-bug-modal').classList.add('sys-hidden');
+        });
+
+        document.getElementById('sys-btn-submit-bug').addEventListener('click', () => {
+            this.playSound('click');
+            const title = document.getElementById("sys-bug-title").value.trim();
+            const desc = document.getElementById("sys-bug-desc").value.trim();
+            const errorEl = document.getElementById("sys-bug-error");
+            const successEl = document.getElementById("sys-bug-success");
+            
+            if (!title || !desc) {
+                errorEl.innerText = "Please fill out both fields.";
+                errorEl.classList.remove("sys-hidden");
+                return;
+            }
+            
+            if (!window.dbUpdate || !window.dbRef || !window.db) {
+                errorEl.innerText = "Database connection error.";
+                errorEl.classList.remove("sys-hidden");
+                return;
+            }
+            
+            const username = this.getPlayerName();
+            const gameId = window.location.pathname.split('/').slice(-2, -1)[0] || 'unknown';
+            const reportId = "bug_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
+            
+            const payload = {
+                title: title,
+                description: desc,
+                reportedBy: username,
+                game: gameId,
+                timestamp: Date.now(),
+                userAgent: navigator.userAgent,
+                status: "open"
+            };
+            
+            window.dbUpdate(window.dbRef(window.db, `bug_reports/${reportId}`), payload)
+                .then(() => {
+                    errorEl.classList.add("sys-hidden");
+                    successEl.classList.remove("sys-hidden");
+                    setTimeout(() => document.getElementById('sys-bug-modal').classList.add('sys-hidden'), 2000);
+                })
+                .catch(() => {
+                    errorEl.innerText = "Submission failed.";
+                    errorEl.classList.remove("sys-hidden");
+                });
         });
 
         const refillBtn = document.getElementById('sys-bankrupt-refill');

@@ -41,6 +41,8 @@ window.SystemAuth = {
             avatar:       "👤",
             chatColor:    "#ffffff",
             title:        "Newcomer",
+            equippedCardBack: "cardBack_blue1.png",
+            equippedDice: "default",
             inventory:    []
         };
     },
@@ -127,7 +129,7 @@ window.SystemAuth = {
     },
 
     // ── UPDATE PROFILE (EDIT) ─────────────────────
-    updateProfile: async function(newUsername, newAvatar, newTitle, newChatColor) {
+    updateProfile: async function(newUsername, newAvatar, newTitle, newChatColor, newCardBack, newDice) {
         if (!this._activeUser) return { ok: false, error: "Not logged in." };
         if (!navigator.onLine) return { ok: false, error: "You must be online to edit your profile." };
         
@@ -159,9 +161,11 @@ window.SystemAuth = {
         userObj.profile.name = rawUsername.trim();
         userObj.profile.avatar = newAvatar || userObj.profile.avatar || "👤";
         
-        // Save new cosmetic fields if they are provided
+        // Save cosmetic and gear fields
         if (newTitle !== undefined) userObj.profile.title = newTitle;
         if (newChatColor !== undefined) userObj.profile.chatColor = newChatColor;
+        if (newCardBack !== undefined) userObj.profile.equippedCardBack = newCardBack;
+        if (newDice !== undefined) userObj.profile.equippedDice = newDice;
 
         userObj.lastUpdated = Date.now();
 
@@ -373,6 +377,8 @@ window.SystemAuth = {
         if (!user.profile.chatColor) user.profile.chatColor = "#ffffff";
         if (!user.profile.title)     user.profile.title     = "Newcomer";
         if (!user.profile.avatar)    user.profile.avatar    = "👤";
+        if (!user.profile.equippedCardBack) user.profile.equippedCardBack = "cardBack_blue1.png";
+        if (!user.profile.equippedDice)     user.profile.equippedDice     = "default";
 
         // Load the specific user's data into the active session, with fallback defaults for older accounts
         if (window.SystemProfile) {
