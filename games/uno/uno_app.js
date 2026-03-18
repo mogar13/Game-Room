@@ -415,15 +415,26 @@ function resetGame() {
     document.getElementById("right-hand").innerHTML = "";
     const logDiv = document.getElementById("move-log");
     if (logDiv) { logDiv.innerHTML = ""; logDiv.classList.add("hidden"); }
-    document.getElementById("start-screen").classList.remove("hidden");
     document.getElementById("game-area").classList.add("hidden");
     document.getElementById("uno-btn").classList.add("hidden");
 
-    const startBtn = document.getElementById("start-game-btn");
-    if (gameMode === "online" && !isHost) { 
-        if (startBtn) { startBtn.innerText = "Waiting for Host..."; startBtn.disabled = true; }
-    } else { 
-        if (startBtn) { startBtn.innerText = "Start Game"; startBtn.disabled = false; }
+    // NEW LOGIC: Handle returning to the online lobby vs offline menu
+    if (gameMode === "online" && currentRoomId) {
+        document.getElementById("start-screen").classList.add("hidden");
+        
+        // The host updates the room back to "waiting" to trigger the lobby for everyone
+        if (isHost) {
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting" });
+        }
+    } else {
+        // Offline behavior: show the main start screen
+        document.getElementById("start-screen").classList.remove("hidden");
+        const startBtn = document.getElementById("start-game-btn");
+        if (gameMode === "online" && !isHost) { 
+            if (startBtn) { startBtn.innerText = "Waiting for Host..."; startBtn.disabled = true; }
+        } else { 
+            if (startBtn) { startBtn.innerText = "Start Game"; startBtn.disabled = false; }
+        }
     }
 }
 
@@ -504,15 +515,9 @@ function handleActionCard(card, playerNum) {
         
         if (gameMode === 'online') {
             pushGameState(null, "WINS!", playerNames[playerNum-1]);
-            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished", ts: Date.now() + 1 }); 
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 
         }
-        
-        setTimeout(() => {
-            resetGame();
-            if (gameMode === 'online' && isHost) {
-                window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting", deck: null, discardPile: null, hands: null, ts: Date.now() }); 
-            }
-        }, 2500);
+        setTimeout(resetGame, 2500);
         return; 
     }
 
@@ -571,6 +576,9 @@ function advanceTurn(steps, logMsg) {
 }
 
 function aiTurn() {
+    // FIX: Strict safety check to guarantee AI never steals a human player's turn
+    if (gameMode === "online" && seats[currentTurn - 1]?.type !== 'ai') return;
+
     const pIdx = currentTurn - 1;
     if (!hands[pIdx]) return;
     const topCard = discardPile[discardPile.length - 1];
@@ -676,25 +684,22 @@ function listenToRoom() {
         playerNames = seats.map(s => s.name);
         playerCount = seats.length;
         
-        if (data.status === "playing" || data.status === "finished") {
+        // NEW LOGIC: Listen for the "waiting" status to show the lobby again
+        if (data.status === "waiting") {
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, isHost);
+            document.getElementById("game-area").classList.add("hidden");
+            onlineGameStarted = false; // Reset the trigger so the host can start a new game!
+        } 
+        else if (data.status === "playing" || data.status === "finished") {
             SystemUI.v2Lobby.hide();
             if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
             
             if (isHost && !onlineGameStarted && data.status === "playing") {
                 onlineGameStarted = true;
-                if (!data.deck) {
-                    startGame(); 
-                } else {
-                    syncFromFirebase(data);
-                }
+                startGame(); 
             } else {
                 onlineGameStarted = true;
                 syncFromFirebase(data);
-            }
-        } else if (data.status === "waiting") {
-            onlineGameStarted = false;
-            if (document.getElementById("game-area") && !document.getElementById("game-area").classList.contains("hidden")) {
-                resetGame();
             }
         }
     });
@@ -744,7 +749,8 @@ function syncFromFirebase(data) {
         renderHand(); renderTable();
         
         if (data.status === "playing") {
-            if (isHost && (seats[currentTurn - 1]?.type === 'ai' || (gameMode === "ai" && currentTurn !== 1))) {
+            // FIX: Added data.pusher !== myId to prevent the Host from double-scheduling AI turns
+            if (isHost && data.pusher !== myId && (seats[currentTurn - 1]?.type === 'ai' || (gameMode === "ai" && currentTurn !== 1))) {
                 setTimeout(aiTurn, 1500);
             }
         } else if (data.status === "finished") {
@@ -752,19 +758,9 @@ function syncFromFirebase(data) {
             if (winnerIdx !== -1 && winnerIdx !== myId - 1) {
                 playCustomSound('lose');
                 showResultModal(`😞 ${playerNames[winnerIdx]} WINS!`, "#e74c3c");
-                setTimeout(() => {
-                    resetGame();
-                    if (isHost) {
-                        window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting", deck: null, hands: null, discardPile: null, ts: Date.now() });
-                    }
-                }, 2500);
+                setTimeout(resetGame, 2500);
             } else if (winnerIdx === -1) {
-                setTimeout(() => {
-                    resetGame();
-                    if (isHost) {
-                        window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting", deck: null, hands: null, discardPile: null, ts: Date.now() });
-                    }
-                }, 2500);
+                setTimeout(resetGame, 2500);
             }
         }
     }
