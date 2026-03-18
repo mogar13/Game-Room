@@ -19,8 +19,11 @@ let isHost = true;
 let seats = [];
 let roomListener = null;
 
-let p1Name = (typeof SystemUI.getPlayerName === 'function') ? SystemUI.getPlayerName() : "Player";
-let p2Name = "AI";
+let lastPushTime = 0;
+let lastSyncTime = 0;
+
+let p1Name = "TEAM 1"; // Host
+let p2Name = "TEAM 2"; // Guest / AI
 
 SystemUI.init({
     gameName: "FAMILY FEUD",
@@ -33,84 +36,60 @@ SystemUI.init({
                 { value: "hotseat", label: "👥 Hotseat"  },
                 { value: "online",  label: "🌐 Online"   }
             ]
-        },
-        {
-            id: "sys-feud-diff",
-            options: [
-                { value: "easy",   label: "Easy AI" },
-                { value: "normal", label: "Normal AI" },
-                { value: "hard",   label: "Hard AI" }
-            ]
-        },
-        {
-            id: "sys-feud-rounds",
-            options: [
-                { value: "3", label: "3 Rounds" },
-                { value: "5", label: "5 Rounds" },
-                { value: "7", label: "7 Rounds" }
-            ]
         }
     ]
 });
 
-setTimeout(() => {
-    const modeEl = document.getElementById("sys-feud-mode");
-    const diffEl = document.getElementById("sys-feud-diff");
-    const roundEl = document.getElementById("sys-feud-rounds");
-
-    if (modeEl) {
-        modeEl.value = gameMode;
-        modeEl.addEventListener("change", e => {
-            gameMode = e.target.value;
-            localStorage.setItem("feud_mode", gameMode);
-            document.getElementById("sys-modal")?.classList.add("sys-hidden");
-            syncDiffVisibility();
-            if (gameMode === "online") {
-                SystemUI.v2Lobby.show();
-            } else {
-                SystemUI.v2Lobby.hide();
-                SystemUI.stopChat();
-                chatStarted = false;
-                myId = 1; isHost = true;
-                if(roomListener) { roomListener(); roomListener = null; }
-                updateNames();
-                resetGame();
-            }
-        });
-    }
-
-    if (diffEl) {
-        diffEl.value = aiDifficulty;
-        diffEl.addEventListener("change", e => {
-            aiDifficulty = e.target.value;
-            localStorage.setItem("feud_diff", aiDifficulty);
-            updateNames();
-        });
-    }
-
-    if (roundEl) {
-        roundEl.value = totalRounds.toString();
-        roundEl.addEventListener("change", e => {
-            totalRounds = parseInt(e.target.value);
-            localStorage.setItem("feud_rounds", e.target.value);
-        });
-    }
-
-    syncDiffVisibility();
-    updateNames();
-    resetGame();
-}, 100);
-
-function syncDiffVisibility() {
-    const wrap = document.getElementById("sys-feud-diff")?.closest(".hud-dropdown-wrap") ||
-                 document.getElementById("sys-feud-diff")?.parentElement;
-    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
-}
-
 // ==========================================
 // 1.5 V2 MULTIPLAYER LOBBY
 // ==========================================
+
+function updateLobbyPreview() {
+    const slots = [
+        { type: "host", name: SystemUI.getPlayerName(), color: "#e53030" }, 
+        { type: "ai", name: "AI (" + aiDifficulty + ")", color: "#1e41a8" } 
+    ];
+    SystemUI.v2Lobby.updatePreview(slots);
+}
+
 SystemUI.v2Lobby.setup({
+    settingsConfig: [
+        {
+            id: "lobby-rounds",
+            label: "ROUNDS",
+            type: "select",
+            default: totalRounds,
+            options: [
+                { value: 3, label: "3 ROUNDS" },
+                { value: 5, label: "5 ROUNDS" },
+                { value: 7, label: "7 ROUNDS" }
+            ]
+        },
+        {
+            id: "lobby-ai-diff",
+            label: "AI LEVEL",
+            type: "select",
+            default: aiDifficulty,
+            options: [
+                { value: "easy",   label: "EASY" },
+                { value: "normal", label: "NORMAL" },
+                { value: "hard",   label: "HARD" }
+            ]
+        }
+    ],
+    onSettingsRendered: () => {
+        updateLobbyPreview();
+    },
+    onSettingChange: (key, val) => {
+        if (key === "lobby-rounds") {
+            totalRounds = parseInt(val);
+            localStorage.setItem("feud_rounds", val);
+        } else if (key === "lobby-ai-diff") {
+            aiDifficulty = val;
+            localStorage.setItem("feud_diff", val);
+        }
+        updateLobbyPreview();
+    },
     onHost: () => {
         if(!window.db) { alert("Server connection error."); return; }
         currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
@@ -122,7 +101,7 @@ SystemUI.v2Lobby.setup({
         ];
 
         window.dbSet(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-            status: "waiting", players: 1, p1Name: p1Name, phase: "idle", buzzedBy: 0, seats: seats
+            status: "waiting", seats: seats, ts: Date.now()
         }).then(() => {
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToRoom();
@@ -138,7 +117,7 @@ SystemUI.v2Lobby.setup({
                     let updatedSeats = data.seats;
                     updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
                     window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-                        players: 2, p2Name: p1Name, status: "playing", seats: updatedSeats
+                        seats: updatedSeats, ts: Date.now()
                     });
                     SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
                     listenToRoom();
@@ -151,19 +130,125 @@ SystemUI.v2Lobby.setup({
         });
     },
     onLeave: () => {
-        gameMode = "ai"; p2Name = "AI";
+        if (isHost && currentRoomId) {
+            window.dbSet(window.dbRef(window.db, `feud_rooms/${currentRoomId}`), null);
+        }
+        gameMode = "ai";
         const modeEl = document.getElementById("sys-feud-mode");
         if(modeEl) modeEl.value = "ai";
         localStorage.setItem("feud_mode", "ai");
         SystemUI.stopChat(); chatStarted = false;
         myId = 1; isHost = true;
         if(roomListener) { roomListener(); roomListener = null; }
-        updateNames(); resetGame();
+        resetGame();
+        toggleGameVisibility(true);
     },
     onStart: () => {
-        if(window.db) window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), { status: "playing" });
+        if(window.db) window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), { status: "playing", ts: Date.now() });
+    },
+    onClose: () => {
+        if (gameMode === "online" && gamePhase === "idle") {
+            if (isHost && currentRoomId) {
+                window.dbSet(window.dbRef(window.db, `feud_rooms/${currentRoomId}`), null);
+            }
+            gameMode = "ai";
+            const modeEl = document.getElementById("sys-feud-mode");
+            if (modeEl) modeEl.value = "ai";
+            localStorage.setItem("feud_mode", "ai");
+            myId = 1; isHost = true;
+            toggleGameVisibility(true);
+        }
     }
 });
+
+function toggleGameVisibility(show) {
+    const ids = ["scoreboard", "status-row", "question-wrap", "answer-board", "start-btn"];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = show ? "" : "none";
+    });
+}
+
+setTimeout(() => {
+    const modeEl = document.getElementById("sys-feud-mode");
+
+    if (modeEl) {
+        modeEl.value = gameMode;
+        
+        if (gameMode === "online") {
+            toggleGameVisibility(false);
+        }
+        
+        modeEl.addEventListener("change", e => {
+            gameMode = e.target.value;
+            localStorage.setItem("feud_mode", gameMode);
+            document.getElementById("sys-modal")?.classList.add("sys-hidden");
+            
+            syncDiffVisibility();
+            if (gameMode === "online") {
+                toggleGameVisibility(false);
+                SystemUI.v2Lobby.show();
+            } else {
+                toggleGameVisibility(true);
+                SystemUI.v2Lobby.hide();
+                SystemUI.stopChat();
+                chatStarted = false;
+                myId = 1; isHost = true;
+                if(roomListener) { roomListener(); roomListener = null; }
+                p1Name = SystemUI.getPlayerName();
+                p2Name = "AI";
+                updateNames();
+                resetGame();
+            }
+        });
+    }
+
+    // Wire Splash Screen "Opponent" Buttons
+    document.querySelectorAll(".opp-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
+            const mode = btn.dataset.mode;
+            gameMode = mode;
+            localStorage.setItem("feud_mode", mode);
+            if (modeEl) modeEl.value = mode;
+            document.querySelectorAll(".opp-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            syncDiffVisibility();
+            if (mode === "online") {
+                toggleGameVisibility(false);
+                SystemUI.v2Lobby.show();
+            } else {
+                toggleGameVisibility(true);
+                SystemUI.v2Lobby.hide();
+            }
+        });
+    });
+
+    // Wire Local Difficulty Buttons
+    document.querySelectorAll(".diff-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
+            aiDifficulty = btn.dataset.diff;
+            localStorage.setItem("feud_diff", aiDifficulty);
+            document.querySelectorAll(".diff-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            updateNames();
+        });
+    });
+
+    syncDiffVisibility();
+    p1Name = SystemUI.getPlayerName();
+    updateNames();
+    resetGame();
+}, 10);
+
+function syncDiffVisibility() {
+    const wrap = document.getElementById("sys-feud-diff")?.closest(".hud-dropdown-wrap") ||
+                 document.getElementById("sys-feud-diff")?.parentElement;
+    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
+    const localDiffRow = document.getElementById("difficulty-row");
+    if (localDiffRow) localDiffRow.style.display = gameMode === "ai" ? "" : "none";
+}
 
 function listenToRoom() {
     let onlineGameStarted = false;
@@ -175,118 +260,129 @@ function listenToRoom() {
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
 
-        if (data.status === "playing" && !onlineGameStarted) {
-            onlineGameStarted = true;
+        if (data.status === "playing") {
+            toggleGameVisibility(true);
             SystemUI.v2Lobby.hide();
             if (!chatStarted) {
                 chatStarted = true;
                 SystemUI.playSound('win');
                 SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
             }
-            p2Name = (myId === 1) ? (seats[1]?.name || "Opponent") : (seats[0]?.name || "Opponent");
+            
+            // Standardize Teams: Team 1 = Host, Team 2 = Guest
+            p1Name = seats[0].name;
+            p2Name = seats[1]?.name || "AI";
             updateNames();
-            if (isHost) { hideStartBtn(); startGame(); }
-            else        { hideStartBtn(); }
+            
+            if (isHost && !onlineGameStarted) {
+                onlineGameStarted = true;
+                hideStartBtn(); 
+                startGame(); 
+            } else {
+                onlineGameStarted = true;
+                hideStartBtn();
+                if (data.gameState) syncFromFirebase(data.gameState);
+            }
         }
-
-        if (data.status === "playing" && onlineGameStarted) syncFromFirebase(data);
+        
+        // BUZZ REFEREE LOGIC (HOST ONLY)
+        if (isHost && data.buzzPulse && gamePhase === "faceoff" && !buzzProcessed) {
+            handleBuzz(data.buzzPulse.playerId);
+        }
     });
 }
 
 function onlineBuzz(playerId = myId) {
     if (buzzLocked || gamePhase !== "faceoff" || !window.db) return;
     window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-        buzzedBy: playerId, buzzTime: Date.now()
+        buzzPulse: { playerId: playerId, ts: Date.now() }
     });
 }
 
 function pushGameState() {
     if (gameMode !== "online" || !window.db) return;
+    const now = Date.now();
+    lastPushTime = now;
     window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-        phase:               gamePhase,
-        currentRound:        currentRound,
-        questionIndex:       currentQuestionIndex,
-        activePlayer:        activePlayer,
-        faceoffWinner:       faceoffWinner,
-        strikes:             strikes,
-        boardPoints:         boardPoints,
-        revealedAnswers:     roundAnswers.map(a => a.revealed),
-        scores:              scores,
-        buzzedBy:            0, 
-        status:              gamePhase === "gameover" ? "finished" : "playing",
-        seats:               seats
+        gameState: JSON.stringify({
+            phase:               gamePhase,
+            currentRound:        currentRound,
+            totalRounds:         totalRounds,
+            questionIndex:       currentQuestionIndex,
+            activePlayer:        activePlayer,
+            faceoffWinner:       faceoffWinner,
+            strikes:             strikes,
+            boardPoints:         boardPoints,
+            revealedAnswers:     roundAnswers.map(a => a.revealed),
+            scores:              scores,
+            ts:                  now,
+            pusher:              myId
+        }),
+        buzzPulse: null 
     });
 }
 
-function syncFromFirebase(data) {
-    if (!data) return;
+function syncFromFirebase(stateJson) {
+    try {
+        const data = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
+        if (!data.ts || (data.pusher === myId && data.ts === lastPushTime) || data.ts <= lastSyncTime) return;
+        lastSyncTime = data.ts;
 
-    if (data.buzzedBy && data.buzzedBy !== 0 && gamePhase === "faceoff" && !buzzProcessed) {
-        buzzProcessed = true;
-        handleBuzz(data.buzzedBy);
-        return;
-    }
+        if (data.totalRounds !== undefined) totalRounds = data.totalRounds;
 
-    if (data.questionIndex !== undefined && data.questionIndex !== currentQuestionIndex) {
-        currentQuestionIndex = data.questionIndex;
-        const q = QUESTIONS[currentQuestionIndex];
-        roundAnswers = q.answers.map(a => ({ ...a, revealed: false }));
-        setQuestion(q.q);
-    }
-
-    if (data.revealedAnswers && roundAnswers.length > 0) {
-        data.revealedAnswers.forEach((rev, i) => { if (roundAnswers[i]) roundAnswers[i].revealed = rev; });
-    }
-
-    if (data.currentRound !== undefined && data.currentRound !== currentRound) {
-        currentRound = data.currentRound;
-        setRoundLabel(currentRound);
-    }
-    if (data.strikes    !== undefined) { strikes = data.strikes;       renderStrikes(); }
-    if (data.boardPoints!== undefined) { boardPoints = data.boardPoints; setBoardPts(boardPoints); }
-    if (data.scores)                   { scores = data.scores;          renderScores(); }
-    if (data.activePlayer  !== undefined) activePlayer  = data.activePlayer;
-    if (data.faceoffWinner !== undefined) faceoffWinner = data.faceoffWinner;
-
-    renderBoard();
-
-    if (data.phase && data.phase !== gamePhase) {
-        const prevPhase = gamePhase;
-        gamePhase = data.phase;
-
-        switch (gamePhase) {
-            case "faceoff":
-                buzzLocked = false; buzzProcessed = false;
-                startFaceoff();
-                break;
-            case "faceoff-answering":
-                hideBuzzZone();
-                showFaceoffInput(activePlayer);
-                break;
-            case "play-or-pass":
-                hideBuzzZone();
-                goToPlayOrPass();
-                break;
-            case "playing":
-                hideBuzzZone();
-                startPlaying();
-                break;
-            case "steal":
-                startSteal();
-                break;
-            case "roundover":
-                hideGuessZone();
-                setPhaseTag(`${getPlayerName(activePlayer).toUpperCase()} WINS THE ROUND!`);
-                break;
-            case "gameover":
-                endGame();
-                break;
+        if (data.questionIndex !== undefined && data.questionIndex !== currentQuestionIndex) {
+            currentQuestionIndex = data.questionIndex;
+            const q = QUESTIONS[currentQuestionIndex];
+            roundAnswers = q.answers.map(a => ({ ...a, revealed: false }));
+            setQuestion(q.q);
         }
-    }
+
+        if (data.revealedAnswers && roundAnswers.length > 0) {
+            data.revealedAnswers.forEach((rev, i) => { if (roundAnswers[i]) roundAnswers[i].revealed = rev; });
+        }
+
+        if (data.currentRound !== undefined && data.currentRound !== currentRound) {
+            currentRound = data.currentRound;
+            setRoundLabel(currentRound);
+        }
+        
+        if (data.strikes    !== undefined) { strikes = data.strikes;       renderStrikes(); }
+        if (data.boardPoints!== undefined) { boardPoints = data.boardPoints; setBoardPts(boardPoints); }
+        if (data.scores)                   { scores = data.scores;          renderScores(); }
+        
+        // Must update active player BEFORE phase logic for UI highlighting
+        if (data.activePlayer  !== undefined) activePlayer  = data.activePlayer;
+        if (data.faceoffWinner !== undefined) faceoffWinner = data.faceoffWinner;
+
+        renderBoard();
+
+        if (data.phase && data.phase !== gamePhase) {
+            gamePhase = data.phase;
+            switch (gamePhase) {
+                case "faceoff":
+                    buzzLocked = false; buzzProcessed = false; startFaceoff(); break;
+                case "faceoff-answering":
+                    hideBuzzZone(); showFaceoffInput(activePlayer); break;
+                case "play-or-pass":
+                    hideBuzzZone(); goToPlayOrPass(); break;
+                case "playing":
+                    hideBuzzZone(); startPlaying(); break;
+                case "steal":
+                    startSteal(); break;
+                case "roundover":
+                    hideGuessZone(); setPhaseTag(`${getPlayerName(activePlayer).toUpperCase()} WINS THE ROUND!`); break;
+                case "gameover":
+                    endGame(); break;
+            }
+        }
+
+        if (isHost && isBotTurn(activePlayer)) {
+            if (gamePhase === "playing") scheduleAiGuess(activePlayer);
+        }
+    } catch (e) { console.error("Sync error:", e); }
 }
 
 // ── 2. QUESTION BANK ─────────────────────────
-// Points per question sum to ~100
 const QUESTIONS = [
     {
         q: "Name something people do on their phone while on the toilet.",
@@ -491,13 +587,12 @@ const QUESTIONS = [
 ];
 
 // ── 3. GAME STATE ────────────────────────────
-// Phases: idle → faceoff → faceoff-answering → play-or-pass → playing → steal → roundover → gameover
 let gamePhase = "idle";
 let currentRound = 0;
 let currentQuestionIndex = -1;
 let usedQuestions = [];
-let activePlayer = 1;    // who is playing the board (or answering the face-off)
-let faceoffWinner = 0;   // who won the buzz-in
+let activePlayer = 1;    
+let faceoffWinner = 0;   
 let strikes = 0;
 let boardPoints = 0;
 let scores = { p1: 0, p2: 0 };
@@ -534,10 +629,6 @@ function getPlayerName(id) { return id === 1 ? p1Name : p2Name; }
 function otherPlayer(id)   { return id === 1 ? 2 : 1; }
 
 function updateNames() {
-    if (gameMode === "ai")      p2Name = "AI";
-    if (gameMode === "hotseat") p2Name = "PLAYER 2";
-    if (gameMode === "online")  p2Name = (myId === 1) ? (seats[1]?.name || "Opponent") : (seats[0]?.name || "Opponent");
-    
     const t1 = document.getElementById("t1-name");
     const t2 = document.getElementById("t2-name");
     if(t1) t1.textContent = p1Name.toUpperCase();
@@ -545,18 +636,10 @@ function updateNames() {
 }
 
 // ── 5. ANSWER MATCHING ───────────────────────
-const STOPWORDS = new Set([
-    'a','an','the','to','at','in','on','of','for','and','or','with',
-    'is','are','was','my','your','their','its','some','any','all','be',
-    'by','from','do','go','get','have','has','give','take','make','use'
-]);
+const STOPWORDS = new Set(['a','an','the','to','at','in','on','of','for','and','or','with','is','are','was','my','your','their','its','some','any','all','be','by','from','do','go','get','have','has','give','take','make','use']);
 
 function normalizeText(str) {
-    return str.toLowerCase()
-        .replace(/['-]/g, ' ')
-        .replace(/[^a-z0-9\s]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+    return str.toLowerCase().replace(/['-]/g, ' ').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function getKeywords(str) {
@@ -567,22 +650,17 @@ function matchAnswer(input, answers) {
     if (!input || !input.trim()) return -1;
     const normInput  = normalizeText(input);
     const inputKeys  = getKeywords(input);
-
     for (let i = 0; i < answers.length; i++) {
         if (answers[i].revealed) continue;
         const normAns = normalizeText(answers[i].text);
         const ansKeys = getKeywords(answers[i].text);
-
         if (normInput === normAns) return i;
-
         if (normAns.length > 3 && (normInput.includes(normAns) || normAns.includes(normInput))) return i;
-
         if (ansKeys.length > 0 && inputKeys.length > 0) {
             const overlap = inputKeys.filter(k => ansKeys.includes(k));
             if (overlap.length >= Math.min(ansKeys.length, inputKeys.length)) return i;
             if (ansKeys.length === 1 && overlap.length >= 1) return i;
         }
-
         if (answers[i].aliases) {
             for (const alias of answers[i].aliases) {
                 const normAlias = normalizeText(alias);
@@ -598,15 +676,15 @@ function matchAnswer(input, answers) {
 function renderBoard() {
     for (let i = 0; i < 8; i++) {
         const tile    = document.getElementById(`tile-${i}`);
+        if (!tile) continue;
         const tileAns = tile.querySelector('.t-ans');
         const tilePts = tile.querySelector('.t-pts');
         const tileNum = tile.querySelector('.t-num');
-
         if (i < roundAnswers.length) {
             tile.classList.remove('hidden');
-            tileNum.textContent  = i + 1;
-            tileAns.textContent  = roundAnswers[i].text.toUpperCase();
-            tilePts.textContent  = roundAnswers[i].pts;
+            if (tileNum) tileNum.textContent  = i + 1;
+            if (tileAns) tileAns.textContent  = roundAnswers[i].text.toUpperCase();
+            if (tilePts) tilePts.textContent  = roundAnswers[i].pts;
             tile.classList.toggle('revealed', roundAnswers[i].revealed);
         } else {
             tile.classList.add('hidden');
@@ -618,36 +696,50 @@ function renderBoard() {
 function renderStrikes() {
     for (let i = 0; i < 3; i++) {
         const box = document.getElementById(`s${i + 1}`);
-        box.classList.toggle('active', i < strikes);
-        box.textContent = i < strikes ? '✗' : '';
+        if (box) {
+            box.classList.toggle('active', i < strikes);
+            box.textContent = i < strikes ? '✗' : '';
+        }
     }
 }
 
 function renderScores() {
-    document.getElementById("t1-pts").textContent = scores.p1;
-    document.getElementById("t2-pts").textContent = scores.p2;
-    document.getElementById("team1-block").classList.toggle("active", activePlayer === 1 && gamePhase === "playing");
-    document.getElementById("team2-block").classList.toggle("active", activePlayer === 2 && gamePhase === "playing");
+    const t1pts = document.getElementById("t1-pts");
+    const t2pts = document.getElementById("t2-pts");
+    if (t1pts) t1pts.textContent = scores.p1;
+    if (t2pts) t2pts.textContent = scores.p2;
+    
+    const team1 = document.getElementById("team1-block");
+    const team2 = document.getElementById("team2-block");
+    
+    // Highlight based on current state (Face-off vs Answering)
+    if (gamePhase === "faceoff") {
+        if(team1) team1.classList.remove("active");
+        if(team2) team2.classList.remove("active");
+    } else {
+        if(team1) team1.classList.toggle("active", activePlayer === 1);
+        if(team2) team2.classList.toggle("active", activePlayer === 2);
+    }
 }
 
-function setBoardPts(pts) {
-    document.getElementById("board-pts-display").textContent = pts > 0 ? pts : "—";
+function setBoardPts(pts) { 
+    const el = document.getElementById("board-pts-display");
+    if (el) el.textContent = pts > 0 ? pts : "—"; 
 }
-
-function setPhaseTag(text)     { document.getElementById("phase-tag").textContent        = text; }
-function setQuestion(text)     { document.getElementById("question-text").textContent    = text; }
-function setActiveBanner(text) { document.getElementById("active-team-banner").textContent = text; }
-function setRoundLabel(r)      { document.getElementById("round-label").textContent = `ROUND ${r} OF ${totalRounds}`; }
-
-function showBuzzZone()  { document.getElementById("buzz-zone").classList.remove("hidden"); }
-function hideBuzzZone()  { document.getElementById("buzz-zone").classList.add("hidden"); }
-function showGuessZone() { document.getElementById("guess-zone").classList.remove("hidden"); }
-function hideGuessZone() { document.getElementById("guess-zone").classList.add("hidden"); }
-function showStartBtn()  { document.getElementById("start-btn").classList.remove("hidden"); }
-function hideStartBtn()  { document.getElementById("start-btn").classList.add("hidden"); }
+function setPhaseTag(text)     { const el = document.getElementById("phase-tag"); if(el) el.textContent = text; }
+function setQuestion(text)     { const el = document.getElementById("question-text"); if(el) el.textContent = text; }
+function setActiveBanner(text) { const el = document.getElementById("active-team-banner"); if(el) el.textContent = text; }
+function setRoundLabel(r)      { const el = document.getElementById("round-label"); if(el) el.textContent = `ROUND ${r} OF ${totalRounds}`; }
+function showBuzzZone()  { const el = document.getElementById("buzz-zone"); if(el) el.classList.remove("hidden"); }
+function hideBuzzZone()  { const el = document.getElementById("buzz-zone"); if(el) el.classList.add("hidden"); }
+function showGuessZone() { const el = document.getElementById("guess-zone"); if(el) el.classList.remove("hidden"); }
+function hideGuessZone() { const el = document.getElementById("guess-zone"); if(el) el.classList.add("hidden"); }
+function showStartBtn()  { const el = document.getElementById("start-btn"); if(el) el.classList.remove("hidden"); }
+function hideStartBtn()  { const el = document.getElementById("start-btn"); if(el) el.classList.add("hidden"); }
 
 function showFlash(id) {
     const el = document.getElementById(id);
+    if (!el) return;
     el.classList.remove("flash");
     void el.offsetWidth;
     el.classList.add("flash");
@@ -655,11 +747,13 @@ function showFlash(id) {
 }
 
 function setGuessInputActive(active) {
-    document.getElementById("guess-input").disabled  = !active;
-    document.getElementById("guess-btn").disabled    = !active;
-    if (active) {
-        document.getElementById("guess-input").value = "";
-        document.getElementById("guess-input").focus();
+    const input = document.getElementById("guess-input");
+    const btn = document.getElementById("guess-btn");
+    if (input) input.disabled = !active;
+    if (btn) btn.disabled = !active;
+    if (active && input) {
+        input.value = "";
+        input.focus();
     }
 }
 
@@ -678,7 +772,6 @@ function resetGame() {
     buzzLocked    = false;
     buzzProcessed = false;
     roundAnswers  = [];
-
     renderStrikes();
     renderScores();
     setBoardPts(0);
@@ -688,24 +781,27 @@ function resetGame() {
     hideBuzzZone();
     hideGuessZone();
     showStartBtn();
-
     for (let i = 0; i < 8; i++) {
         const t = document.getElementById(`tile-${i}`);
-        t.classList.add('hidden');
-        t.classList.remove('revealed');
+        if (t) {
+            t.classList.add('hidden');
+            t.classList.remove('revealed');
+        }
     }
-
-    document.getElementById("game-over-modal").classList.add("hidden");
-    document.getElementById("pass-btn").classList.add("hidden");
-    document.getElementById("steal-btn").classList.add("hidden");
-    document.getElementById("guess-row").classList.remove("hidden");
+    const modal = document.getElementById("game-over-modal");
+    if (modal) modal.classList.add("hidden");
+    const passBtn = document.getElementById("pass-btn");
+    if (passBtn) passBtn.classList.add("hidden");
+    const stealBtn = document.getElementById("steal-btn");
+    if (stealBtn) stealBtn.classList.add("hidden");
+    const guessRow = document.getElementById("guess-row");
+    if (guessRow) guessRow.classList.remove("hidden");
     updateNames();
 }
 
 function startGame() {
-    // AUDIT: Tracking game start
+    if (gameMode === "online" && !isHost) return;
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("feud");
-
     currentRound  = 0;
     scores        = { p1: 0, p2: 0 };
     usedQuestions = [];
@@ -723,20 +819,20 @@ function startNextRound() {
     faceoffWinner = 0;
     buzzLocked   = false;
     buzzProcessed = false;
-
     setRoundLabel(currentRound);
     renderStrikes();
     setBoardPts(0);
     renderScores();
-
-    let available = QUESTIONS.map((_, i) => i).filter(i => !usedQuestions.includes(i));
-    if (available.length === 0) { usedQuestions = []; available = QUESTIONS.map((_, i) => i); }
-    currentQuestionIndex = available[Math.floor(Math.random() * available.length)];
-    usedQuestions.push(currentQuestionIndex);
-
+    
+    if (isHost) {
+        let available = QUESTIONS.map((_, i) => i).filter(i => !usedQuestions.includes(i));
+        if (available.length === 0) { usedQuestions = []; available = QUESTIONS.map((_, i) => i); }
+        currentQuestionIndex = available[Math.floor(Math.random() * available.length)];
+        usedQuestions.push(currentQuestionIndex);
+    }
+    
     const q = QUESTIONS[currentQuestionIndex];
     roundAnswers = q.answers.map(a => ({ ...a, revealed: false }));
-
     setQuestion(q.q);
     renderBoard();
     startFaceoff();
@@ -748,14 +844,17 @@ function startFaceoff() {
     gamePhase = "faceoff";
     setPhaseTag("FACE-OFF");
     hideGuessZone();
-    document.getElementById("pass-btn").classList.add("hidden");
-    document.getElementById("steal-btn").classList.add("hidden");
-    document.getElementById("guess-row").classList.remove("hidden");
+    const passBtn = document.getElementById("pass-btn");
+    if (passBtn) passBtn.classList.add("hidden");
+    const stealBtn = document.getElementById("steal-btn");
+    if (stealBtn) stealBtn.classList.add("hidden");
+    const guessRow = document.getElementById("guess-row");
+    if (guessRow) guessRow.classList.remove("hidden");
     buzzLocked = false;
     buzzProcessed = false;
     setupBuzzZone();
     showBuzzZone();
-
+    renderScores();
     if (isBotTurn(2)) {
         const stats = getAiStats();
         const delay = stats.buzzMin + Math.random() * (stats.buzzMax - stats.buzzMin);
@@ -770,6 +869,7 @@ function startFaceoff() {
 
 function setupBuzzZone() {
     const buzzZone = document.getElementById("buzz-zone");
+    if (!buzzZone) return;
     if (gameMode === "hotseat") {
         buzzZone.innerHTML = `
             <div style="display:flex;gap:10px;width:100%;">
@@ -777,12 +877,14 @@ function setupBuzzZone() {
                     🔔 ${p1Name.toUpperCase()}<br><small style="font-size:0.6rem;opacity:0.7;letter-spacing:3px;">SPACE</small>
                 </button>
                 <button id="buzz-btn-p2" style="flex:1;padding:16px;background:linear-gradient(180deg,#e53030,#9e1414);border:none;border-radius:10px;cursor:pointer;font-family:'Anton',sans-serif;font-size:1rem;letter-spacing:2px;color:#fff;line-height:1.3;">
-                    🔔 PLAYER 2<br><small style="font-size:0.6rem;opacity:0.7;letter-spacing:3px;">ENTER</small>
+                    🔔 ${p2Name.toUpperCase()}<br><small style="font-size:0.6rem;opacity:0.7;letter-spacing:3px;">ENTER</small>
                 </button>
             </div>
         `;
-        document.getElementById("buzz-btn-p1").onclick = () => handleBuzz(1);
-        document.getElementById("buzz-btn-p2").onclick = () => handleBuzz(2);
+        const p1Btn = document.getElementById("buzz-btn-p1");
+        const p2Btn = document.getElementById("buzz-btn-p2");
+        if(p1Btn) p1Btn.onclick = () => handleBuzz(1);
+        if(p2Btn) p2Btn.onclick = () => handleBuzz(2);
     } else {
         buzzZone.innerHTML = `
             <button id="buzz-btn">
@@ -791,7 +893,8 @@ function setupBuzzZone() {
             </button>
             <div id="buzz-hint">Press <kbd>SPACE</kbd> to buzz in</div>
         `;
-        document.getElementById("buzz-btn").onclick = () => {
+        const btn = document.getElementById("buzz-btn");
+        if(btn) btn.onclick = () => {
             if (gameMode === "online") { onlineBuzz(myId); return; }
             handleBuzz(1);
         };
@@ -802,14 +905,11 @@ function handleBuzz(player) {
     if (buzzLocked || gamePhase !== "faceoff") return;
     buzzLocked = true;
     if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
-
     hideBuzzZone();
     faceoffWinner    = player;
     activePlayer     = player;
     gamePhase        = "faceoff-answering";
-
     SystemUI.playSound('click');
-
     if (isBotTurn(player)) {
         setPhaseTag("AI BUZZED IN!");
         setTimeout(() => aiAnswerFaceoff(player), 900);
@@ -818,28 +918,25 @@ function handleBuzz(player) {
         setPhaseTag(`${name} BUZZED IN!`);
         showFaceoffInput(player);
     }
-
-    if (gameMode === "online") pushGameState();
+    renderScores();
+    if (gameMode === "online" && isHost) pushGameState();
 }
 
 function showFaceoffInput(player) {
     const name    = getPlayerName(player).toUpperCase();
     const canType = (gameMode === "online") ? (player === myId) : true;
-
     setActiveBanner(`${name} — WHAT'S YOUR ANSWER?`);
     showGuessZone();
-    document.getElementById("pass-btn").classList.add("hidden");
-    document.getElementById("steal-btn").classList.add("hidden");
+    const passBtn = document.getElementById("pass-btn");
+    if(passBtn) passBtn.classList.add("hidden");
+    const stealBtn = document.getElementById("steal-btn");
+    if(stealBtn) stealBtn.classList.add("hidden");
     setGuessInputActive(canType);
-
-    if (!canType) {
-        setActiveBanner(`${name} IS ANSWERING...`);
-    }
+    if (!canType) setActiveBanner(`${name} IS ANSWERING...`);
 }
 
 function handleFaceoffGuess(input) {
     const matchIdx = matchAnswer(input, roundAnswers);
-
     if (matchIdx >= 0) {
         roundAnswers[matchIdx].revealed = true;
         boardPoints += roundAnswers[matchIdx].pts;
@@ -852,22 +949,17 @@ function handleFaceoffGuess(input) {
     } else {
         showFlash("wrong-flash");
         SystemUI.playSound('lose');
-
         if (activePlayer === faceoffWinner) {
             const other = otherPlayer(faceoffWinner);
             activePlayer = other;
             gamePhase    = "faceoff-answering";
-
-            if (isBotTurn(other)) {
-                setTimeout(() => aiAnswerFaceoff(other), 800);
-            } else {
-                showFaceoffInput(other);
-            }
+            if (isBotTurn(other)) setTimeout(() => aiAnswerFaceoff(other), 800);
+            else showFaceoffInput(other);
         } else {
             activePlayer = faceoffWinner;
             startPlaying();
         }
-        if (gameMode === "online") pushGameState();
+        if (gameMode === "online" && isHost) pushGameState();
     }
 }
 
@@ -877,80 +969,81 @@ function goToPlayOrPass() {
     const winnerName = getPlayerName(faceoffWinner).toUpperCase();
     setPhaseTag("PLAY OR PASS?");
     setActiveBanner(`${winnerName} — PLAY OR PASS TO OPPONENT?`);
-
     showGuessZone();
-    document.getElementById("guess-row").classList.add("hidden");     
-    document.getElementById("pass-btn").textContent = "PASS TO OPPONENT";
-    document.getElementById("pass-btn").classList.remove("hidden");
-
+    const guessRow = document.getElementById("guess-row");
+    if(guessRow) guessRow.classList.add("hidden");     
+    const passBtn = document.getElementById("pass-btn");
+    if(passBtn) {
+        passBtn.textContent = "PASS TO OPPONENT";
+        passBtn.classList.remove("hidden");
+        passBtn.onclick = () => { if (gamePhase === "play-or-pass") choosePass(); };
+    }
     const playBtn = document.getElementById("steal-btn");
-    playBtn.textContent  = "PLAY!";
-    playBtn.style.cssText = "flex:1;background:linear-gradient(180deg,#22c55e,#16a34a);box-shadow:0 4px 18px rgba(34,197,94,0.4);animation:none;";
-    playBtn.classList.remove("hidden");
-    playBtn.onclick = () => { if (gamePhase === "play-or-pass") choosePlay(); };
-    document.getElementById("pass-btn").onclick = () => { if (gamePhase === "play-or-pass") choosePass(); };
-
-    const canChoose = (gameMode === "online") ? (faceoffWinner === myId)
-                    : (gameMode === "hotseat") ? true
-                    : (faceoffWinner === 1);
-
-    document.getElementById("pass-btn").disabled  = !canChoose;
-    document.getElementById("steal-btn").disabled = !canChoose;
-
+    if(playBtn) {
+        playBtn.textContent  = "PLAY!";
+        playBtn.style.cssText = "flex:1;background:linear-gradient(180deg,#22c55e,#16a34a);box-shadow:0 4px 18px rgba(34,197,94,0.4);animation:none;";
+        playBtn.classList.remove("hidden");
+        playBtn.onclick = () => { if (gamePhase === "play-or-pass") choosePlay(); };
+    }
+    const canChoose = (gameMode === "online") ? (faceoffWinner === myId) : (gameMode === "hotseat") ? true : (faceoffWinner === 1);
+    if(passBtn) passBtn.disabled  = !canChoose;
+    if(playBtn) playBtn.disabled = !canChoose;
     if (!canChoose && isBotTurn(faceoffWinner)) {
         setTimeout(() => {
             const remaining = roundAnswers.filter(a => !a.revealed).length;
             (remaining > 2) ? choosePlay() : (Math.random() < 0.35 ? choosePass() : choosePlay());
         }, 1200);
     }
-
-    if (gameMode === "online") pushGameState();
+    if (gameMode === "online" && isHost) pushGameState();
 }
 
 function choosePlay() {
     activePlayer = faceoffWinner;
     restoreAfterPlayOrPass();
     startPlaying();
-    if (gameMode === "online") pushGameState();
+    if (gameMode === "online" && isHost) pushGameState();
 }
 
 function choosePass() {
     activePlayer = otherPlayer(faceoffWinner);
     restoreAfterPlayOrPass();
     startPlaying();
-    if (gameMode === "online") pushGameState();
+    if (gameMode === "online" && isHost) pushGameState();
 }
 
 function restoreAfterPlayOrPass() {
-    document.getElementById("guess-row").classList.remove("hidden");
-    document.getElementById("pass-btn").classList.add("hidden");
-
+    const guessRow = document.getElementById("guess-row");
+    if(guessRow) guessRow.classList.remove("hidden");
+    const passBtn = document.getElementById("pass-btn");
+    if(passBtn) {
+        passBtn.classList.add("hidden");
+        passBtn.disabled = false;
+    }
     const stealBtn = document.getElementById("steal-btn");
-    stealBtn.classList.add("hidden");
-    stealBtn.textContent  = "⚡ STEAL!";
-    stealBtn.style.cssText = "";
-    stealBtn.onclick       = null;
-    stealBtn.disabled      = false;
-    document.getElementById("pass-btn").disabled = false;
+    if(stealBtn) {
+        stealBtn.classList.add("hidden");
+        stealBtn.textContent  = "⚡ STEAL!";
+        stealBtn.style.cssText = "";
+        stealBtn.onclick       = null;
+        stealBtn.disabled      = false;
+    }
 }
 
 // ── PLAYING ──────────────────────────────────
 function startPlaying() {
     gamePhase = "playing";
     setPhaseTag("PLAYING");
-
     const name    = getPlayerName(activePlayer).toUpperCase();
     const canPlay = isMyTurn();
-
     setActiveBanner(`${name} IS PLAYING`);
     showGuessZone();
-    document.getElementById("pass-btn").classList.add("hidden");
-    document.getElementById("steal-btn").classList.add("hidden");
+    const passBtn = document.getElementById("pass-btn");
+    if(passBtn) passBtn.classList.add("hidden");
+    const stealBtn = document.getElementById("steal-btn");
+    if(stealBtn) stealBtn.classList.add("hidden");
     setGuessInputActive(canPlay);
-
     if (!canPlay) setActiveBanner(`⏳ ${name} IS GUESSING...`);
     renderScores();
-
     if (isBotTurn(activePlayer)) {
         setGuessInputActive(false);
         setActiveBanner("🤖 AI IS GUESSING...");
@@ -959,9 +1052,10 @@ function startPlaying() {
 }
 
 function handleGuess(input) {
-    if (gamePhase !== "playing") return;
+    if (gamePhase !== "playing" && gamePhase !== "faceoff-answering" && gamePhase !== "steal") return;
+    
+    // In Online mode, Guest's logic runs locally and then they broadcast the new state
     const matchIdx = matchAnswer(input, roundAnswers);
-
     if (matchIdx >= 0) {
         roundAnswers[matchIdx].revealed = true;
         boardPoints += roundAnswers[matchIdx].pts;
@@ -969,27 +1063,25 @@ function handleGuess(input) {
         renderBoard();
         showFlash("correct-flash");
         SystemUI.playSound('win');
-        document.getElementById("guess-input").value = "";
-
+        const inputEl = document.getElementById("guess-input");
+        if(inputEl) inputEl.value = "";
+        
         const allRevealed = roundAnswers.every(a => a.revealed);
         if (allRevealed) { setTimeout(() => endRound(activePlayer), 800); return; }
-
+        
         if (gameMode === "online") pushGameState();
         if (isBotTurn(activePlayer)) scheduleAiGuess(activePlayer);
-
     } else {
         strikes++;
         renderStrikes();
         showFlash("wrong-flash");
         showFlash("strike-flash");
         SystemUI.playSound('lose');
-        document.getElementById("guess-input").value = "";
-
-        if (strikes >= 3) {
-            setTimeout(() => startSteal(), 1000);
-            return;
-        }
-
+        const inputEl = document.getElementById("guess-input");
+        if(inputEl) inputEl.value = "";
+        
+        if (strikes >= 3) { setTimeout(() => startSteal(), 1000); return; }
+        
         if (gameMode === "online") pushGameState();
         if (isBotTurn(activePlayer)) scheduleAiGuess(activePlayer);
     }
@@ -1002,20 +1094,16 @@ function startSteal() {
     const stealerName = getPlayerName(stealer).toUpperCase();
     setPhaseTag("STEAL!");
     setActiveBanner(`${stealerName} — ONE GUESS TO STEAL!`);
-
     showGuessZone();
-    document.getElementById("pass-btn").classList.add("hidden");
-    document.getElementById("steal-btn").classList.add("hidden");
-
-    const canSteal = (gameMode === "online") ? (stealer === myId)
-                   : (gameMode === "hotseat") ? true
-                   : (stealer === 1);
-
+    const passBtn = document.getElementById("pass-btn");
+    if(passBtn) passBtn.classList.add("hidden");
+    const stealBtn = document.getElementById("steal-btn");
+    if(stealBtn) stealBtn.classList.add("hidden");
+    const canSteal = (gameMode === "online") ? (stealer === myId) : (gameMode === "hotseat") ? true : (stealer === 1);
     setGuessInputActive(canSteal);
     if (!canSteal) setActiveBanner(`🤖 AI ATTEMPTING STEAL...`);
-
-    if (gameMode === "online") pushGameState();
-
+    renderScores();
+    if (gameMode === "online" && isHost) pushGameState();
     if (isBotTurn(stealer)) {
         setGuessInputActive(false);
         const stats = getAiStats();
@@ -1024,16 +1112,13 @@ function startSteal() {
             if (unrevealed.length > 0 && Math.random() < stats.stealAcc) {
                 const sorted = [...unrevealed].sort((a, b) => b.pts - a.pts);
                 handleStealGuess(sorted[0].text, stealer);
-            } else {
-                handleStealGuess("_no_match_", stealer);
-            }
+            } else handleStealGuess("_no_match_", stealer);
         }, stats.guessMin + Math.random() * (stats.guessMax - stats.guessMin));
     }
 }
 
 function handleStealGuess(input, player) {
     const matchIdx = matchAnswer(input, roundAnswers);
-
     if (matchIdx >= 0) {
         roundAnswers[matchIdx].revealed = true;
         renderBoard();
@@ -1046,7 +1131,6 @@ function handleStealGuess(input, player) {
         SystemUI.playSound('lose');
         setTimeout(() => endRound(activePlayer), 800);
     }
-
     if (gameMode === "online") pushGameState();
 }
 
@@ -1055,61 +1139,47 @@ function endRound(winner) {
     gamePhase = "roundover";
     roundAnswers.forEach(a => { a.revealed = true; });
     renderBoard();
-
-    if (winner === 1) scores.p1 += boardPoints;
-    else              scores.p2 += boardPoints;
+    if (winner === 1) scores.p1 += boardPoints; else scores.p2 += boardPoints;
     renderScores();
-
     const wName = getPlayerName(winner).toUpperCase();
     setPhaseTag(`${wName} WINS THE ROUND!`);
     setActiveBanner(`+${boardPoints} POINTS FOR ${wName}!`);
     hideGuessZone();
     SystemUI.playSound('win');
-
-    if (gameMode === "online") pushGameState();
-
-    setTimeout(() => {
-        if (currentRound >= totalRounds) endGame();
-        else startNextRound();
-    }, 3200);
+    if (gameMode === "online" && isHost) pushGameState();
+    setTimeout(() => { if (currentRound >= totalRounds) endGame(); else startNextRound(); }, 3200);
 }
 
 function endGame() {
     gamePhase = "gameover";
     const winner = scores.p1 > scores.p2 ? 1 : scores.p2 > scores.p1 ? 2 : 0;
     const wName  = winner === 0 ? "TIE" : getPlayerName(winner);
-
-    document.getElementById("game-over-emoji").textContent = winner === 0 ? "🤝" : "🏆";
-    document.getElementById("game-over-title").textContent = winner === 0 ? "IT'S A TIE!" : `${wName.toUpperCase()} WINS!`;
-    document.getElementById("game-over-msg").textContent   = `${p1Name}: ${scores.p1} pts  —  ${p2Name}: ${scores.p2} pts`;
-    document.getElementById("game-over-modal").classList.remove("hidden");
-
+    const emoji = document.getElementById("game-over-emoji");
+    if(emoji) emoji.textContent = winner === 0 ? "🤝" : "🏆";
+    const title = document.getElementById("game-over-title");
+    if(title) title.textContent = winner === 0 ? "IT'S A TIE!" : `${wName.toUpperCase()} WINS!`;
+    const msg = document.getElementById("game-over-msg");
+    if(msg) msg.textContent   = `${p1Name}: ${scores.p1} pts  —  ${p2Name}: ${scores.p2} pts`;
+    const modal = document.getElementById("game-over-modal");
+    if(modal) modal.classList.remove("hidden");
     SystemUI.playSound(winner === 1 ? 'win' : 'lose');
-
-    // AUDIT: Tracking win/loss
     if (typeof SystemStats !== 'undefined') {
-        if (winner === 1) SystemStats.recordWin("feud", 0);
-        else if (winner === 2) SystemStats.recordLoss("feud");
+        if (winner === 1) SystemStats.recordWin("feud", 0); else if (winner === 2) SystemStats.recordLoss("feud");
     }
-
     if (gameMode === "online" && isHost && window.db) {
-        window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-            status: "finished", winner: wName
-        });
+        window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), { status: "finished", winner: wName });
     }
 }
 
-// ── 17. AI BRAIN ──────────────────────────────
+// ── AI BRAIN ──────────────────────────────
 function scheduleAiGuess(player) {
     if (gamePhase !== "playing" || !isBotTurn(player)) return;
     if (aiTimer) clearTimeout(aiTimer);
-
     const stats = getAiStats();
     aiTimer = setTimeout(() => {
         if (gamePhase !== "playing" || !isBotTurn(player)) return;
         const unrevealed = roundAnswers.filter(a => !a.revealed);
         if (unrevealed.length === 0) return;
-
         const sorted    = [...unrevealed].sort((a, b) => b.pts - a.pts);
         const aiSuccess = Math.random() < stats.guessAcc;
         handleGuess(aiSuccess ? sorted[0].text : "_no_match_");
@@ -1119,61 +1189,51 @@ function scheduleAiGuess(player) {
 function aiAnswerFaceoff(player) {
     const unrevealed = roundAnswers.filter(a => !a.revealed);
     if (unrevealed.length === 0) return;
-    
     const stats = getAiStats();
     const topAnswer  = unrevealed.reduce((best, cur) => cur.pts > best.pts ? cur : best, unrevealed[0]);
     const aiSuccess  = Math.random() < stats.faceoffAcc;
-
-    setTimeout(() => {
-        handleFaceoffGuess(aiSuccess ? topAnswer.text : "_no_match_");
-    }, 600);
+    setTimeout(() => { handleFaceoffGuess(aiSuccess ? topAnswer.text : "_no_match_"); }, 600);
 }
 
 // ── 9. EVENT LISTENERS ───────────────────────
-document.getElementById("start-btn").addEventListener("click", startGame);
+const startBtn = document.getElementById("start-btn");
+if(startBtn) startBtn.addEventListener("click", startGame);
 
-document.getElementById("guess-btn").addEventListener("click", () => {
-    const val = document.getElementById("guess-input").value.trim();
+const guessBtn = document.getElementById("guess-btn");
+if(guessBtn) guessBtn.addEventListener("click", () => {
+    const input = document.getElementById("guess-input");
+    const val = input ? input.value.trim() : "";
     if (!val) return;
-
-    if      (gamePhase === "faceoff-answering") handleFaceoffGuess(val);
-    else if (gamePhase === "playing")           handleGuess(val);
-    else if (gamePhase === "steal") {
-        handleStealGuess(val, otherPlayer(activePlayer));
-    }
+    if (gamePhase === "faceoff-answering") handleFaceoffGuess(val);
+    else if (gamePhase === "playing") handleGuess(val);
+    else if (gamePhase === "steal") handleStealGuess(val, otherPlayer(activePlayer));
 });
 
-document.getElementById("guess-input").addEventListener("keydown", e => {
-    if (e.key === "Enter") { e.preventDefault(); document.getElementById("guess-btn").click(); }
-});
+const guessInput = document.getElementById("guess-input");
+if(guessInput) guessInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); const btn = document.getElementById("guess-btn"); if(btn) btn.click(); } });
 
-document.getElementById("btn-play-again").addEventListener("click", () => {
-    document.getElementById("game-over-modal").classList.add("hidden");
+const playAgain = document.getElementById("btn-play-again");
+if(playAgain) playAgain.addEventListener("click", () => {
+    const modal = document.getElementById("game-over-modal");
+    if(modal) modal.classList.add("hidden");
     resetGame();
     if (gameMode === "ai" || gameMode === "hotseat") startGame();
     else {
         showStartBtn();
-        if (isHost) document.getElementById("start-btn").disabled = false;
-        else {
-            document.getElementById("start-btn").innerText   = "Waiting for Host...";
-            document.getElementById("start-btn").disabled    = true;
-        }
+        const btn = document.getElementById("start-btn");
+        if (isHost) { if(btn) btn.disabled = false; }
+        else { if(btn) { btn.innerText = "Waiting for Host..."; btn.disabled = true; } }
     }
 });
 
 document.addEventListener("keydown", e => {
     if (gamePhase !== "faceoff") return;
-
     if (e.key === " " || e.key === "Spacebar") {
         e.preventDefault();
         if (gameMode === "online")  { onlineBuzz(myId); return; }
-        if (gameMode === "hotseat") { handleBuzz(1); return; }
         handleBuzz(1);
     }
-
-    if (e.key === "Enter" && gameMode === "hotseat") {
-        if (document.activeElement.tagName === "BUTTON") return;
-        e.preventDefault();
-        handleBuzz(2);
-    }
+    if (e.key === "Enter" && gameMode === "hotseat") { if (document.activeElement.tagName === "BUTTON") return; e.preventDefault(); handleBuzz(2); }
 });
+
+window.addEventListener("beforeunload", () => { if (isHost && currentRoomId && gameMode === "online") window.dbSet(window.dbRef(window.db, `feud_rooms/${currentRoomId}`), null); });

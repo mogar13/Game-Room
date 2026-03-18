@@ -379,6 +379,7 @@ function determineWinner() {
     title = "Blackjack!"; message = `Natural 21! Won $${currentBet * 1.5}!`;
     SystemUI.money += (currentBet * 2.5); winStreak++; SystemUI.playSound('win');
     if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", currentBet * 2.5);
+    if (typeof SystemUI.unlockAchievement !== 'undefined') SystemUI.unlockAchievement("blackjack_hand");
   } else if (dScore > 21 || pScore > dScore) {
     title = "You Win!"; message = `Beat the dealer! Won $${currentBet * 2}!`;
     SystemUI.money += (currentBet * 2); winStreak++; SystemUI.playSound('win');

@@ -329,10 +329,43 @@ body { overflow: visible !important; }
 #sys-chat-send:active { transform: scale(0.9); }
 
 /* =========================================
+   PC CHAT BUTTON ENHANCEMENT
+   ========================================= */
+@media screen and (min-width: 601px) and (min-height: 451px) {
+    #sys-btn-chat.chat-visible {
+        width: auto !important;
+        height: auto !important;
+        padding: 6px 18px !important;
+        background: linear-gradient(135deg, #3498db, #2980b9) !important;
+        color: #fff !important;
+        border-radius: 20px !important;
+        font-size: 0.8rem !important;
+        font-family: 'Orbitron', sans-serif !important;
+        letter-spacing: 1px !important;
+        border: 1px solid #85c1e9 !important;
+        box-shadow: 0 4px 12px rgba(52, 152, 219, 0.5) !important;
+        transition: all 0.2s ease !important;
+        justify-content: center;
+        align-items: center;
+    }
+    #sys-btn-chat.chat-visible:hover {
+        transform: scale(1.05) !important;
+        box-shadow: 0 6px 16px rgba(52, 152, 219, 0.7) !important;
+    }
+    #sys-chat-badge {
+        top: -5px !important;
+        right: -5px !important;
+        width: 14px !important;
+        height: 14px !important;
+        border: 2px solid #111 !important;
+    }
+}
+
+/* =========================================
    MOBILE CHAT FIX (FLOATING BUBBLE)
    ========================================= */
 /* Placed at the very bottom so it correctly overrides the base styles */
-@media screen and (max-width: 950px), screen and (max-height: 500px) {
+@media screen and (max-width: 600px), screen and (max-height: 450px) {
     #sys-btn-chat.chat-visible {
         position: fixed !important;
         bottom: 30px !important;

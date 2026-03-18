@@ -103,12 +103,13 @@ let opponentStack = 0;
 let pot = 0;
 let playerBet = 0;
 let opponentBet = 0;
-let dealerButton = 1; // 1 = player, 2 = opponent
-let currentPhase = "preflop"; // preflop, flop, turn, river, showdown
-let activeTurn = 1; // 1 = player, 2 = opponent
+let dealerButton = 1; 
+let currentPhase = "preflop"; 
+let activeTurn = 1; 
 let lastAction = "";
 let isGameOver = false;
 let gameIsActive = false;
+let isAllIn = false;
 let allCommunityCards = [];
 let lastActionTs      = 0;
 let joinerBoughtIn    = false;
@@ -180,99 +181,78 @@ function getRankValue(rank) {
     return parseInt(rank);
 }
 
+function getCombinations(array, size) {
+    let result = [];
+    function p(t, i) {
+        if (t.length === size) { result.push(t); return; }
+        if (i + 1 <= array.length) { p(t.concat([array[i]]), i + 1); p(t, i + 1); }
+    }
+    p([], 0);
+    return result;
+}
+
 function evaluateHand(cards) {
-    // Basic hand evaluator for 1v1
-    // Returns { score, label }
-    // Higher score = better hand
+    let evalCards = [...cards];
+    // Pad partial hands to 5 to avoid crashing during early AI eval
+    while (evalCards.length < 5) {
+        evalCards.push({ rank: '2', suit: 'none' + Math.random() });
+    }
     
-    // Sort cards by rank value
-    let sorted = [...cards].sort((a, b) => getRankValue(b.rank) - getRankValue(a.rank));
-    let ranks = sorted.map(c => c.rank);
-    let suits = sorted.map(c => c.suit);
+    let combos = getCombinations(evalCards, 5);
+    let bestScore = -1;
+    let bestLabel = "";
     
-    // Count ranks
-    let rankCounts = {};
-    ranks.forEach(r => rankCounts[r] = (rankCounts[r] || 0) + 1);
-    let counts = Object.values(rankCounts).sort((a, b) => b - a);
-    
-    // Check for flush
-    let isFlush = false;
-    let flushSuit = "";
-    ['s','h','d','c'].forEach(s => {
-        if (suits.filter(suit => suit === s).length >= 5) {
-            isFlush = true;
-            flushSuit = s;
+    for (let combo of combos) {
+        let sorted = [...combo].sort((a, b) => getRankValue(b.rank) - getRankValue(a.rank));
+        let ranks = sorted.map(c => getRankValue(c.rank));
+        let suits = sorted.map(c => c.suit);
+        
+        let rankCounts = {};
+        ranks.forEach(r => rankCounts[r] = (rankCounts[r] || 0) + 1);
+        
+        let isFlush = new Set(suits).size === 1;
+        let isStraight = false;
+        let highStraight = 0;
+        
+        // A-5 low straight
+        if (ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2) {
+            isStraight = true; highStraight = 5;
+            ranks = [5, 4, 3, 2, 1]; 
+        } else if (ranks[0] - ranks[4] === 4 && new Set(ranks).size === 5) {
+            isStraight = true; highStraight = ranks[0];
         }
-    });
-
-    // Check for straight
-    let uniqueRanks = [...new Set(ranks.map(r => getRankValue(r)))].sort((a, b) => b - a);
-    let isStraight = false;
-    let highStraight = 0;
-
-    // A-5 low straight
-    if (uniqueRanks.includes(14) && uniqueRanks.includes(2) && uniqueRanks.includes(3) && uniqueRanks.includes(4) && uniqueRanks.includes(5)) {
-        isStraight = true;
-        highStraight = 5;
-    }
-
-    for (let i = 0; i <= uniqueRanks.length - 5; i++) {
-        if (uniqueRanks[i] - uniqueRanks[i+4] === 4) {
-            isStraight = true;
-            highStraight = uniqueRanks[i];
-            break;
+        
+        let groups = Object.keys(rankCounts).map(r => ({ rank: parseInt(r), count: rankCounts[r] }));
+        groups.sort((a, b) => {
+            if (a.count !== b.count) return b.count - a.count;
+            return b.rank - a.rank;
+        });
+        
+        let type = 0;
+        let label = "High Card";
+        
+        if (isStraight && isFlush) { type = 8; label = "Straight Flush"; }
+        else if (groups[0].count === 4) { type = 7; label = "Four of a Kind"; }
+        else if (groups[0].count === 3 && groups[1].count === 2) { type = 6; label = "Full House"; }
+        else if (isFlush) { type = 5; label = "Flush"; }
+        else if (isStraight) { type = 4; label = "Straight"; }
+        else if (groups[0].count === 3) { type = 3; label = "Three of a Kind"; }
+        else if (groups[0].count === 2 && groups[1].count === 2) { type = 2; label = "Two Pair"; }
+        else if (groups[0].count === 2) { type = 1; label = "Pair"; }
+        
+        let score = type * 10000000000 + 
+                    groups[0].rank * 100000000 + 
+                    (groups.length > 1 ? groups[1].rank * 1000000 : 0) + 
+                    (groups.length > 2 ? groups[2].rank * 10000 : 0) + 
+                    (groups.length > 3 ? groups[3].rank * 100 : 0) + 
+                    (groups.length > 4 ? groups[4].rank : 0);
+                    
+        if (score > bestScore) {
+            bestScore = score;
+            bestLabel = label;
         }
     }
-
-    // Straight Flush
-    if (isFlush && isStraight) {
-        // Simple approximation for 1v1 logic
-        return { score: 800 + highStraight, label: "Straight Flush" };
-    }
-
-    // 4 of a Kind
-    if (counts[0] === 4) {
-        let r = Object.keys(rankCounts).find(k => rankCounts[k] === 4);
-        return { score: 700 + getRankValue(r), label: "Four of a Kind" };
-    }
-
-    // Full House
-    if (counts[0] === 3 && counts[1] >= 2) {
-        let r = Object.keys(rankCounts).find(k => rankCounts[k] === 3);
-        return { score: 600 + getRankValue(r), label: "Full House" };
-    }
-
-    // Flush
-    if (isFlush) {
-        let flushCards = sorted.filter(c => c.suit === flushSuit);
-        return { score: 500 + getRankValue(flushCards[0].rank), label: "Flush" };
-    }
-
-    // Straight
-    if (isStraight) {
-        return { score: 400 + highStraight, label: "Straight" };
-    }
-
-    // 3 of a Kind
-    if (counts[0] === 3) {
-        let r = Object.keys(rankCounts).find(k => rankCounts[k] === 3);
-        return { score: 300 + getRankValue(r), label: "Three of a Kind" };
-    }
-
-    // Two Pair
-    if (counts[0] === 2 && counts[1] === 2) {
-        let r = Object.keys(rankCounts).filter(k => rankCounts[k] === 2).map(k => getRankValue(k)).sort((a,b)=>b-a);
-        return { score: 200 + r[0], label: "Two Pair" };
-    }
-
-    // Pair
-    if (counts[0] === 2) {
-        let r = Object.keys(rankCounts).find(k => rankCounts[k] === 2);
-        return { score: 100 + getRankValue(r), label: "Pair" };
-    }
-
-    // High Card
-    return { score: getRankValue(ranks[0]), label: "High Card" };
+    return { score: bestScore, label: bestLabel };
 }
 
 // ── 4. UI RENDERING ───────────────────────────
@@ -288,6 +268,7 @@ function renderTable() {
     playerHand.forEach(card => pContainer.appendChild(createCardUI(card)));
     opponentHand.forEach((card, i) => {
         let isHidden = (currentPhase !== 'showdown' && !isGameOver);
+        if (isAllIn) isHidden = false; // Reveal cards immediately on all-in
         oContainer.appendChild(createCardUI(card, isHidden));
     });
     communityCards.forEach(card => cContainer.appendChild(createCardUI(card)));
@@ -332,7 +313,7 @@ function createCardUI(card, isHidden = false) {
 function updateControls() {
     const ctrl = document.getElementById("poker-controls");
     const myTurn = (gameMode === "online") ? (activeTurn === myId) : (activeTurn === 1);
-    if (!gameIsActive || isGameOver || !myTurn) {
+    if (!gameIsActive || isGameOver || !myTurn || isAllIn) {
         ctrl.classList.add("hidden");
         if (window.SystemUI && SystemUI.enableBetting) SystemUI.enableBetting(false);
         return;
@@ -371,7 +352,6 @@ function startGame() {
     SystemUI.money -= BUY_IN;
     SystemUI.updateMoneyDisplay();
     
-    // AUDIT: Tracking game start
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("poker");
 
     playerStack = BUY_IN;
@@ -392,10 +372,10 @@ function startNewHand() {
     opponentBet = 0;
     currentPhase = "preflop";
     isGameOver = false;
+    isAllIn = false;
     
     dealerButton = (dealerButton === 1) ? 2 : 1;
     
-    // Post Blinds
     if (dealerButton === 1) {
         postBet(1, SMALL_BLIND);
         postBet(2, BIG_BLIND);
@@ -425,10 +405,12 @@ function postBet(player, amt) {
         let actual = Math.min(amt, playerStack);
         playerStack -= actual;
         playerBet += actual;
+        if (playerStack === 0) isAllIn = true;
     } else {
         let actual = Math.min(amt, opponentStack);
         opponentStack -= actual;
         opponentBet += actual;
+        if (opponentStack === 0) isAllIn = true;
     }
 }
 
@@ -477,11 +459,26 @@ function getPlayerName(player) {
 }
 
 function advancePhase() {
-    // Collect bets into pot
     pot += playerBet + opponentBet;
     playerBet = 0;
     opponentBet = 0;
     
+    if (isAllIn) {
+        while(communityCards.length < 5) {
+            if (gameMode === "online") {
+                communityCards.push(allCommunityCards[communityCards.length]);
+            } else {
+                communityCards.push(deck.pop());
+            }
+        }
+        currentPhase = "showdown";
+        setStatus("ALL IN!");
+        SystemUI.playSound('card');
+        renderTable();
+        setTimeout(showdown, 1500);
+        return;
+    }
+
     if (currentPhase === "preflop") {
         currentPhase = "flop";
         if (gameMode === "online") { communityCards = allCommunityCards.slice(0, 3); } else { communityCards.push(deck.pop(), deck.pop(), deck.pop()); }
@@ -516,7 +513,7 @@ function showdown() {
     let winner = 0;
     if (pResult.score > oResult.score) winner = 1;
     else if (oResult.score > pResult.score) winner = 2;
-    else winner = 0; // tie
+    else winner = 0; 
 
     renderTable();
     
@@ -554,8 +551,6 @@ function resolvePot(winner) {
 function checkMatchOver() {
     if (playerStack <= 0) {
         showToast("Match Over", "You went bust! Better luck next time.");
-        
-        // AUDIT: Tracking loss
         if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("poker");
         
         if (gameMode === "online" && isHost) pushHostState("Match Over — " + p2Name + " wins!", true, opponentStack);
@@ -563,8 +558,6 @@ function checkMatchOver() {
         resetGame();
     } else if (opponentStack <= 0) {
         showToast("Match Over", "You cleaned them out! You win the match.");
-        
-        // AUDIT: Tracking win
         if (typeof SystemStats !== 'undefined') SystemStats.recordWin("poker", playerStack);
         
         SystemUI.money += playerStack;
@@ -595,13 +588,54 @@ function resetGame() {
 function aiAction() {
     if (activeTurn !== 2 || isGameOver) return;
     
-    // Simple AI: will always call or check
     const diff = playerBet - opponentBet;
-    if (diff > 0) {
-        postBet(2, diff);
+    const canCheck = (diff === 0);
+    
+    let currentBest = evaluateHand([...opponentHand, ...communityCards]);
+    let handRank = Math.floor(currentBest.score / 10000000000);
+    
+    let action = "check-call";
+    let amount = 0;
+    let r = Math.random();
+    
+    if (aiDiff === "easy") {
+        if (!canCheck && r < 0.2) action = "fold";
+    } else if (aiDiff === "normal") {
+        if (!canCheck && handRank === 0 && diff > BIG_BLIND * 2 && r < 0.7) {
+            action = "fold";
+        } else if (handRank >= 2 && r < 0.4 && opponentStack > BIG_BLIND) {
+            action = "raise";
+            amount = diff + BIG_BLIND * 2;
+        }
+    } else if (aiDiff === "hard") {
+        if (handRank >= 1 && r < 0.5 && opponentStack > BIG_BLIND) {
+            action = "raise";
+            amount = diff + BIG_BLIND * 3;
+        } else if (handRank === 0 && !canCheck && r < 0.8) {
+            if (r < 0.2 && opponentStack > BIG_BLIND) {
+                action = "raise"; amount = diff + BIG_BLIND * 2;
+            } else {
+                action = "fold";
+            }
+        }
+    }
+    
+    if (action === "raise" && amount > opponentStack) amount = opponentStack;
+    if (action === "raise" && amount === 0) action = "check-call";
+
+    if (action === "fold") {
+        fold(2);
+    } else if (action === "raise") {
+        postBet(2, amount);
         SystemUI.playSound('chipStack');
         advancePhase();
     } else {
+        if (diff > 0) {
+            postBet(2, diff);
+            SystemUI.playSound('chipStack');
+        } else {
+            SystemUI.playSound('click');
+        }
         advancePhase();
     }
 }
@@ -614,9 +648,7 @@ document.getElementById("cash-out-btn").addEventListener("click", () => {
         SystemUI.money += playerStack;
         SystemUI.updateMoneyDisplay();
         
-        // AUDIT: Recording cash out win
         if (typeof SystemStats !== 'undefined') SystemStats.recordWin("poker", playerStack);
-        
         resetGame();
     }
 });
@@ -653,8 +685,8 @@ function setupOnlineMode() {
             gameMode = "ai"; myId = 1; isHost = true; chatStarted = false;
             resetGame();
         },
-        onStart:  function() { /* host fires after clicking Start — markRoomStarted handled inside SystemMatch */ },
-        onClose:  function() { if (!gameIsActive) { /* no-op */ } }
+        onStart:  function() { },
+        onClose:  function() { if (!gameIsActive) { } }
     });
 }
 
@@ -668,7 +700,6 @@ function listenToHoldemRoom() {
         SystemMatch.setSeats(data.seats || []);
         SystemUI.v2Lobby.renderSeats(SystemMatch.getSeats());
 
-        // Host: update p2Name and enable Start button when seat 2 fills
         if (isHost && data.seats && data.seats[1] && data.seats[1].type === 'human') {
             p2Name = data.seats[1].name || "Opponent";
             updateNames();
@@ -676,7 +707,6 @@ function listenToHoldemRoom() {
             if (startBtn) startBtn.classList.remove('sys-hidden');
         }
 
-        // Both players: room is now 'playing'
         if (data.status === 'playing') {
             SystemUI.v2Lobby.hide();
             myId   = SystemMatch.getMyId();
@@ -685,26 +715,22 @@ function listenToHoldemRoom() {
                 SystemUI.startChat(roomId, SystemUI.getPlayerName());
                 chatStarted = true;
             }
-            // Host starts the first hand
             if (isHost && !gameIsActive) {
                 p1Name = SystemMatch.getSeatName(1);
                 p2Name = SystemMatch.getSeatName(2);
                 updateNames();
                 startGame();
             }
-            // Joiner: set own name, wait for host to deal
             if (!isHost) {
                 p1Name = SystemUI.getPlayerName();
                 setStatus("Waiting for host to deal...");
             }
         }
 
-        // Joiner receives full authoritative state from host
         if (!isHost && data.gameState) {
             applyHostState(data.gameState);
         }
 
-        // Host receives action from joiner
         if (isHost && data.playerAction && data.playerAction.ts !== lastActionTs) {
             lastActionTs = data.playerAction.ts;
             processJoinerAction(data.playerAction);
@@ -733,6 +759,7 @@ function pushHostState(statusMsg, matchOver, joinerPayout) {
             dealerButton:      dealerButton,
             isGameOver:        isGameOver,
             gameIsActive:      gameIsActive,
+            isAllIn:           isAllIn,
             statusMsg:         statusMsg || currentPhase.toUpperCase(),
             p1Name:            p1Name,
             matchOver:         matchOver    || false,
@@ -784,7 +811,6 @@ function processJoinerAction(payload) {
 
 function applyHostState(state) {
     if (!state) return;
-    // Map host's p1/p2 fields to local player/opponent vars (joiner is always seat 2)
     playerHand        = state.p2Hand            || [];
     opponentHand      = state.p1Hand            || [];
     allCommunityCards = state.allCommunityCards  || [];
@@ -799,9 +825,9 @@ function applyHostState(state) {
     dealerButton      = state.dealerButton      || 1;
     isGameOver        = state.isGameOver        || false;
     gameIsActive      = state.gameIsActive      || false;
+    isAllIn           = state.isAllIn           || false;
     if (state.p1Name) { p2Name = state.p1Name; updateNames(); }
 
-    // Deduct joiner's buy-in on first active hand
     if (gameIsActive && !joinerBoughtIn) {
         joinerBoughtIn = true;
         if (SystemUI.money >= BUY_IN) {

@@ -9,6 +9,9 @@ let gameMode = "ai";
 localStorage.setItem("risk_mode", "ai");
 
 let aiDifficulty = localStorage.getItem("risk_diff") || "normal";
+let lobbyPlayerCount = parseInt(localStorage.getItem("risk_pcount") || "4");
+let lobbySetupMode   = localStorage.getItem("risk_setup") || "random";
+
 let chatStarted = false;
 let currentRoomId = null;
 let myId    = 1;
@@ -47,14 +50,24 @@ setTimeout(() => {
 
     if (modeEl) {
         modeEl.value = gameMode;
+        
+        if (gameMode === "online") {
+            document.getElementById("setup-panel").style.display = "none";
+            document.getElementById("start-btn").style.display = "none";
+        }
+        
         modeEl.addEventListener("change", e => {
             gameMode = e.target.value;
             localStorage.setItem("risk_mode", gameMode);
             document.getElementById("sys-modal")?.classList.add("sys-hidden");
             syncDiffVisibility();
             if (gameMode === "online") {
+                document.getElementById("setup-panel").style.display = "none";
+                document.getElementById("start-btn").style.display = "none";
                 SystemUI.v2Lobby.show();
             } else {
+                document.getElementById("setup-panel").style.display = "";
+                document.getElementById("start-btn").style.display = "";
                 SystemUI.v2Lobby.hide();
                 SystemUI.stopChat();
                 chatStarted = false;
@@ -72,7 +85,7 @@ setTimeout(() => {
     }
 
     syncDiffVisibility();
-}, 100);
+}, 10);
 
 function syncDiffVisibility() {
     const wrap = document.getElementById("sys-risk-diff")?.closest(".hud-dropdown-wrap") ||
@@ -724,7 +737,7 @@ function updateTroopCounter(id) {
     const y = svgRect.top  - areaRect.top  + (tDef.cy / 100) * svgRect.height;
 
     el.style.left = x + "px";
-    el.style.top  = y + "px";
+    el.style.top = y + "px";
 }
 
 function updateAllTroopCounters() {
@@ -787,7 +800,7 @@ function initGame(count, setup) {
                       : (i === 0);
         players.push({
             name:        (gameMode === "online") ? seats[i].name : (i === 0 ? (typeof SystemUI.getPlayerName === 'function' ? SystemUI.getPlayerName() : "Player") : (gameMode === "hotseat" ? `Player ${i+1}` : localNames[i])),
-            color:       localColors[i],
+            color:       (gameMode === "online") ? seats[i].color : localColors[i],
             territories: new Set(),
             cards:       [],
             setsTraded:  0,
@@ -915,6 +928,7 @@ function placeSetupTroop(id, playerIdx) {
         return;
     }
 
+    if (gameMode === "online") pushGameState();
     nextSetupTurn();
 }
 
@@ -2095,6 +2109,7 @@ function setPhaseLabel(phase, sub) {
 
 function updateTurnDisplay() {
     const p = players[currentTurn];
+    if (!p) return;
     document.getElementById("cp-dot").style.background = p.color;
     document.getElementById("cp-name").textContent     = p.name + (p.isAI ? " (AI)" : "");
 }
@@ -2105,6 +2120,7 @@ function updatePhaseUI() {
 
 function renderRoster() {
     const list = document.getElementById("player-roster");
+    if (!list) return;
     list.innerHTML = "";
     players.forEach((p, i) => {
         const row = document.createElement("div");
@@ -2193,6 +2209,7 @@ document.getElementById("btn-trade-cards").addEventListener("click", () => {
     openCardModal(false);
 });
 
+// Original local DOM listeners - left untouched for local/hotseat
 document.querySelectorAll(".count-btn").forEach(btn => {
     btn.addEventListener("click", () => {
         SystemUI.playSound('click1.mp3');
@@ -2250,131 +2267,305 @@ setInterval(() => {
     else if (gamePhase === "fortify") setTimeout(aiFortify,      500);
 }, 5000);
 
-// ── 26. FIREBASE ONLINE (V2 Lobby) ──────────────────────
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        if(!window.db) { alert("Server connection error."); return; }
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
-        isHost = true; myId = 1; myPlayerIndex = 0; chatStarted = false;
+// ── 26. FIREBASE ONLINE (V2 Smart Modal) ──────────────────────
 
-        const countBtn = document.querySelector(".count-btn.active");
-        const count    = countBtn ? parseInt(countBtn.dataset.count) : 4;
+function updateLobbyPreview() {
+    const slots = [];
+    const hexMap = ["#e74c3c","#3498db","#2ecc71","#f39c12","#9b59b6","#1abc9c"];
+    const aiColorIdxs = [0, 1, 2, 3, 4, 5].filter(i => i !== selectedColorIdx);
+    
+    slots.push({ type: "host", name: SystemUI.getPlayerName(), color: hexMap[selectedColorIdx] });
+    
+    for (let i = 1; i < lobbyPlayerCount; i++) {
+        slots.push({ type: "ai", name: "AI " + i, color: hexMap[aiColorIdxs[i-1]] });
+    }
+    
+    SystemUI.v2Lobby.updatePreview(slots);
+}
+
+SystemUI.v2Lobby.setup({
+    settingsConfig: [
+        {
+            id: "lobby-count",
+            label: "PLAYERS",
+            type: "select",
+            default: lobbyPlayerCount,
+            options: [
+                { value: 2, label: "2" },
+                { value: 3, label: "3" },
+                { value: 4, label: "4" },
+                { value: 5, label: "5" },
+                { value: 6, label: "6" }
+            ]
+        },
+        {
+            id: "lobby-ai-diff",
+            label: "AI LEVEL",
+            type: "select",
+            default: aiDifficulty,
+            options: [
+                { value: "easy", label: "EASY" },
+                { value: "normal", label: "NORMAL" },
+                { value: "hard", label: "HARD" }
+            ]
+        },
+        {
+            id: "lobby-setup",
+            label: "SETUP",
+            type: "select",
+            default: lobbySetupMode,
+            options: [
+                { value: "random", label: "⚡ RANDOM" },
+                { value: "manual", label: "✋ MANUAL" }
+            ]
+        },
+        {
+            id: "lobby-color",
+            label: "YOUR COLOR",
+            type: "color",
+            default: selectedColorIdx,
+            options: [
+                { value: 0, label: "Red", color: "#e74c3c" },
+                { value: 1, label: "Blue", color: "#3498db" },
+                { value: 2, label: "Green", color: "#2ecc71" },
+                { value: 3, label: "Yellow", color: "#f39c12" },
+                { value: 4, label: "Purple", color: "#9b59b6" },
+                { value: 5, label: "Teal", color: "#1abc9c" }
+            ]
+        }
+    ],
+    onSettingsRendered: () => {
+        updateLobbyPreview();
+    },
+    onSettingChange: (key, val) => {
+        if (key === "lobby-count") {
+            lobbyPlayerCount = parseInt(val);
+            localStorage.setItem("risk_pcount", val);
+        } else if (key === "lobby-ai-diff") {
+            aiDifficulty = val;
+            localStorage.setItem("risk_diff", val);
+        } else if (key === "lobby-setup") {
+            lobbySetupMode = val;
+            localStorage.setItem("risk_setup", val);
+        } else if (key === "lobby-color") {
+            selectedColorIdx = parseInt(val);
+        }
+        updateLobbyPreview();
+    },
+    onHost: () => {
+        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
+        isHost = true; myId = 1; myPlayerIndex = 0; chatStarted = false;
         
-        seats = [{ type: "human", name: SystemUI.getPlayerName() }];
-        for(let i=1; i<count; i++) {
-            seats.push({ type: "ai", name: "AI (" + aiDifficulty + ")" });
+        seats = [{ type: "human", name: SystemUI.getPlayerName(), color: PLAYER_COLORS[selectedColorIdx] }];
+        const availableColorIdxs = [0, 1, 2, 3, 4, 5].filter(i => i !== selectedColorIdx);
+        for (let i = 1; i < lobbyPlayerCount; i++) {
+            const cIdx = availableColorIdxs[i - 1];
+            seats.push({ type: "ai", name: "AI (" + aiDifficulty + ")", color: PLAYER_COLORS[cIdx] });
         }
 
-        window.dbSet(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
-            status: "waiting", players: 1, hostName: SystemUI.getPlayerName(), seats: seats
+        window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), {
+            status: "waiting", hostName: SystemUI.getPlayerName(), seats: seats
         }).then(() => {
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToRoom();
         });
     },
     onJoin: (code) => {
-        if(!window.db) { alert("Server connection error."); return; }
-        window.dbGet(window.dbChild(window.dbRef(window.db), `risk_rooms/${code}`)).then(snapshot => {
-            if (snapshot.exists()) {
-                let data = snapshot.val();
-                let joined = false;
-                let updatedSeats = data.seats || [];
-                
-                for(let i=0; i<updatedSeats.length; i++) {
-                    if (updatedSeats[i].type === "ai") {
-                        updatedSeats[i] = { type: "human", name: SystemUI.getPlayerName() };
-                        currentRoomId = code; isHost = false; myId = i + 1; myPlayerIndex = i; chatStarted = false;
-                        joined = true;
-                        break;
-                    }
-                }
+        window.dbGet(window.dbChild(window.dbRef(window.db), `risk_rooms/${code}`))
+            .then(snap => {
+                if (snap.exists()) {
+                    const data = snap.val();
+                    if (data.status === "waiting" || data.status === "playing") {
+                        const updatedSeats = data.seats ? [...data.seats] : [];
+                        let joinedSeatIdx = -1;
+                        for (let i = 1; i < updatedSeats.length; i++) {
+                            if (updatedSeats[i].type === "ai") {
+                                joinedSeatIdx = i;
+                                updatedSeats[i] = { type: "human", name: SystemUI.getPlayerName(), color: updatedSeats[i].color };
+                                break;
+                            }
+                        }
 
-                if (joined) {
-                    window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
-                        seats: updatedSeats, status: "playing"
-                    });
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
+                        if (joinedSeatIdx !== -1) {
+                            currentRoomId = code; isHost = false; myId = joinedSeatIdx + 1; myPlayerIndex = joinedSeatIdx; chatStarted = false;
+                            
+                            window.dbUpdate(window.dbRef(window.db, `risk_rooms/${code}`), {
+                                seats: updatedSeats
+                            });
+                            SystemUI.v2Lobby.showRoomPhase(code, false);
+                            listenToRoom();
+                        } else {
+                            SystemUI.v2Lobby.showError("ROOM IS FULL");
+                        }
+                    } else {
+                        SystemUI.v2Lobby.showError("ROOM NOT JOINABLE");
+                    }
                 } else {
-                    SystemUI.v2Lobby.showError("ROOM FULL");
+                    SystemUI.v2Lobby.showError("ROOM NOT FOUND");
                 }
-            } else {
-                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
-            }
-        });
+            });
     },
     onLeave: () => {
+        if (isHost && currentRoomId) {
+            window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), null);
+        }
         gameMode = "ai";
         const modeEl = document.getElementById("sys-risk-mode");
-        if(modeEl) modeEl.value = "ai";
+        if (modeEl) modeEl.value = "ai";
         localStorage.setItem("risk_mode", "ai");
         SystemUI.stopChat(); chatStarted = false;
         myId = 1; isHost = true; myPlayerIndex = 0;
     },
     onStart: () => {
-        if(window.db) window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), { status: "playing" });
+        window.dbUpdate(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), { status: "playing" });
+    },
+    onClose: () => {
+        if (gameMode === "online" && gamePhase === "idle") {
+            if (isHost && currentRoomId) {
+                window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), null);
+            }
+            gameMode = "ai";
+            const modeEl = document.getElementById("sys-risk-mode");
+            if (modeEl) modeEl.value = "ai";
+            localStorage.setItem("risk_mode", "ai");
+            document.getElementById("setup-panel").style.display = "";
+            document.getElementById("start-btn").style.display = "";
+            myId = 1; isHost = true; myPlayerIndex = 0;
+        }
     }
 });
 
 function listenToRoom() {
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), snapshot => {
-        const data = snapshot.val();
+    window.dbOnValue(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), snap => {
+        const data = snap.val();
         if (!data) return;
-
-        seats = data.seats || [];
-        SystemUI.v2Lobby.renderSeats(seats);
+        
+        if (data.seats) { 
+            seats = data.seats; 
+            SystemUI.v2Lobby.renderSeats(seats); 
+            
+            if (players && players.length > 0) {
+                let changed = false;
+                seats.forEach((seat, idx) => {
+                    if (players[idx]) {
+                        if (players[idx].name !== seat.name || players[idx].isAI !== (seat.type === "ai")) {
+                            players[idx].name = seat.name;
+                            players[idx].isAI = (seat.type === "ai");
+                            changed = true;
+                        }
+                    }
+                });
+                if (changed && gamePhase !== "idle") renderRoster();
+            }
+        }
 
         if (data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true;
             SystemUI.v2Lobby.hide();
             if (!chatStarted) {
                 chatStarted = true;
-                SystemUI.playSound('victory.mp3');
+                SystemUI.playSound("win");
                 SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
             }
-            if (!isHost) {
-                document.getElementById("start-btn").textContent = "Waiting for host...";
-                document.getElementById("start-btn").disabled    = true;
+            if (isHost) {
+                buildTerritoryOverlay();
+                loadWorldMapBackground();
+                initGame(lobbyPlayerCount, lobbySetupMode);
+                pushGameState();
+            } else {
+                document.getElementById("start-screen").classList.add("hidden");
+                if (data.gameState) {
+                    syncFromFirebase(data.gameState);
+                }
             }
             return;
         }
-        if (onlineGameStarted) syncFromFirebase(data);
+        if (onlineGameStarted && data.gameState) syncFromFirebase(data.gameState);
     });
 }
 
+let lastPushTime = 0;
 function pushGameState() {
     if (gameMode !== "online" || !currentRoomId) return;
+    const now = Date.now();
+    lastPushTime = now;
+    
     const serializedPlayers = players.map(p => ({
         ...p,
         territories: [...p.territories]
     }));
-    window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
-        gameState: JSON.stringify({ territories, players: serializedPlayers, currentTurn, gamePhase, setsTraded }),
-        status: gamePhase === "gameover" ? "finished" : "playing",
-        seats: seats
+
+    // Scrape DOM logs to share with guests
+    const logEl = document.getElementById("log-entries");
+    const serializedLog = [];
+    if (logEl) {
+        logEl.querySelectorAll(".log-entry").forEach(el => {
+            serializedLog.push({ text: el.textContent, color: el.style.borderLeftColor });
+        });
+    }
+
+    window.dbUpdate(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), {
+        gameState: JSON.stringify({
+            territories, 
+            players: serializedPlayers, 
+            currentTurn, 
+            gamePhase, 
+            setupRemaining,
+            draftRemaining,
+            setsTraded, 
+            cardDeck,
+            gameLog: serializedLog,
+            ts: now, pusher: myId
+        }),
+        status: gamePhase === "gameover" ? "finished" : "playing"
     });
 }
 
-function syncFromFirebase(data) {
-    if (!data?.gameState) return;
+let lastSyncTime = 0;
+function syncFromFirebase(stateJson) {
+    if (!stateJson) return;
     try {
-        const state = JSON.parse(data.gameState);
+        const state = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
+        
+        if (!state.ts) return; 
+        if (state.pusher === myId && state.ts === lastPushTime) return; 
+        if (state.ts <= lastSyncTime) return; 
+
+        lastSyncTime = state.ts;
+
+        document.getElementById("start-screen").classList.add("hidden");
+        
         territories  = state.territories;
         setsTraded   = state.setsTraded || 0;
         currentTurn  = state.currentTurn;
         gamePhase    = state.gamePhase;
+        setupRemaining = state.setupRemaining || 0;
+        draftRemaining = state.draftRemaining || 0;
+        cardDeck     = state.cardDeck || [];
         
-        if (data.seats) {
-            state.players.forEach((p, i) => {
-                if (data.seats[i]) {
-                    p.name = data.seats[i].name;
-                    p.isAI = data.seats[i].type === "ai";
-                }
-            });
+        if (!svgEl) {
+            buildTerritoryOverlay();
+            loadWorldMapBackground();
         }
 
         players = state.players.map(p => ({ ...p, territories: new Set(p.territories) }));
+
+        // Re-inject shared diary logs
+        if (state.gameLog) {
+            const logEl = document.getElementById("log-entries");
+            if (logEl) {
+                logEl.innerHTML = "";
+                state.gameLog.forEach(l => {
+                    const el = document.createElement("div");
+                    el.className = "log-entry";
+                    el.textContent = l.text;
+                    if (l.color) el.style.borderLeftColor = l.color;
+                    logEl.appendChild(el);
+                });
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+        }
 
         updateAllColors();
         updateAllTroopCounters();
@@ -2383,148 +2574,44 @@ function syncFromFirebase(data) {
         updateTurnDisplay();
         setPhaseLabel(gamePhase.toUpperCase(), "");
 
-        if (gamePhase === "draft" && isMyTurn()) startDraftPhase();
-        if (gamePhase === "gameover") endGame(data.winner ?? 0);
+        if (gamePhase === "setup") {
+            document.getElementById("draft-block").classList.remove("hidden");
+            document.getElementById("draft-count").textContent = setupRemaining;
+        } else if (gamePhase === "draft") {
+            document.getElementById("draft-block").classList.remove("hidden");
+            document.getElementById("draft-count").textContent = draftRemaining;
+        } else {
+            document.getElementById("draft-block").classList.add("hidden");
+        }
+
+        if (gamePhase === "attack") {
+            document.getElementById("attack-block").classList.remove("hidden");
+            document.getElementById("btn-end-attack").classList.remove("hidden");
+        } else {
+            document.getElementById("attack-block").classList.add("hidden");
+            document.getElementById("btn-end-attack").classList.add("hidden");
+        }
+        
+        if (gamePhase === "fortify") {
+            document.getElementById("fortify-block").classList.remove("hidden");
+            document.getElementById("btn-end-turn").classList.remove("hidden");
+        } else {
+            document.getElementById("fortify-block").classList.add("hidden");
+            document.getElementById("btn-end-turn").classList.add("hidden");
+        }
+
+        // NATIVE AI HANDOVER FIX
+        if (isHost && players[currentTurn] && players[currentTurn].isAI) {
+            if (gamePhase === "setup") setTimeout(aiSetupTurn, 1500);
+            else if (gamePhase === "draft") setTimeout(aiDraftPhase, 1500);
+        }
+
+        if (gamePhase === "gameover") endGame(state.winner ?? 0);
     } catch (e) { console.error("Sync error:", e); }
 }
 
-function buildTerritoryOverlay() {
-    if (realMapLoaded) return; 
-
-    const ns  = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', `0 0 ${VB_W} ${VB_H}`);
-    svg.style.cssText = 'width:100%;height:100%;display:block;position:absolute;inset:0;';
-
-    const ocean = document.createElementNS(ns, 'rect');
-    ocean.setAttribute('x', '0'); ocean.setAttribute('y', '0');
-    ocean.setAttribute('width', VB_W); ocean.setAttribute('height', VB_H);
-    ocean.setAttribute('fill', '#192840');
-    ocean.setAttribute('pointer-events', 'none');
-    ocean.style.fillOpacity = '0';
-    svg.appendChild(ocean);
-
-    const contLabels = [
-        { text: 'N. AMERICA', x: 130, y: 295 },
-        { text: 'S. AMERICA', x: 120, y: 545 },
-        { text: 'EUROPE',     x: 435, y: 215 },
-        { text: 'AFRICA',     x: 420, y: 530 },
-        { text: 'ASIA',       x: 740, y: 360 },
-        { text: 'AUSTRALIA',  x: 845, y: 550 },
-    ];
-    contLabels.forEach(({ text, x, y }) => {
-        const t = document.createElementNS(ns, 'text');
-        t.setAttribute('x', x); t.setAttribute('y', y);
-        t.setAttribute('text-anchor', 'middle');
-        t.setAttribute('font-family', 'Special Elite, cursive');
-        t.setAttribute('font-size', '10');
-        t.setAttribute('fill', 'rgba(200,185,120,0.14)');
-        t.setAttribute('letter-spacing', '1.5');
-        t.setAttribute('pointer-events', 'none');
-        t.textContent = text;
-        svg.appendChild(t);
-    });
-
-    const drawn = new Set();
-    TERRITORIES.forEach(t => {
-        const r1 = LAYOUT[t.id];
-        if (!r1) return;
-        const cx1 = r1[0] + r1[2] / 2, cy1 = r1[1] + r1[3] / 2;
-        t.adj.forEach(adjId => {
-            const key = [t.id, adjId].sort().join('|');
-            if (drawn.has(key)) return;
-            drawn.add(key);
-            const r2 = LAYOUT[adjId];
-            if (!r2) return;
-            const cx2 = r2[0] + r2[2] / 2, cy2 = r2[1] + r2[3] / 2;
-            const dist = Math.hypot(cx2 - cx1, cy2 - cy1);
-            const line = document.createElementNS(ns, 'line');
-            line.setAttribute('x1', cx1); line.setAttribute('y1', cy1);
-            line.setAttribute('x2', cx2); line.setAttribute('y2', cy2);
-            line.setAttribute('stroke', 'rgba(200,180,100,0.15)');
-            line.setAttribute('stroke-width', '0.7');
-            if (dist > 280) line.setAttribute('stroke-dasharray', '4 4');
-            line.setAttribute('pointer-events', 'none');
-            svg.appendChild(line);
-        });
-    });
-
-    TERRITORIES.forEach(t => {
-        const r = LAYOUT[t.id];
-        if (!r) return;
-        const [x, y, w, h] = r;
-        const baseFill = CONT_TINT[t.continent] || '#2a2a1a';
-
-        const rect = document.createElementNS(ns, 'rect');
-        rect.setAttribute('id',           t.id);
-        rect.setAttribute('x',            x + 1);
-        rect.setAttribute('y',            y + 1);
-        rect.setAttribute('width',        w - 2);
-        rect.setAttribute('height',       h - 2);
-        rect.setAttribute('rx',           '4');
-        rect.setAttribute('fill',         baseFill);
-        rect.setAttribute('fill-opacity', '0.6');
-        rect.setAttribute('stroke',       'rgba(0,0,0,0.45)');
-        rect.setAttribute('stroke-width', '0.8');
-        rect.style.cursor     = 'pointer';
-        rect.style.transition = 'filter 0.12s, fill-opacity 0.12s, stroke 0.12s'; 
-        svg.appendChild(rect);
-
-        const label = document.createElementNS(ns, 'text');
-        label.setAttribute('x', x + w / 2);
-        label.setAttribute('y', y + h / 2 + 3);
-        label.setAttribute('text-anchor',    'middle');
-        label.setAttribute('font-family',    'Share Tech Mono, monospace');
-        label.setAttribute('font-size',      w < 72 ? '8' : '9.5'); 
-        label.setAttribute('fill',           'rgba(230,210,150,0.85)');
-        label.setAttribute('pointer-events', 'none');
-        label.setAttribute('letter-spacing', '0.2');
-        
-        const words = t.name.split(' ');
-        if (words.length > 1 && w > 62) {
-            const mid = Math.ceil(words.length / 2);
-            const l1 = document.createElementNS(ns, 'tspan');
-            l1.setAttribute('x', x + w / 2); l1.setAttribute('dy', '-5');
-            l1.textContent = words.slice(0, mid).join(' ');
-            const l2 = document.createElementNS(ns, 'tspan');
-            l2.setAttribute('x', x + w / 2); l2.setAttribute('dy', '11');
-            l2.textContent = words.slice(mid).join(' ');
-            label.appendChild(l1);
-            label.appendChild(l2);
-        } else {
-            label.textContent = t.name;
-        }
-        svg.appendChild(label);
-    });
-
-    const container = document.getElementById('svg-container');
-    container.innerHTML = '';
-    container.appendChild(svg);
-    svgEl = svg;
-
-    TERRITORIES.forEach(t => {
-        const el = svgEl.getElementById(t.id);
-        if (!el) return;
-        
-        el.addEventListener('mouseenter', (e) => {
-            el.style.filter = 'brightness(1.4) drop-shadow(0 0 4px rgba(255,255,255,0.5))';
-            showTooltip(t.id, e);
-        });
-        el.addEventListener('mouseleave', () => {
-            el.style.filter = '';
-            hideTooltip();
-        });
-
-        el.addEventListener('click',      ()  => onTerritoryClick(t.id));
-        el.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            onTerritoryClick(t.id);
-        }, { passive: false });
-    });
-
-    updateMapRect();
-    window.addEventListener('resize', () => {
-        updateMapRect();
-        updateAllTroopCounters();
-    });
-}
+window.addEventListener("beforeunload", () => {
+    if (isHost && currentRoomId && gameMode === "online") {
+        window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), null);
+    }
+});

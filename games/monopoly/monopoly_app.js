@@ -18,6 +18,13 @@ let seats        = [];
 let p1Name = SystemUI.getPlayerName();
 let p1ColorIdx = 0;
 
+const tradeStyleFix = document.createElement('style');
+tradeStyleFix.innerHTML = `
+    #trade-offer-props, #trade-want-props { max-height: 30vh; overflow-y: auto; padding-right: 5px; }
+    #trade-resp-summary { max-height: 45vh; overflow-y: auto; padding-right: 5px; }
+`;
+document.head.appendChild(tradeStyleFix);
+
 SystemUI.init({
     gameName: "MONOPOLY",
     rules: `Roll dice, buy properties, build houses and hotels, and bankrupt your opponents. Pass GO to collect $200. Rolling three doubles in a row sends you to Jail!`,
@@ -37,13 +44,23 @@ setTimeout(() => {
     const modeEl = document.getElementById("sys-mono-mode");
     if (modeEl) {
         modeEl.value = gameMode;
+        
+        if (gameMode === "online") {
+            document.getElementById("start-settings").style.display = "none";
+            document.getElementById("start-btn").style.display = "none";
+        }
+        
         modeEl.addEventListener("change", e => {
             gameMode = e.target.value;
             localStorage.setItem("mono_mode", gameMode);
             document.getElementById("sys-modal").classList.add("sys-hidden");
             if (gameMode === "online") {
+                document.getElementById("start-settings").style.display = "none";
+                document.getElementById("start-btn").style.display = "none";
                 SystemUI.v2Lobby.show();
             } else {
+                document.getElementById("start-settings").style.display = "";
+                document.getElementById("start-btn").style.display = "";
                 SystemUI.v2Lobby.hide();
                 SystemUI.stopChat();
                 chatStarted = false;
@@ -660,6 +677,9 @@ async function startTurn() {
     const cp = currentPlayer();
     if (!cp.isAI) doublesRolled = 0;
     renderAll();
+    
+    if (gameMode === "online") pushOnlineState();
+
     if (cp.isAI) {
         await sleep(1800); 
         await aiDoTurn(cp);
@@ -674,6 +694,8 @@ async function doRoll() {
     rollDiceValues();
     const sum = diceVal[0] + diceVal[1];
     const dbl = diceVal[0] === diceVal[1];
+
+    if (gameMode === "online") pushOnlineState();
 
     await animateDice();
 
@@ -734,6 +756,7 @@ async function landOnSpace(player, diceTotal) {
     if (phase !== "gameover") {
         phase = "build";
         renderAll();
+        if (gameMode === "online") pushOnlineState();
         if (player.isAI) await aiEndTurn(player);
     }
 }
@@ -996,50 +1019,69 @@ function startAuction(sid) {
         document.getElementById("auction-leader-name").textContent    = "No bid yet";
         document.getElementById("auction-countdown").textContent      = timeLeft;
         document.getElementById("auction-folded-row").textContent     = "";
+        
+        window._currentAuctionOnBid = null;
+        window._currentAuctionOnFold = null;
+
+        const isAuctionHost = (currentPlayer().id === myId);
+
         document.getElementById("auction-modal").classList.remove("hidden");
 
-        activePlayers().forEach(p => {
-            if (!p.isAI) return;
-            const maxWilling = Math.floor(space.price * (aiDifficulty === "hard" ? 0.85 : aiDifficulty === "medium" ? 0.65 : 0.45));
-            if (p.money >= bid + 10 && bid <= maxWilling) {
-                bid += 10;
-                leaderId = p.id;
-                document.getElementById("auction-bid-amt").textContent     = `$${bid}`;
-                document.getElementById("auction-leader-name").textContent = p.name;
-            } else {
-                folded.push(p.id);
-            }
-        });
-        updateFoldedDisplay();
+        if (isAuctionHost || gameMode !== "online") {
+            activePlayers().forEach(p => {
+                if (!p.isAI) return;
+                const maxWilling = Math.floor(space.price * (aiDifficulty === "hard" ? 0.85 : aiDifficulty === "medium" ? 0.65 : 0.45));
+                if (p.money >= bid + 10 && bid <= maxWilling) {
+                    bid += 10;
+                    leaderId = p.id;
+                    document.getElementById("auction-bid-amt").textContent     = `$${bid}`;
+                    document.getElementById("auction-leader-name").textContent = p.name;
+                } else {
+                    folded.push(p.id);
+                }
+            });
+            updateFoldedDisplay();
 
-        timer = setInterval(() => {
-            timeLeft--;
-            document.getElementById("auction-countdown").textContent = timeLeft;
-            if (timeLeft <= 0) { clearInterval(timer); finish(); }
-        }, 1000);
+            timer = setInterval(() => {
+                timeLeft--;
+                document.getElementById("auction-countdown").textContent = timeLeft;
+                if (gameMode === "online") {
+                    window.onlineAuctionState = { active: true, sid, bid, leaderId, folded, timeLeft, ts: Date.now() };
+                    pushOnlineState();
+                }
+                if (timeLeft <= 0) { clearInterval(timer); finish(); }
+            }, 1000);
+        } else {
+            window._auctionResolve = resolve; 
+        }
 
         const bidUp  = document.getElementById("btn-bid-up");
         const bidOut = document.getElementById("btn-bid-out");
         const humanId = players.find(p => !p.isAI)?.id;
 
-        const onBid = () => {
-            if (!humanId || folded.includes(humanId)) return;
-            const human = players.find(p => p.id === humanId);
+        const onBid = (forcedBidderId) => {
+            const bId = typeof forcedBidderId === 'number' ? forcedBidderId : humanId;
+            if (!bId || folded.includes(bId)) return;
+            const human = players.find(p => p.id === bId);
             if (!human || human.money < bid + 10) return;
-            bid += 10; leaderId = humanId;
+            bid += 10; leaderId = bId;
             timeLeft = 12;
             document.getElementById("auction-bid-amt").textContent     = `$${bid}`;
             document.getElementById("auction-leader-name").textContent = human.name;
         };
 
-        const onFold = () => {
-            if (humanId && !folded.includes(humanId)) {
-                folded.push(humanId);
+        const onFold = (forcedFolderId) => {
+            const fId = typeof forcedFolderId === 'number' ? forcedFolderId : humanId;
+            if (fId && !folded.includes(fId)) {
+                folded.push(fId);
                 updateFoldedDisplay();
             }
             const active = activePlayers().filter(p => !folded.includes(p.id));
-            if (active.length === 0) { clearInterval(timer); finish(); }
+            if (active.length === 0 && isAuctionHost) { clearInterval(timer); finish(); }
         };
+
+        window._currentAuctionOnBid = onBid;
+        window._currentAuctionOnFold = onFold;
 
         function updateFoldedDisplay() {
             const names = folded.map(id => players.find(p => p.id === id)?.name).filter(Boolean);
@@ -1048,9 +1090,15 @@ function startAuction(sid) {
         }
 
         function finish() {
+            window._currentAuctionOnBid = null;
+            window._currentAuctionOnFold = null;
             bidUp.removeEventListener("click", onBid);
             bidOut.removeEventListener("click", onFold);
             document.getElementById("auction-modal").classList.add("hidden");
+            if (gameMode === "online" && isAuctionHost) {
+                window.onlineAuctionState = { active: false, ts: Date.now() + 50 };
+                pushOnlineState();
+            }
             if (leaderId !== null) {
                 const winner = players.find(p => p.id === leaderId);
                 if (winner && winner.money >= bid) {
@@ -1316,6 +1364,7 @@ async function endTurn() {
     if (doublesRolled > 0 && !cp.inJail && !cp.bankrupt) {
         logP(cp, "rolled doubles — gets another turn!");
         phase = "roll"; renderAll();
+        if (gameMode === "online") pushOnlineState();
         if (cp.isAI) { await sleep(1500); await aiDoTurn(cp); }
         return;
     }
@@ -1327,7 +1376,9 @@ async function endTurn() {
     }
     if (next === turnIdx && players[next].bankrupt) return;
     turnIdx = next;
+    
     if (gameMode === "online") pushOnlineState();
+
     await sleep(500);
     await startTurn();
 }
@@ -1353,6 +1404,7 @@ function endGame(winner) {
 }
 
 async function aiDoTurn(player) {
+    if (gameMode === "online" && !isHost) return;
     if (player.inJail) {
         if (player.jailFreeCards > 0) {
             player.jailFreeCards--;
@@ -1368,6 +1420,7 @@ async function aiDoTurn(player) {
 }
 
 async function aiEndTurn(player) {
+    if (gameMode === "online" && !isHost) return;
     if (aiDifficulty !== "easy") {
         for (const [group, g] of Object.entries(GROUPS)) {
             if (!hasMonopoly(player, group)) continue;
@@ -1522,7 +1575,14 @@ function startGame() {
     aiLastTradeTurn = {};
     const total = playerCount;
     players = [];
-    if (gameMode === "ai") {
+    if (gameMode === "online") {
+        const aiColorIdxs = [0,1,2,3].filter(i => i !== p1ColorIdx);
+        for (let i = 0; i < seats.length; i++) {
+            const isBot = seats[i].type === "ai";
+            const colorIdx = i === 0 ? p1ColorIdx : aiColorIdxs[i-1];
+            players.push(createPlayer(i, seats[i].name, isBot, colorIdx));
+        }
+    } else if (gameMode === "ai") {
         players.push(createPlayer(0, p1Name, false, p1ColorIdx));
         const aiColorIdxs = [0,1,2,3].filter(i => i !== p1ColorIdx);
         for (let i = 1; i < total; i++) players.push(createPlayer(i, `AI ${i}`, true, aiColorIdxs[i-1]));
@@ -1535,6 +1595,9 @@ function startGame() {
     document.getElementById("start-screen").classList.add("hidden");
     document.getElementById("game-area").classList.remove("hidden");
     renderAll();
+    
+    if (gameMode === "online" && isHost) pushOnlineState();
+    
     startTurn();
 }
 
@@ -1722,8 +1785,15 @@ document.getElementById("trade-send-btn")?.addEventListener("click", () => {
         return;
     }
 
-    pendingTrade = { proposer: cp, target, offerSids: [...tradeState.offerSids], wantSids: [...tradeState.wantSids], offerCash, wantCash, onResolve };
-    showTradeResponseModal(pendingTrade);
+    if (gameMode === "online" && !target.isAI) {
+        window.onlineTradeSignal = { proposerId: cp.id, targetId: target.id, offerSids: tradeState.offerSids, wantSids: tradeState.wantSids, offerCash, wantCash, ts: Date.now() };
+        pushOnlineState();
+        document.getElementById("loading-screen").classList.remove("hidden");
+        document.getElementById("loading-text").textContent = "WAITING FOR RESPONSE...";
+    } else {
+        pendingTrade = { proposer: cp, target, offerSids: [...tradeState.offerSids], wantSids: [...tradeState.wantSids], offerCash, wantCash, onResolve };
+        showTradeResponseModal(pendingTrade);
+    }
 });
 
 function showTradeResponseModal(trade) {
@@ -1747,6 +1817,12 @@ document.getElementById("trade-accept-btn")?.addEventListener("click", () => {
     executeTrade(proposer, target, offerSids, wantSids, offerCash, wantCash);
     log(`${target.name} accepted the trade!`, "good");
     pendingTrade = null;
+    
+    if (gameMode === "online") {
+        window.onlineTradeResponse = { status: "accept", ts: Date.now() };
+        pushOnlineState();
+    }
+    
     if (onResolve) onResolve();
 });
 
@@ -1756,6 +1832,12 @@ document.getElementById("trade-reject-btn")?.addEventListener("click", () => {
         log(`${pendingTrade.target.name} rejected the trade.`, "bad");
         const onResolve = pendingTrade.onResolve;
         pendingTrade = null;
+        
+        if (gameMode === "online") {
+            window.onlineTradeResponse = { status: "reject", ts: Date.now() };
+            pushOnlineState();
+        }
+        
         if (onResolve) onResolve();
     }
 });
@@ -1894,16 +1976,103 @@ document.getElementById("btn-play-again").addEventListener("click", () => {
 });
 
 // ── v2LOBBY / ONLINE MULTIPLAYER ──────────
+
+function updateLobbyPreview() {
+    const slots = [];
+    const hexMap = ["#DC143C","#1a7fd4","#27ae60","#f39c12"];
+    const aiColorIdxs = [0, 1, 2, 3].filter(i => i !== p1ColorIdx);
+    
+    slots.push({ type: "host", name: SystemUI.getPlayerName(), color: hexMap[p1ColorIdx] });
+    
+    for (let i = 1; i < playerCount; i++) {
+        slots.push({ type: "ai", name: "AI " + i, color: hexMap[aiColorIdxs[i-1]] });
+    }
+    
+    SystemUI.v2Lobby.updatePreview(slots);
+}
+
 SystemUI.v2Lobby.setup({
+    settingsConfig: [
+        {
+            id: "lobby-count",
+            label: "PLAYERS",
+            type: "select",
+            default: playerCount,
+            options: [
+                { value: 2, label: "2" },
+                { value: 3, label: "3" },
+                { value: 4, label: "4" }
+            ]
+        },
+        {
+            id: "lobby-ai-diff",
+            label: "AI LEVEL",
+            type: "select",
+            default: aiDifficulty,
+            options: [
+                { value: "easy", label: "EASY" },
+                { value: "medium", label: "MEDIUM" },
+                { value: "hard", label: "HARD" }
+            ]
+        },
+        {
+            id: "lobby-cash",
+            label: "STARTING CASH",
+            type: "select",
+            default: startingCash,
+            options: [
+                { value: 1500, label: "$1,500 STANDARD" },
+                { value: 2000, label: "$2,000 RICH" }
+            ]
+        },
+        {
+            id: "lobby-color",
+            label: "YOUR COLOR",
+            type: "color",
+            default: p1ColorIdx,
+            options: [
+                { value: 0, label: "Red", color: "#DC143C" },
+                { value: 1, label: "Blue", color: "#1a7fd4" },
+                { value: 2, label: "Green", color: "#27ae60" },
+                { value: 3, label: "Yellow", color: "#f39c12" }
+            ]
+        }
+    ],
+    onSettingsRendered: () => {
+        updateLobbyPreview();
+    },
+    onSettingChange: (key, val) => {
+        if (key === "lobby-count") {
+            playerCount = parseInt(val);
+            localStorage.setItem("mono_pcount", val);
+            document.querySelectorAll('.ss-chip[data-group="count"]').forEach(c => c.classList.toggle('active', c.dataset.val == val));
+        } else if (key === "lobby-ai-diff") {
+            aiDifficulty = val;
+            localStorage.setItem("mono_ai_diff", val);
+            document.querySelectorAll('.ss-chip[data-group="ai-diff"]').forEach(c => c.classList.toggle('active', c.dataset.val == val));
+        } else if (key === "lobby-cash") {
+            startingCash = parseInt(val);
+            localStorage.setItem("mono_cash", val);
+            document.querySelectorAll('.ss-chip[data-group="cash"]').forEach(c => c.classList.toggle('active', c.dataset.val == val));
+        } else if (key === "lobby-color") {
+            p1ColorIdx = parseInt(val);
+            document.querySelectorAll("#ss-color-pills .ss-color-chip").forEach(c => {
+                c.classList.toggle('active', parseInt(c.dataset.colorIdx) === p1ColorIdx);
+            });
+        }
+        updateLobbyPreview();
+    },
     onHost: () => {
         currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
         isHost = true; myId = 1; chatStarted = false;
-        seats = [
-            { type: "human", name: SystemUI.getPlayerName() },
-            { type: "ai",    name: "Waiting for opponent…"  }
-        ];
+        
+        seats = [{ type: "human", name: SystemUI.getPlayerName() }];
+        for (let i = 1; i < playerCount; i++) {
+            seats.push({ type: "ai", name: "AI " + i });
+        }
+
         window.dbSet(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), {
-            status: "waiting", p1Name, seats
+            status: "waiting", seats: seats
         }).then(() => {
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToOnlineRoom();
@@ -1912,23 +2081,42 @@ SystemUI.v2Lobby.setup({
     onJoin: (code) => {
         window.dbGet(window.dbChild(window.dbRef(window.db), `mono_rooms/${code}`))
             .then(snap => {
-                if (snap.exists() && snap.val().status === "waiting") {
-                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+                if (snap.exists()) {
                     const data = snap.val();
-                    const updatedSeats = data.seats ? [...data.seats]
-                        : [{ type:"human", name: data.p1Name || "Player 1" }, { type:"ai", name:"Slot 2" }];
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-                    window.dbUpdate(window.dbRef(window.db, `mono_rooms/${code}`), {
-                        p2Name: p1Name, seats: updatedSeats
-                    });
-                    SystemUI.v2Lobby.showRoomPhase(code, false);
-                    listenToOnlineRoom();
+                    if (data.status === "waiting" || data.status === "playing") {
+                        const updatedSeats = data.seats ? [...data.seats] : [];
+                        let joinedSeatIdx = -1;
+                        for (let i = 1; i < updatedSeats.length; i++) {
+                            if (updatedSeats[i].type === "ai") {
+                                joinedSeatIdx = i;
+                                updatedSeats[i] = { type: "human", name: SystemUI.getPlayerName() };
+                                break;
+                            }
+                        }
+
+                        if (joinedSeatIdx !== -1) {
+                            currentRoomId = code; isHost = false; myId = joinedSeatIdx + 1; chatStarted = false;
+                            
+                            window.dbUpdate(window.dbRef(window.db, `mono_rooms/${code}`), {
+                                seats: updatedSeats
+                            });
+                            SystemUI.v2Lobby.showRoomPhase(code, false);
+                            listenToOnlineRoom();
+                        } else {
+                            SystemUI.v2Lobby.showError("ROOM IS FULL");
+                        }
+                    } else {
+                        SystemUI.v2Lobby.showError("ROOM NOT JOINABLE");
+                    }
                 } else {
-                    SystemUI.v2Lobby.showError("ROOM NOT FOUND OR ALREADY STARTED");
+                    SystemUI.v2Lobby.showError("ROOM NOT FOUND");
                 }
             });
     },
     onLeave: () => {
+        if (isHost && currentRoomId) {
+            window.dbSet(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), null);
+        }
         gameMode = "ai";
         document.getElementById("sys-mono-mode").value = "ai";
         localStorage.setItem("mono_mode", "ai");
@@ -1939,9 +2127,16 @@ SystemUI.v2Lobby.setup({
     },
     onClose: () => {
         if (gameMode === "online" && phase === "idle") {
+            if (isHost && currentRoomId) {
+                window.dbSet(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), null);
+            }
             gameMode = "ai";
             document.getElementById("sys-mono-mode").value = "ai";
             localStorage.setItem("mono_mode", "ai");
+            document.getElementById("start-settings").style.display = "";
+            document.getElementById("start-btn").style.display = "";
+            const aiRow = document.getElementById("ss-ai-row");
+            if (aiRow) aiRow.style.display = "";
         }
     }
 });
@@ -1951,7 +2146,26 @@ function listenToOnlineRoom() {
     window.dbOnValue(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), snap => {
         const data = snap.val();
         if (!data) return;
-        if (data.seats) { seats = data.seats; SystemUI.v2Lobby.renderSeats(seats); }
+        
+        if (data.seats) { 
+            seats = data.seats; 
+            SystemUI.v2Lobby.renderSeats(seats); 
+            
+            if (players && players.length > 0) {
+                let changed = false;
+                seats.forEach((seat, idx) => {
+                    if (players[idx]) {
+                        if (players[idx].name !== seat.name || players[idx].isAI !== (seat.type === "ai")) {
+                            players[idx].name = seat.name;
+                            players[idx].isAI = (seat.type === "ai");
+                            changed = true;
+                        }
+                    }
+                });
+                if (changed && phase !== "idle") renderAll();
+            }
+        }
+
         if (data.status === "playing" && !started) {
             started = true;
             SystemUI.v2Lobby.hide();
@@ -1961,38 +2175,149 @@ function listenToOnlineRoom() {
                 SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
             }
             if (isHost) {
-                if (players[1]) players[1].name = data.p2Name || "Opponent";
                 startGame();
             } else {
                 document.getElementById("start-screen").classList.add("hidden");
-                document.getElementById("loading-screen").classList.remove("hidden");
-                document.getElementById("loading-text").textContent = "WAITING FOR HOST…";
+                if (data.gameState) {
+                    syncOnlineState(data.gameState);
+                } else {
+                    document.getElementById("loading-screen").classList.remove("hidden");
+                    document.getElementById("loading-text").textContent = "WAITING FOR HOST…";
+                }
             }
             return;
         }
         if (started && data.gameState) syncOnlineState(data.gameState);
     });
+
+    window.dbOnValue(window.dbRef(window.db, `mono_rooms/${currentRoomId}/auction_action`), snap => {
+        const action = snap.val();
+        if (!action || !window._currentAuctionOnBid) return;
+        if (action.ts <= (window.lastAuctionActionTs || 0)) return;
+        window.lastAuctionActionTs = action.ts;
+
+        if (action.type === 'bid') window._currentAuctionOnBid(action.pid);
+        if (action.type === 'fold') window._currentAuctionOnFold(action.pid);
+    });
 }
 
+let lastPushTime = 0;
 function pushOnlineState() {
     if (!currentRoomId) return;
+    const now = Date.now();
+    lastPushTime = now;
     window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), {
         gameState: JSON.stringify({
             players, turnIdx, doublesRolled, phase, diceVal,
-            chanceIdx, chestIdx, bankHouses, bankHotels
+            chanceIdx, chestIdx, bankHouses, bankHotels,
+            gameLog,
+            onlineTradeSignal: window.onlineTradeSignal || null,
+            onlineTradeResponse: window.onlineTradeResponse || null,
+            onlineAuctionState: window.onlineAuctionState || null,
+            ts: now, pusher: myId
         })
     });
 }
 
+let lastSyncTime = 0;
 function syncOnlineState(stateJson) {
     try {
         const s = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
-        if (s.turnIdx !== undefined && players[s.turnIdx]?.id !== myId) {
-            players = s.players; turnIdx = s.turnIdx; doublesRolled = s.doublesRolled;
-            phase = s.phase; diceVal = s.diceVal;
-            chanceIdx = s.chanceIdx; chestIdx = s.chestIdx;
-            bankHouses = s.bankHouses; bankHotels = s.bankHotels;
-            renderAll();
+        
+        if (!s.ts) return; 
+        if (s.pusher === myId && s.ts === lastPushTime) return; 
+        if (s.ts <= lastSyncTime) return; 
+
+        lastSyncTime = s.ts;
+
+        document.getElementById("loading-screen").classList.add("hidden");
+        document.getElementById("game-area").classList.remove("hidden");
+        
+        let oldPhase = phase;
+        
+        players = s.players; 
+        turnIdx = s.turnIdx; 
+        doublesRolled = s.doublesRolled;
+        phase = s.phase; 
+        diceVal = s.diceVal;
+        chanceIdx = s.chanceIdx; 
+        chestIdx = s.chestIdx;
+        bankHouses = s.bankHouses; 
+        bankHotels = s.bankHotels;
+        if (s.gameLog) { gameLog = s.gameLog; renderLog(); }
+        
+        renderAll();
+
+        if (oldPhase !== "moving" && phase === "moving") {
+            const cp = players[turnIdx];
+            const sum = diceVal[0] + diceVal[1];
+            animateDice().then(() => movePlayer(cp, sum));
         }
+
+        if (isHost && players[turnIdx] && players[turnIdx].isAI && phase === "roll") {
+            setTimeout(() => aiDoTurn(players[turnIdx]), 1500);
+        }
+
+        if (s.onlineTradeSignal && s.onlineTradeSignal.ts > (window.lastTradeSignalTs || 0)) {
+            window.lastTradeSignalTs = s.onlineTradeSignal.ts;
+            if (s.onlineTradeSignal.targetId === myId) {
+                const proposer = players.find(p => p.id === s.onlineTradeSignal.proposerId);
+                const target = players.find(p => p.id === s.onlineTradeSignal.targetId);
+                pendingTrade = {
+                    proposer, target,
+                    offerSids: s.onlineTradeSignal.offerSids, wantSids: s.onlineTradeSignal.wantSids,
+                    offerCash: s.onlineTradeSignal.offerCash, wantCash: s.onlineTradeSignal.wantCash,
+                    onResolve: null
+                };
+                showTradeResponseModal(pendingTrade);
+            }
+        }
+
+        if (s.onlineTradeResponse && s.onlineTradeResponse.ts > (window.lastTradeRespTs || 0)) {
+            window.lastTradeRespTs = s.onlineTradeResponse.ts;
+            document.getElementById("loading-screen").classList.add("hidden");
+            if (s.onlineTradeResponse.status === "accept") log("Trade accepted!", "good");
+            if (s.onlineTradeResponse.status === "reject") log("Trade rejected.", "bad");
+        }
+
+        if (s.onlineAuctionState && s.onlineAuctionState.ts > (window.lastAuctionStateTs || 0)) {
+            window.lastAuctionStateTs = s.onlineAuctionState.ts;
+            if (!window._currentAuctionOnBid) { 
+                if (!s.onlineAuctionState.active) {
+                    document.getElementById("auction-modal").classList.add("hidden");
+                } else {
+                    const state = s.onlineAuctionState;
+                    const space = BOARD[state.sid];
+                    const hex   = space.group ? GROUP_HEX[space.group] : GROUP_HEX.railroad;
+                    document.getElementById("auction-color-bar").style.background = hex;
+                    document.getElementById("auction-name").textContent           = space.name;
+                    document.getElementById("auction-bid-amt").textContent        = `$${state.bid}`;
+                    const leader = players.find(p => p.id === state.leaderId);
+                    document.getElementById("auction-leader-name").textContent    = leader ? leader.name : "No bid yet";
+                    document.getElementById("auction-countdown").textContent      = state.timeLeft;
+                    const names = state.folded.map(id => players.find(p => p.id === id)?.name).filter(Boolean);
+                    document.getElementById("auction-folded-row").textContent     = names.length ? `Folded: ${names.join(", ")}` : "";
+                    document.getElementById("auction-modal").classList.remove("hidden");
+                }
+            }
+        }
+
     } catch (e) { console.error("Sync error:", e); }
 }
+
+window.addEventListener("beforeunload", () => {
+    if (isHost && currentRoomId && gameMode === "online") {
+        window.dbSet(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), null);
+    }
+});
+
+document.getElementById("btn-bid-up")?.addEventListener("click", () => {
+    if (gameMode === "online" && !window._currentAuctionOnBid) {
+        window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}/auction_action`), { type: 'bid', pid: myId, ts: Date.now() });
+    }
+});
+document.getElementById("btn-bid-out")?.addEventListener("click", () => {
+    if (gameMode === "online" && !window._currentAuctionOnFold) {
+        window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}/auction_action`), { type: 'fold', pid: myId, ts: Date.now() });
+    }
+});

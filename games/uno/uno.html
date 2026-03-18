@@ -55,36 +55,86 @@
   <div id="uno-shout-display" class="hidden">UNO!</div>
 
   <div id="game-container">
-    
-    <div id="opponent-area" class="player-area">
-      <h3 id="p2-label">Opponent: <span id="p2-card-count">0</span> cards</h3>
-      <div id="opponent-hand" class="hand"></div>
-    </div>
 
-    <div id="center-table">
-      <div id="turn-banner" class="hidden">Waiting for players...</div>
-      
-      <div class="piles-wrapper">
-        <div id="draw-pile" class="pile">
-          <div class="card-back"></div>
-          <div id="deck-count" class="count-bubble hidden">0</div>
+    <div id="start-screen">
+        <div class="ss-logo">🃏</div>
+        <h1 class="ss-title">UNO PRO</h1>
+        <p class="ss-tagline">THE ULTIMATE CARD BATTLE</p>
+        <div id="start-settings">
+            <div class="ss-row">
+                <div class="ss-label">PLAYERS</div>
+                <div class="ss-pills">
+                    <button class="ss-chip active" data-group="count" data-val="2">2</button>
+                    <button class="ss-chip"        data-group="count" data-val="3">3</button>
+                    <button class="ss-chip"        data-group="count" data-val="4">4</button>
+                </div>
+            </div>
+            <div class="ss-row" id="ss-ai-row">
+                <div class="ss-label">AI LEVEL</div>
+                <div class="ss-pills">
+                    <button class="ss-chip"        data-group="ai-diff" data-val="easy">EASY</button>
+                    <button class="ss-chip active" data-group="ai-diff" data-val="normal">NORMAL</button>
+                    <button class="ss-chip"        data-group="ai-diff" data-val="hard">HARD</button>
+                </div>
+            </div>
         </div>
-        <div id="discard-pile" class="pile"></div>
-      </div>
-
-      <div id="color-indicator" class="hidden">CURRENT COLOR: RED</div>
-      <button id="uno-btn" class="sys-btn hidden">YELL UNO!</button>
-      
-      <div id="move-log" class="hidden"></div>
+        <button id="start-game-btn">START GAME</button>
     </div>
 
-    <div id="player-area" class="player-area">
-      <h3 id="p1-label">You</h3>
-      <div id="player-hand" class="hand"></div>
-    </div>
+    <div id="game-area" class="hidden">
+        
+        <div id="opponent-area" class="player-area">
+          <h3 id="p2-label">AI 2</h3>
+          <div id="opponent-hand" class="hand"></div>
+        </div>
 
-    <div class="controls">
-      <button id="start-game-btn" class="sys-btn">Start Game</button>
+        <div id="middle-row" class="middle-row">
+          
+          <div id="left-area" class="player-area side-area hidden">
+            <h3 id="p3-label">AI 3</h3>
+            <div id="left-hand" class="hand side-hand"></div>
+          </div>
+
+          <div id="center-table">
+            
+            <div id="direction-container" class="dir-clockwise">
+                <div class="dir-arrow arrow-top">→</div>
+                <div class="dir-arrow arrow-right">↓</div>
+                <div class="dir-arrow arrow-bottom">←</div>
+                <div class="dir-arrow arrow-left">↑</div>
+            </div>
+
+            <div class="piles-wrapper">
+              <div id="draw-pile" class="pile">
+                <div class="card-back"></div>
+                <div id="deck-count" class="count-bubble hidden">0</div>
+              </div>
+              <div id="discard-pile" class="pile"></div>
+            </div>
+
+            <div id="color-indicator" class="hidden">CURRENT COLOR: RED</div>
+            
+            <div id="turn-banner" class="hidden">Waiting...</div>
+
+            <button id="uno-btn" class="sys-btn hidden">YELL UNO!</button>
+            
+            <div id="move-log" class="hidden"></div>
+          </div>
+
+          <div id="right-area" class="player-area side-area hidden">
+            <h3 id="p4-label">AI 4</h3>
+            <div id="right-hand" class="hand side-hand"></div>
+          </div>
+
+        </div>
+
+        <div id="player-area" class="player-area">
+          <h3 id="p1-label">You</h3>
+          <div id="player-hand-wrapper" class="hand-wrapper">
+            <div id="player-hand" class="hand"></div>
+          </div>
+        </div>
+
     </div>
 
   </div>

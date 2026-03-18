@@ -449,18 +449,127 @@ window.SystemUI = {
                 this.bindEvents();
                 this._bound = true;
             }
+            
+            const settingsContainer = document.getElementById("v2-custom-host-settings");
+            if (settingsContainer) {
+                settingsContainer.innerHTML = "";
+                if (this.callbacks.settingsConfig && this.callbacks.settingsConfig.length > 0) {
+                    let html = '<div id="v2-host-settings-wrapper" style="width: 100%; background: #111118; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 18px 16px 14px; display: flex; flex-direction: column; gap: 16px; margin-bottom: 15px; box-sizing: border-box; transition: opacity 0.3s;">';
+                    
+                    this.callbacks.settingsConfig.forEach(setting => {
+                        html += `<div class="ss-row" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div class="ss-label" style="font-size: 0.52rem; font-weight: 700; letter-spacing: 4px; color: rgba(255,255,255,0.35); text-align: left;">${setting.label}</div>
+                            <div class="ss-pills" style="display: flex; flex-wrap: wrap; gap: 6px;">`;
+                        
+                        setting.options.forEach(opt => {
+                            const isColor = setting.type === 'color';
+                            const activeClass = opt.value == setting.default ? 'active' : '';
+                            if (isColor) {
+                                html += `<button class="ss-color-chip v2-setting-btn ${activeClass}" data-key="${setting.id}" data-val="${opt.value}" style="background:${opt.color}; width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; outline: none; transition: all 0.15s;" title="${opt.label}"></button>`;
+                            } else {
+                                html += `<button class="ss-chip v2-setting-btn ${activeClass}" data-key="${setting.id}" data-val="${opt.value}" style="font-family: inherit; font-size: 0.62rem; font-weight: 700; letter-spacing: 1px; padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: rgba(255,255,255,0.45); cursor: pointer; transition: all 0.15s;">${opt.label}</button>`;
+                            }
+                        });
+                        html += `</div></div>`;
+                    });
+
+                    // Add dynamic slot preview area
+                    html += `
+                        <div class="ss-row" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.07); padding-top: 15px;">
+                            <div class="ss-label" style="font-size: 0.52rem; font-weight: 700; letter-spacing: 4px; color: rgba(255,255,255,0.35); text-align: left;">LOBBY PREVIEW</div>
+                            <div id="v2-lobby-slot-preview" style="display: flex; flex-direction: column; gap: 6px;"></div>
+                        </div>
+                    </div>`;
+                    
+                    settingsContainer.innerHTML = html;
+
+                    // Bind click events to the new setting buttons
+                    const wrapper = document.getElementById("v2-host-settings-wrapper");
+                    wrapper.addEventListener("click", (e) => {
+                        const btn = e.target.closest(".v2-setting-btn");
+                        if (!btn) return;
+                        
+                        SystemUI.playSound('click');
+                        const key = btn.dataset.key;
+                        const val = btn.dataset.val;
+                        
+                        // Update active class for this specific group
+                        wrapper.querySelectorAll(`.v2-setting-btn[data-key="${key}"]`).forEach(b => b.classList.remove("active"));
+                        btn.classList.add("active");
+                        
+                        // Trigger callback
+                        if (this.callbacks.onSettingChange) {
+                            this.callbacks.onSettingChange(key, val);
+                        }
+                    });
+                    
+                    // Initial render of preview
+                    if (this.callbacks.onSettingsRendered) {
+                        this.callbacks.onSettingsRendered();
+                    }
+                } else if (this.callbacks.customHostHTML) {
+                    // Fallback for older games using raw HTML
+                    settingsContainer.innerHTML = this.callbacks.customHostHTML;
+                    if (this.callbacks.onSettingsRendered) this.callbacks.onSettingsRendered();
+                }
+            }
+
+            // Guest Lockout Logic
+            const joinInput = document.getElementById("v2-join-input");
+            const hostSettings = document.getElementById("v2-host-settings-wrapper") || document.getElementById("v2-custom-host-settings");
+            if (joinInput && hostSettings) {
+                joinInput.oninput = (e) => {
+                    if (e.target.value.length > 0) {
+                        hostSettings.style.opacity = "0.3";
+                        hostSettings.style.pointerEvents = "none";
+                    } else {
+                        hostSettings.style.opacity = "1";
+                        hostSettings.style.pointerEvents = "auto";
+                    }
+                };
+            }
+        },
+
+        updatePreview: function(slotsArray) {
+            const container = document.getElementById("v2-lobby-slot-preview");
+            if (!container) return;
+            container.innerHTML = "";
+            
+            slotsArray.forEach(slot => {
+                const isHost = slot.type === "host";
+                const icon = isHost ? "👤" : "🤖";
+                const title = isHost ? slot.name : slot.name + " (Open)";
+                const status = isHost ? "HOST" : "JOINABLE";
+                const statusColor = isHost ? "#aaa" : "#3498db";
+                const bgOpacity = isHost ? "0.4" : "0.2";
+                
+                container.innerHTML += `
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,${bgOpacity}); padding: 8px 12px; border-radius: 6px; border-left: 4px solid ${slot.color};">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.1rem; ${isHost ? '' : 'filter: grayscale(1); opacity: 0.7;'}">${icon}</span>
+                            <span style="font-size: 0.8rem; font-weight: bold; color: ${isHost ? '#fff' : '#aaa'}; font-family: inherit;">${title}</span>
+                        </div>
+                        <span style="font-size: 0.6rem; color: ${statusColor}; letter-spacing: 1px; font-family: inherit; font-weight: bold;">${status}</span>
+                    </div>
+                `;
+            });
         },
 
         injectHTML: function() {
             const html = `
+                <style>
+                    .v2-setting-btn.ss-chip.active { border-color: #00e5c8 !important; background: #00e5c8 !important; color: #000 !important; }
+                    .v2-setting-btn.ss-color-chip.active { border-color: #fff !important; box-shadow: 0 0 0 2px rgba(255,255,255,0.5) !important; transform: scale(1.15) !important; }
+                </style>
                 <div id="v2-lobby-overlay" class="sys-hidden">
-                    <div class="v2-lobby-box">
+                    <div class="v2-lobby-box" style="max-height: 85vh; overflow-y: auto; overflow-x: hidden;">
                         <button id="v2-btn-close-lobby" style="position:absolute; top:10px; right:10px; background:none; border:none; color:#f1c40f; font-size:1.5rem; cursor:pointer;">&times;</button>
                         <h2 class="v2-lobby-title">MULTIPLAYER ARENA</h2>
                         
                         <div id="v2-setup-phase">
                             <div class="v2-lobby-section">
                                 <h3 class="v2-lobby-subtitle">HOST A GAME</h3>
+                                <div id="v2-custom-host-settings"></div>
                                 <button id="v2-btn-host" class="v2-btn v2-btn-primary">CREATE NEW ROOM</button>
                             </div>
                             <div class="v2-lobby-divider">OR</div>

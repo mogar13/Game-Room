@@ -162,6 +162,7 @@
     "iconStyle": "border-radius: 50%;",
     "url": "games/risk/risk.html",
     "badges": [
+      "👥 Online",
       "🤖 Solo"
     ],
     "roomPath": "risk_rooms"

@@ -8,7 +8,7 @@ window.SystemRewards = {
     key: "casino_daily_reward",
     
     // The 7-day reward tier structure
-    rewards: [100, 200, 300, 500, 750, 1000, 2000],
+    rewards: [200, 400, 600, 800, 1000, 1200, 5000],
 
     data: {
         lastClaim: null, // "YYYY-MM-DD" format

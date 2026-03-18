@@ -85,7 +85,7 @@ body {
    ============================================= */
 #table-stats-container {
   position: absolute; top: 25%; left: 10%; 
-  display: flex; flex-direction: column; gap: 15px; /* Increased gap so bubble doesn't touch chips */
+  display: flex; flex-direction: column; gap: 15px; 
   align-items: center; z-index: 5;
 }
 
@@ -101,8 +101,19 @@ body {
 .player-seat {
   position: absolute; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 5;
 }
+
+/* Base positions for 4 seats */
 #opponent-area { top: 35px; } 
 #player-area { bottom: 15px; }
+
+/* Side seats override full width */
+.side-seat {
+  width: 120px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+#left-area { left: 20px; }
+#right-area { right: 20px; }
 
 #center-area { 
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -116,6 +127,7 @@ body {
   background: rgba(0,0,0,0.8); border: 1px solid #c39b3c; border-radius: 12px;
   padding: 4px 12px; font-weight: bold; font-family: 'Orbitron', sans-serif;
   font-size: 0.8rem; color: #f1c40f; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  white-space: nowrap; text-align: center;
 }
 
 /* =============================================
@@ -131,7 +143,6 @@ body {
   transition: opacity 0.5s ease;
 }
 
-/* --- FIX: ADDED MISSING .hidden-card CLASS --- */
 .hidden-card {
   width: 58px; height: 82px;
   background: url('../../system/images/cards/standard/cardBack_red2.png') center/cover no-repeat;
@@ -161,16 +172,19 @@ body {
 .bet-bubble {
   background: #fff; color: #000; font-weight: bold; font-size: 0.75rem;
   padding: 2px 10px; border-radius: 10px; border: 2px solid #c39b3c;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.8);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.8); white-space: nowrap;
 }
 
 .dealer-button {
   position: absolute; width: 24px; height: 24px; background: #fff; color: #000;
   border-radius: 50%; display: flex; justify-content: center; align-items: center;
   font-weight: bold; font-size: 0.75rem; border: 2px solid #333; box-shadow: 1px 2px 4px rgba(0,0,0,0.5);
+  z-index: 10;
 }
 #opp-dealer-button { top: 15px; right: 15%; }
 #player-dealer-button { bottom: 15px; right: 15%; }
+#left-dealer-button { top: -10px; right: -10px; }
+#right-dealer-button { top: -10px; left: -10px; }
 
 /* =============================================
    SLIDE-UP HAND GUIDE
