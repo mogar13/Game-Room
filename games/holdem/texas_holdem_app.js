@@ -1,153 +1,196 @@
 // =============================================
 // TEXAS HOLD 'EM — texas_holdem_app.js
 // The Game Shack | Casino OS (V2 Engine)
-// Modes: vs AI | Online
+// Modes: vs AI | Online | 2-4 Players
 // =============================================
 
 // ── 1. INITIALIZE OS & STATE ─────────────────
 let gameMode = "ai";
 localStorage.setItem("poker_mode", "ai"); 
 
-let aiDiff   = localStorage.getItem("poker_diff") || "normal";
+let aiDifficulty = localStorage.getItem("poker_diff") || "normal";
+let playerCount  = parseInt(localStorage.getItem("poker_pcount") || "2");
+
 let myId = 1;
 let currentRoomId = null;
-let isHost = true;
+let isHost = true; 
 let chatStarted = false;
 let seats = [];
+let roomListener = null;
+
+let lastPushTime = 0;
+let lastSyncTime = 0;
 
 const BUY_IN = 1000;
 const BIG_BLIND = 20;
 const SMALL_BLIND = 10;
 
-let p1Name = SystemUI.getPlayerName();
-let p2Name = "AI (" + aiDiff.charAt(0).toUpperCase() + aiDiff.slice(1) + ")";
+// Unified Player Arrays (Index 0 is P1, Index 1 is P2, etc.)
+let hands = [[], [], [], []];
+let stacks = [0, 0, 0, 0];
+let bets = [0, 0, 0, 0];
+let folded = [false, false, false, false];
+let isAllIn = [false, false, false, false];
+let playerNames = ["Player 1", "AI 2", "AI 3", "AI 4"];
+
+let deck = [];
+let communityCards = [];
+let allCommunityCards = [];
+let pot = 0;
+let dealerButton = 0; 
+let activeTurn = 0; 
+let currentPhase = "preflop"; 
+let isGameOver = false;
+let gameIsActive = false;
+let currentBetToMatch = 0;
+let playersActed = 0;
+let joinerBoughtIn = false;
+let lastActionTs = 0;
+
+// --- CUSTOM AUDIO ---
+const sfxDraw = new Audio('../../system/audio/card-draw.ogg');
+const sfxPlay = new Audio('../../system/audio/card-shove-2.ogg');
+const sfxWin = new Audio('../../system/audio/win.ogg');
+const sfxLose = new Audio('../../system/audio/lose.ogg');
+
+function playCustomSound(type) {
+    let snd;
+    if (type === 'draw' || type === 'card') snd = sfxDraw;
+    else if (type === 'play' || type === 'chipStack') snd = sfxPlay;
+    else if (type === 'win') snd = sfxWin;
+    else if (type === 'lose') snd = sfxLose;
+    else if (type === 'click') snd = sfxPlay;
+
+    if (snd) {
+        snd.pause();
+        snd.currentTime = 0;
+        snd.play().catch(e => console.log("Audio failed:", e));
+    }
+}
 
 SystemUI.init({
     gameName: "TEXAS HOLD 'EM",
-    rules: "Each player gets two private cards. Five community cards are dealt face up. Combine them to make the best 5-card poker hand. Standard betting rules: Check, Call, Raise, or Fold.",
+    rules: "Combine your two hole cards with five community cards to make the best 5-card poker hand. Standard betting: Check, Call, Raise, or Fold.",
     hudDropdowns: [
+        { 
+            id: "sys-poker-mode", 
+            options: [ 
+                { value: "ai", label: "🤖 vs AI" }, 
+                { value: "online", label: "🌐 Online" } 
+            ] 
+        },
         {
-            id: "sys-poker-mode",
+            id: "sys-poker-count",
+            label: "Players",
             options: [
-                { value: "ai",     label: "🤖 vs AI"  },
-                { value: "online", label: "🌐 Online"  }
+                { value: "2", label: "2 Players" },
+                { value: "3", label: "3 Players" },
+                { value: "4", label: "4 Players" }
             ]
         },
         {
             id: "sys-poker-diff",
+            label: "Level",
             options: [
-                { value: "easy",   label: "Easy"   },
+                { value: "easy",   label: "Easy" },
                 { value: "normal", label: "Normal" },
-                { value: "hard",   label: "Hard"   }
+                { value: "hard",   label: "Hard" }
             ]
         }
     ]
 });
 
-// Delay to sync OS dropdowns
-setTimeout(() => {
-    const modeEl = document.getElementById("sys-poker-mode");
-    const diffEl = document.getElementById("sys-poker-diff");
-    if(modeEl) modeEl.value = gameMode;
-    if(diffEl) diffEl.value = aiDiff;
-    syncDiffVisibility();
-}, 10);
-
-let onlineSetupDone = false;
-document.getElementById("sys-poker-mode").addEventListener("change", (e) => {
-    gameMode = e.target.value;
-    localStorage.setItem("poker_mode", gameMode);
-    document.getElementById("sys-modal").classList.add("sys-hidden");
-    syncDiffVisibility();
-
-    if (gameMode === "online") {
-        if (!onlineSetupDone) {
-            SystemUI.v2Lobby.hide();
-            setupOnlineMode();
-            onlineSetupDone = true;
-        } else {
-            SystemUI.v2Lobby.show();
-        }
-    } else {
-        SystemUI.v2Lobby.hide();
-        SystemUI.stopChat(); chatStarted = false;
-        myId = 1; isHost = true;
-        resetGame();
+const checkDBReadyPoker = setInterval(() => {
+    if (window.db) {
+        clearInterval(checkDBReadyPoker);
+        initPoker();
     }
-});
+}, 50);
 
-document.getElementById("sys-poker-diff").addEventListener("change", (e) => {
-    aiDiff = e.target.value;
-    localStorage.setItem("poker_diff", aiDiff);
-    p2Name = "AI (" + aiDiff.charAt(0).toUpperCase() + aiDiff.slice(1) + ")";
-    updateNames();
-});
+function initPoker() {
+    const modeEl = document.getElementById("sys-poker-mode");
+    const countEl = document.getElementById("sys-poker-count");
+    const diffEl = document.getElementById("sys-poker-diff");
 
-function syncDiffVisibility() {
-    const wrap = document.getElementById("sys-poker-diff")?.parentElement;
-    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", (e) => {
+            gameMode = e.target.value;
+            localStorage.setItem("poker_mode", gameMode);
+            if (gameMode === "online") { 
+                document.getElementById("action-zone").classList.add("hidden");
+                SystemUI.v2Lobby.show(); 
+            } else { 
+                document.getElementById("action-zone").classList.remove("hidden");
+                SystemUI.v2Lobby.hide(); 
+                SystemUI.stopChat(); chatStarted = false; 
+                myId = 1; isHost = true;
+                if (roomListener) { roomListener(); roomListener = null; } 
+                resetGame(); 
+            }
+        });
+    }
+
+    if (countEl) {
+        countEl.value = playerCount;
+        countEl.addEventListener("change", (e) => {
+            playerCount = parseInt(e.target.value);
+            localStorage.setItem("poker_pcount", playerCount);
+            resetGame();
+        });
+    }
+
+    if (diffEl) {
+        diffEl.value = aiDifficulty;
+        diffEl.addEventListener("change", (e) => {
+            aiDifficulty = e.target.value;
+            localStorage.setItem("poker_diff", aiDifficulty);
+            resetGame();
+        });
+    }
+
+    // Hand Guide Listeners
+    document.getElementById("btn-show-guide").addEventListener("click", () => {
+        document.getElementById("hand-guide-modal").classList.remove("hidden");
+    });
+    document.getElementById("close-guide-btn").addEventListener("click", () => {
+        document.getElementById("hand-guide-modal").classList.add("hidden");
+    });
+    
+    resetGame();
 }
-
-function updateNames() {
-    document.getElementById("player-name").innerText = p1Name;
-    document.getElementById("opp-name").innerText = p2Name;
-}
-
-// ── 2. GAME STATE ────────────────────────────
-let deck = [];
-let playerHand = [];
-let opponentHand = [];
-let communityCards = [];
-let playerStack = 0;
-let opponentStack = 0;
-let pot = 0;
-let playerBet = 0;
-let opponentBet = 0;
-let dealerButton = 1; 
-let currentPhase = "preflop"; 
-let activeTurn = 1; 
-let lastAction = "";
-let isGameOver = false;
-let gameIsActive = false;
-let isAllIn = false;
-let allCommunityCards = [];
-let lastActionTs      = 0;
-let joinerBoughtIn    = false;
 
 // ── UNIVERSAL BETTING SETUP ───────────────────
 let selectedBet = 0;
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
-        if (!gameIsActive || isGameOver) return;
-        const diff = opponentBet - playerBet;
+        if (!gameIsActive || isGameOver || activeTurn !== (myId - 1)) return;
+        const diff = currentBetToMatch - bets[myId - 1];
         const minRaise = diff > 0 ? diff + BIG_BLIND : BIG_BLIND;
         
-        if (selectedBet + val > playerStack) {
-            showToast("Not Enough Cash", "You don't have enough chips for that bet.");
+        if (selectedBet + val > stacks[myId - 1]) {
+            showToast("Not Enough Cash", "You don't have enough chips.");
             return;
         }
-        if (selectedBet === 0) SystemUI.playSound('chipTable');
-        else SystemUI.playSound('chipStack');
-
+        playCustomSound(selectedBet === 0 ? 'click' : 'play');
         selectedBet += val;
         SystemUI.updateBetDisplay(selectedBet);
         
         const raiseBtn = document.getElementById("btn-raise");
-        if (selectedBet >= minRaise) {
+        if (selectedBet >= minRaise || selectedBet === stacks[myId - 1]) {
             raiseBtn.disabled = false;
-            raiseBtn.innerText = "Raise $" + selectedBet;
+            raiseBtn.innerText = (selectedBet === stacks[myId - 1]) ? "ALL IN $" + selectedBet : "Raise $" + selectedBet;
         } else {
             raiseBtn.disabled = true;
             raiseBtn.innerText = "Raise (Min $" + minRaise + ")";
         }
     },
     onClear: function() {
-        if (!gameIsActive || isGameOver) return;
+        if (!gameIsActive || isGameOver || activeTurn !== (myId - 1)) return;
         selectedBet = 0;
         SystemUI.updateBetDisplay(selectedBet);
-        const raiseBtn = document.getElementById("btn-raise");
-        raiseBtn.disabled = true;
-        raiseBtn.innerText = "Raise";
+        document.getElementById("btn-raise").disabled = true;
+        document.getElementById("btn-raise").innerText = "Raise";
     }
 });
 
@@ -158,45 +201,23 @@ const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 function buildDeck() {
     deck = [];
     for (let s of SUITS) {
-        for (let r of RANKS) {
-            deck.push({ rank: r, suit: s });
-        }
+        for (let r of RANKS) { deck.push({ rank: r, suit: s }); }
     }
-    shuffle(deck);
-}
-
-function shuffle(array) {
-    for (let i = array.length - 1; i > 0; i--) {
+    for (let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
+        [deck[i], deck[j]] = [deck[j], deck[i]];
     }
 }
 
 function getRankValue(rank) {
-    if (rank === 'T') return 10;
-    if (rank === 'J') return 11;
-    if (rank === 'Q') return 12;
-    if (rank === 'K') return 13;
-    if (rank === 'A') return 14;
-    return parseInt(rank);
-}
-
-function getCombinations(array, size) {
-    let result = [];
-    function p(t, i) {
-        if (t.length === size) { result.push(t); return; }
-        if (i + 1 <= array.length) { p(t.concat([array[i]]), i + 1); p(t, i + 1); }
-    }
-    p([], 0);
-    return result;
+    if (rank === 'T') return 10; if (rank === 'J') return 11;
+    if (rank === 'Q') return 12; if (rank === 'K') return 13;
+    if (rank === 'A') return 14; return parseInt(rank);
 }
 
 function evaluateHand(cards) {
     let evalCards = [...cards];
-    // Pad partial hands to 5 to avoid crashing during early AI eval
-    while (evalCards.length < 5) {
-        evalCards.push({ rank: '2', suit: 'none' + Math.random() });
-    }
+    while (evalCards.length < 5) evalCards.push({ rank: '2', suit: 'none' + Math.random() });
     
     let combos = getCombinations(evalCards, 5);
     let bestScore = -1;
@@ -206,31 +227,21 @@ function evaluateHand(cards) {
         let sorted = [...combo].sort((a, b) => getRankValue(b.rank) - getRankValue(a.rank));
         let ranks = sorted.map(c => getRankValue(c.rank));
         let suits = sorted.map(c => c.suit);
-        
         let rankCounts = {};
         ranks.forEach(r => rankCounts[r] = (rankCounts[r] || 0) + 1);
-        
         let isFlush = new Set(suits).size === 1;
         let isStraight = false;
-        let highStraight = 0;
         
-        // A-5 low straight
         if (ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2) {
-            isStraight = true; highStraight = 5;
-            ranks = [5, 4, 3, 2, 1]; 
+            isStraight = true; ranks = [5, 4, 3, 2, 1]; 
         } else if (ranks[0] - ranks[4] === 4 && new Set(ranks).size === 5) {
-            isStraight = true; highStraight = ranks[0];
+            isStraight = true;
         }
         
         let groups = Object.keys(rankCounts).map(r => ({ rank: parseInt(r), count: rankCounts[r] }));
-        groups.sort((a, b) => {
-            if (a.count !== b.count) return b.count - a.count;
-            return b.rank - a.rank;
-        });
+        groups.sort((a, b) => (a.count !== b.count) ? b.count - a.count : b.rank - a.rank);
         
-        let type = 0;
-        let label = "High Card";
-        
+        let type = 0; let label = "High Card";
         if (isStraight && isFlush) { type = 8; label = "Straight Flush"; }
         else if (groups[0].count === 4) { type = 7; label = "Four of a Kind"; }
         else if (groups[0].count === 3 && groups[1].count === 2) { type = 6; label = "Full House"; }
@@ -240,415 +251,330 @@ function evaluateHand(cards) {
         else if (groups[0].count === 2 && groups[1].count === 2) { type = 2; label = "Two Pair"; }
         else if (groups[0].count === 2) { type = 1; label = "Pair"; }
         
-        let score = type * 10000000000 + 
-                    groups[0].rank * 100000000 + 
-                    (groups.length > 1 ? groups[1].rank * 1000000 : 0) + 
-                    (groups.length > 2 ? groups[2].rank * 10000 : 0) + 
-                    (groups.length > 3 ? groups[3].rank * 100 : 0) + 
-                    (groups.length > 4 ? groups[4].rank : 0);
-                    
-        if (score > bestScore) {
-            bestScore = score;
-            bestLabel = label;
-        }
+        let score = type * 10000000000 + groups[0].rank * 100000000 + (groups.length > 1 ? groups[1].rank * 1000000 : 0) + (groups.length > 2 ? groups[2].rank * 10000 : 0) + (groups.length > 3 ? groups[3].rank * 100 : 0) + (groups.length > 4 ? groups[4].rank : 0);
+        if (score > bestScore) { bestScore = score; bestLabel = label; }
     }
     return { score: bestScore, label: bestLabel };
 }
 
+function getCombinations(array, size) {
+    let result = [];
+    function p(t, i) {
+        if (t.length === size) { result.push(t); return; }
+        if (i + 1 <= array.length) { p(t.concat([array[i]]), i + 1); p(t, i + 1); }
+    }
+    p([], 0); return result;
+}
+
 // ── 4. UI RENDERING ───────────────────────────
 function renderTable() {
-    const pContainer = document.getElementById("player-cards");
-    const oContainer = document.getElementById("opp-cards");
-    const cContainer = document.getElementById("community-cards");
+    const ids = {
+        bottom: { name: "player-name", stack: "player-stack", cards: "player-cards", chips: "player-table-chips", bubble: "player-bet-bubble", dealer: "player-dealer-button", area: "player-area" },
+        top:    { name: "opp-name", stack: "opp-stack", cards: "opp-cards", chips: "opp-table-chips", bubble: "opp-bet-bubble", dealer: "opp-dealer-button", area: "opponent-area" },
+        left:   { name: "left-name", stack: "left-stack", cards: "left-cards", chips: "left-table-chips", bubble: "left-bet-bubble", dealer: "left-dealer-button", area: "left-area" },
+        right:  { name: "right-name", stack: "right-stack", cards: "right-cards", chips: "right-table-chips", bubble: "right-bet-bubble", dealer: "right-dealer-button", area: "right-area" }
+    };
     
-    pContainer.innerHTML = '';
-    oContainer.innerHTML = '';
-    cContainer.innerHTML = '';
+    const seatMap = { 
+        2: { bottom: 0, top: 1 }, 
+        3: { bottom: 0, left: 1, right: 2 }, 
+        4: { bottom: 0, left: 1, top: 2, right: 3 } 
+    };
+    
+    const config = seatMap[playerCount] || seatMap[2];
 
-    playerHand.forEach(card => pContainer.appendChild(createCardUI(card)));
-    opponentHand.forEach((card, i) => {
-        let isHidden = (currentPhase !== 'showdown' && !isGameOver);
-        if (isAllIn) isHidden = false; // Reveal cards immediately on all-in
-        oContainer.appendChild(createCardUI(card, isHidden));
+    ["opponent-area", "left-area", "right-area"].forEach(id => document.getElementById(id).classList.add("hidden"));
+
+    Object.entries(config).forEach(([pos, relIdx]) => {
+        const pIdx = (myId - 1 + relIdx) % playerCount;
+        const ui = ids[pos];
+        const areaEl = document.getElementById(ui.area);
+        if (!areaEl) return;
+
+        areaEl.classList.remove("hidden");
+        document.getElementById(ui.name).innerText = playerNames[pIdx];
+        document.getElementById(ui.stack).innerText = stacks[pIdx];
+        
+        const cardBox = document.getElementById(ui.cards);
+        cardBox.innerHTML = '';
+        
+        if (hands[pIdx]) {
+            hands[pIdx].forEach(c => {
+                let isHidden = (pIdx !== (myId-1) && currentPhase !== 'showdown' && !isGameOver);
+                // Reveal if someone is All-In and we aren't in preflop
+                if (isAllIn.some(val => val === true) && currentPhase !== 'preflop') isHidden = false;
+                cardBox.appendChild(createCardUI(c, isHidden));
+            });
+        }
+
+        SystemUI.renderTableStacks(bets[pIdx], ui.chips);
+        document.getElementById(ui.bubble).innerText = "Bet: $" + bets[pIdx];
+        document.getElementById(ui.bubble).classList.toggle("hidden", bets[pIdx] === 0);
+        document.getElementById(ui.dealer).classList.toggle("hidden", dealerButton !== pIdx);
+        
+        cardBox.style.opacity = (folded[pIdx]) ? "0.3" : "1";
+        
+        const nameEl = document.getElementById(ui.name);
+        if (pIdx === activeTurn && gameIsActive && !isGameOver) {
+            nameEl.style.color = "#2ecc71";
+            nameEl.style.textShadow = "0 0 10px #2ecc71";
+        } else {
+            nameEl.style.color = "#f1c40f";
+            nameEl.style.textShadow = "none";
+        }
     });
-    communityCards.forEach(card => cContainer.appendChild(createCardUI(card)));
 
-    document.getElementById("player-stack").innerText = playerStack;
-    document.getElementById("opp-stack").innerText = opponentStack;
+    const ccBox = document.getElementById("community-cards");
+    ccBox.innerHTML = ''; 
+    communityCards.forEach(c => ccBox.appendChild(createCardUI(c)));
+    
     document.getElementById("main-pot").innerText = "POT: $" + pot;
     document.getElementById("main-pot").classList.toggle("hidden", pot === 0);
-
-    const pBubble = document.getElementById("player-bet-bubble");
-    pBubble.innerText = "Bet: $" + playerBet;
-    pBubble.classList.toggle("hidden", playerBet === 0);
-
-    const oBubble = document.getElementById("opp-bet-bubble");
-    oBubble.innerText = "Bet: $" + opponentBet;
-    oBubble.classList.toggle("hidden", opponentBet === 0);
-
-    document.getElementById("player-dealer-button").classList.toggle("hidden", dealerButton !== 1);
-    document.getElementById("opp-dealer-button").classList.toggle("hidden", dealerButton !== 2);
-
-    updateControls();
-    SystemUI.renderTableStacks(playerBet, "player-table-chips");
-    SystemUI.renderTableStacks(opponentBet, "opp-table-chips");
     SystemUI.renderTableStacks(pot, "main-pot-chips");
+    updateControls();
 }
 
 function createCardUI(card, isHidden = false) {
-    const el = document.createElement("div");
-    el.className = "card";
-    if (isHidden) {
-        el.classList.add("hidden-card");
-    } else {
-        const suitMap = { s: "Spades", h: "Hearts", d: "Diamonds", c: "Clubs" };
-        const rankMap = { T: "10", J: "J", Q: "Q", K: "K", A: "A" };
-        const rankName = rankMap[card.rank] || card.rank;
-        const suitName = suitMap[card.suit];
-        el.innerHTML = `<img src="../../system/images/cards/standard/card${suitName}${rankName}.png" style="width:100%; height:100%; border-radius:6px;">`;
+    const el = document.createElement("div"); el.className = "card";
+    if (isHidden) el.classList.add("hidden-card");
+    else {
+        const suitMap = { s: "Spades", h: "Hearts", d: "Diamonds", c: "Clubs" }, rankMap = { T: "10", J: "J", Q: "Q", K: "K", A: "A" };
+        el.innerHTML = `<img src="../../system/images/cards/standard/card${suitMap[card.suit]}${rankMap[card.rank]||card.rank}.png" style="width:100%;height:100%;border-radius:6px;">`;
     }
     return el;
 }
 
 function updateControls() {
     const ctrl = document.getElementById("poker-controls");
-    const myTurn = (gameMode === "online") ? (activeTurn === myId) : (activeTurn === 1);
-    if (!gameIsActive || isGameOver || !myTurn || isAllIn) {
-        ctrl.classList.add("hidden");
-        if (window.SystemUI && SystemUI.enableBetting) SystemUI.enableBetting(false);
-        return;
+    const myTurn = (activeTurn === (myId - 1));
+    if (!gameIsActive || isGameOver || !myTurn || isAllIn[myId-1]) {
+        ctrl.classList.add("hidden"); SystemUI.enableBetting(false); return;
     }
-    ctrl.classList.remove("hidden");
-    if (window.SystemUI && SystemUI.enableBetting) SystemUI.enableBetting(true);
-    
+    ctrl.classList.remove("hidden"); SystemUI.enableBetting(true);
     const callBtn = document.getElementById("btn-check-call");
-    const raiseBtn = document.getElementById("btn-raise");
-    const diff = opponentBet - playerBet;
-    
-    selectedBet = 0;
-    if (window.SystemUI && SystemUI.updateBetDisplay) SystemUI.updateBetDisplay(selectedBet);
-    raiseBtn.disabled = true;
-    raiseBtn.innerText = "Raise";
-
-    if (diff > 0) {
-        callBtn.innerText = "Call $" + diff;
-        callBtn.className = "action-btn safe-btn";
-    } else {
-        callBtn.innerText = "Check";
-        callBtn.className = "action-btn safe-btn";
-    }
-}
-
-function setStatus(msg) {
-    document.getElementById("game-status-text").innerText = msg;
+    const diff = currentBetToMatch - bets[myId - 1];
+    callBtn.innerText = (diff > 0) ? "Call $" + diff : "Check";
 }
 
 // ── 5. GAME LOGIC ─────────────────────────────
 function startGame() {
-    if (SystemUI.money < BUY_IN) {
-        showToast("Error", "You need $" + BUY_IN + " to buy in!");
-        return;
-    }
-    SystemUI.money -= BUY_IN;
-    SystemUI.updateMoneyDisplay();
+    if (SystemUI.money < BUY_IN) { showToast("Error", "Need $" + BUY_IN + " to buy in!"); return; }
+    SystemUI.money -= BUY_IN; SystemUI.updateMoneyDisplay();
     
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("poker");
 
-    playerStack = BUY_IN;
-    opponentStack = BUY_IN;
-    gameIsActive = true;
+    for (let i = 0; i < playerCount; i++) stacks[i] = BUY_IN;
+    
+    gameIsActive = true; 
+    dealerButton = Math.floor(Math.random() * playerCount);
+    
     document.getElementById("start-game-btn").classList.add("hidden");
     document.getElementById("cash-out-btn").classList.remove("hidden");
     startNewHand();
 }
 
+function getNextActive(currentIndex) {
+    let next = currentIndex;
+    let safeguard = 0;
+    do {
+        next = (next + 1) % playerCount;
+        safeguard++;
+        if(safeguard > 10) return next;
+    } while (folded[next] || (stacks[next] === 0 && !isAllIn[next]));
+    return next;
+}
+
 function startNewHand() {
-    buildDeck();
-    playerHand = [deck.pop(), deck.pop()];
-    opponentHand = [deck.pop(), deck.pop()];
-    communityCards = [];
-    pot = 0;
-    playerBet = 0;
-    opponentBet = 0;
-    currentPhase = "preflop";
-    isGameOver = false;
-    isAllIn = false;
+    buildDeck(); hands = [[],[],[],[]]; bets = [0,0,0,0]; folded = [false,false,false,false]; isAllIn = [false,false,false,false];
+    communityCards = []; pot = 0; currentPhase = "preflop"; isGameOver = false; playersActed = 0;
     
-    dealerButton = (dealerButton === 1) ? 2 : 1;
-    
-    if (dealerButton === 1) {
-        postBet(1, SMALL_BLIND);
-        postBet(2, BIG_BLIND);
-        activeTurn = 1;
-    } else {
-        postBet(2, SMALL_BLIND);
-        postBet(1, BIG_BLIND);
-        activeTurn = 2;
+    for (let i=0; i<playerCount; i++) {
+        if (stacks[i] > 0) hands[i] = [deck.pop(), deck.pop()];
+        else folded[i] = true;
     }
 
-    SystemUI.playSound('shuffle');
-    setStatus("Pre-flop: Your Turn");
-    renderTable();
+    dealerButton = (dealerButton + 1) % playerCount;
+    let sbIdx = getNextActive(dealerButton);
+    let bbIdx = getNextActive(sbIdx);
     
-    if (activeTurn === 2 && gameMode === "ai") setTimeout(aiAction, 1200);
+    postBet(sbIdx, SMALL_BLIND); 
+    postBet(bbIdx, BIG_BLIND);
+    
+    currentBetToMatch = BIG_BLIND; 
+    activeTurn = getNextActive(bbIdx);
+    
+    playCustomSound('shuffle'); 
+    setStatus("Pre-flop"); 
+    renderTable();
+
     if (gameMode === "online") {
         allCommunityCards = [deck.pop(), deck.pop(), deck.pop(), deck.pop(), deck.pop()];
     }
-    if (gameMode === "online" && isHost) {
-        const preflopStatus = "Pre-flop: " + (activeTurn === 1 ? "Your Turn" : "Opponent's Turn...");
-        pushHostState(preflopStatus, false, 0);
-    }
+    
+    checkAITurn(); 
+    if (gameMode === "online" && isHost) pushHostState();
 }
 
-function postBet(player, amt) {
-    if (player === 1) {
-        let actual = Math.min(amt, playerStack);
-        playerStack -= actual;
-        playerBet += actual;
-        if (playerStack === 0) isAllIn = true;
-    } else {
-        let actual = Math.min(amt, opponentStack);
-        opponentStack -= actual;
-        opponentBet += actual;
-        if (opponentStack === 0) isAllIn = true;
-    }
+function postBet(pIdx, amt) {
+    let actual = Math.min(amt, stacks[pIdx]); 
+    stacks[pIdx] -= actual; 
+    bets[pIdx] += actual;
+    if (stacks[pIdx] === 0) isAllIn[pIdx] = true;
 }
 
 function handleAction(type, amount = 0) {
-    const notMyTurn = (gameMode === "online") ? (activeTurn !== myId) : (activeTurn !== 1);
-    if (notMyTurn || isGameOver) return;
-
-    if (gameMode === "online" && !isHost) {
-        sendJoinerAction(type, amount);
-        return;
-    }
+    if (activeTurn !== (myId - 1) || isGameOver) return;
+    if (gameMode === "online" && !isHost) { sendJoinerAction(type, amount); return; }
     
-    if (type === 'fold') {
-        fold(1);
-    } else if (type === 'check-call') {
-        const diff = opponentBet - playerBet;
-        if (diff > 0) {
-            postBet(1, diff);
-            SystemUI.playSound('chipStack');
-            advancePhase();
-        } else {
-            SystemUI.playSound('click');
-            advancePhase();
-        }
+    playersActed++;
+    if (type === 'fold') { folded[activeTurn] = true; playCustomSound('card'); }
+    else if (type === 'check-call') {
+        const diff = currentBetToMatch - bets[activeTurn];
+        if (diff > 0) { postBet(activeTurn, diff); playCustomSound('play'); } else playCustomSound('click');
     } else if (type === 'raise') {
-        if (amount > 0) {
-            postBet(1, amount);
-            SystemUI.playSound('chipStack');
-            advancePhase();
-        }
+        postBet(activeTurn, amount); 
+        currentBetToMatch = bets[activeTurn]; 
+        playersActed = 1; 
+        playCustomSound('play');
     }
+    advanceTurn();
 }
 
-function fold(player) {
-    isGameOver = true;
-    const winner = (player === 1) ? 2 : 1;
-    resolvePot(winner);
-    setStatus(getPlayerName(player) + " folds.");
-    SystemUI.playSound('card');
-    if (gameMode === "online" && isHost) pushHostState(getPlayerName(player) + " folds.", false, 0);
-    setTimeout(checkMatchOver, 2000);
-}
+function advanceTurn() {
+    let unfolded = folded.filter(f => !f);
+    if (unfolded.length === 1) {
+        isGameOver = true; 
+        let winIdx = folded.findIndex(f => !f);
+        stacks[winIdx] += (pot + bets.reduce((a,b)=>a+b,0));
+        setStatus(playerNames[winIdx] + " wins (Everyone folded).");
+        if (gameMode === "online" && isHost) pushHostState();
+        setTimeout(startNewHand, 2500); return;
+    }
 
-function getPlayerName(player) {
-    return player === 1 ? p1Name : p2Name;
+    let activeIndices = []; 
+    for (let i=0; i<playerCount; i++) if(!folded[i] && !isAllIn[i]) activeIndices.push(i);
+    
+    if (activeIndices.length <= 1 || (playersActed >= activeIndices.length && activeIndices.every(i => bets[i] === currentBetToMatch))) {
+        advancePhase();
+    } else { 
+        activeTurn = (activeTurn + 1) % playerCount; 
+        while(folded[activeTurn] || isAllIn[activeTurn]) activeTurn = (activeTurn + 1) % playerCount; 
+        renderTable(); 
+        checkAITurn(); 
+        if(gameMode === "online" && isHost) pushHostState(); 
+    }
 }
 
 function advancePhase() {
-    pot += playerBet + opponentBet;
-    playerBet = 0;
-    opponentBet = 0;
+    bets.forEach((b,i) => { pot += b; bets[i] = 0; }); 
+    currentBetToMatch = 0; 
+    playersActed = 0;
     
-    if (isAllIn) {
-        while(communityCards.length < 5) {
-            if (gameMode === "online") {
-                communityCards.push(allCommunityCards[communityCards.length]);
-            } else {
-                communityCards.push(deck.pop());
-            }
-        }
-        currentPhase = "showdown";
-        setStatus("ALL IN!");
-        SystemUI.playSound('card');
-        renderTable();
-        setTimeout(showdown, 1500);
-        return;
+    if (currentPhase === "preflop") { 
+        currentPhase = "flop"; 
+        for(let i=0; i<3; i++) communityCards.push(gameMode==="online" ? allCommunityCards[i] : deck.pop()); 
     }
-
-    if (currentPhase === "preflop") {
-        currentPhase = "flop";
-        if (gameMode === "online") { communityCards = allCommunityCards.slice(0, 3); } else { communityCards.push(deck.pop(), deck.pop(), deck.pop()); }
-        SystemUI.playSound('card');
-    } else if (currentPhase === "flop") {
-        currentPhase = "turn";
-        if (gameMode === "online") { communityCards = allCommunityCards.slice(0, 4); } else { communityCards.push(deck.pop()); }
-        SystemUI.playSound('card');
-    } else if (currentPhase === "turn") {
-        currentPhase = "river";
-        if (gameMode === "online") { communityCards = allCommunityCards.slice(0, 5); } else { communityCards.push(deck.pop()); }
-        SystemUI.playSound('card');
-    } else if (currentPhase === "river") {
-        currentPhase = "showdown";
-        showdown();
-        return;
+    else if (currentPhase === "flop") { 
+        currentPhase = "turn"; 
+        communityCards.push(gameMode==="online" ? allCommunityCards[3] : deck.pop()); 
     }
+    else if (currentPhase === "turn") { 
+        currentPhase = "river"; 
+        communityCards.push(gameMode==="online" ? allCommunityCards[4] : deck.pop()); 
+    }
+    else { showdown(); return; }
 
-    activeTurn = (dealerButton === 1) ? 2 : 1;
-    setStatus(currentPhase.toUpperCase());
-    renderTable();
-
-    if (activeTurn === 2 && gameMode === "ai") setTimeout(aiAction, 1200);
-    if (gameMode === "online" && isHost) pushHostState(currentPhase.toUpperCase(), false, 0);
+    playCustomSound('card'); 
+    activeTurn = getNextActive(dealerButton);
+    setStatus(currentPhase.toUpperCase()); 
+    renderTable(); 
+    checkAITurn(); 
+    if (gameMode === "online" && isHost) pushHostState();
 }
 
 function showdown() {
-    isGameOver = true;
-    const pResult = evaluateHand([...playerHand, ...communityCards]);
-    const oResult = evaluateHand([...opponentHand, ...communityCards]);
+    isGameOver = true; 
+    let best = -1, winners = [];
+    for (let i=0; i<playerCount; i++) if(!folded[i]) {
+        let res = evaluateHand([...hands[i], ...communityCards]);
+        if (res.score > best) { best = res.score; winners = [i]; } 
+        else if (res.score === best) winners.push(i);
+    }
     
-    let winner = 0;
-    if (pResult.score > oResult.score) winner = 1;
-    else if (oResult.score > pResult.score) winner = 2;
-    else winner = 0; 
-
+    let label = evaluateHand([...hands[winners[0]], ...communityCards]).label;
+    winners.forEach(w => stacks[w] += Math.floor(pot/winners.length)); 
+    pot = 0; 
     renderTable();
     
-    let msg = "";
-    if (winner === 1) {
-        msg = "You win with " + pResult.label + "!";
-        SystemUI.playSound('win');
-        resolvePot(1);
-    } else if (winner === 2) {
-        msg = "Opponent wins with " + oResult.label + "!";
-        SystemUI.playSound('lose');
-        resolvePot(2);
-    } else {
-        msg = "Split Pot! Both have " + pResult.label;
-        SystemUI.playSound('tie');
-        resolvePot(0);
-    }
+    setStatus(winners.length === 1 ? playerNames[winners[0]] + " wins with " + label : "Split Pot (" + label + ")");
+    if (winners.includes(myId-1)) playCustomSound('win'); else playCustomSound('lose');
     
-    setStatus(msg);
-    if (gameMode === "online" && isHost) pushHostState(msg, false, 0);
-    setTimeout(checkMatchOver, 3000);
+    if (gameMode === "online" && isHost) pushHostState(); 
+    setTimeout(startNewHand, 3500);
 }
 
-function resolvePot(winner) {
-    if (winner === 1) playerStack += pot;
-    else if (winner === 2) opponentStack += pot;
-    else {
-        playerStack += pot / 2;
-        opponentStack += pot / 2;
-    }
-    pot = 0;
-    renderTable();
-}
+function setStatus(msg) { document.getElementById("game-status-text").innerText = msg; }
 
-function checkMatchOver() {
-    if (playerStack <= 0) {
-        showToast("Match Over", "You went bust! Better luck next time.");
-        if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("poker");
-        
-        if (gameMode === "online" && isHost) pushHostState("Match Over — " + p2Name + " wins!", true, opponentStack);
-        joinerBoughtIn = false;
-        resetGame();
-    } else if (opponentStack <= 0) {
-        showToast("Match Over", "You cleaned them out! You win the match.");
-        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("poker", playerStack);
-        
-        SystemUI.money += playerStack;
-        SystemUI.updateMoneyDisplay();
-        if (gameMode === "online" && isHost) pushHostState("Match Over — " + p1Name + " wins!", true, 0);
-        joinerBoughtIn = false;
-        resetGame();
-    } else {
-        startNewHand();
-    }
-}
-
-function resetGame() {
-    gameIsActive = false;
-    playerStack = 0;
-    opponentStack = 0;
-    playerHand = [];
-    opponentHand = [];
-    communityCards = [];
-    pot = 0;
-    document.getElementById("start-game-btn").classList.remove("hidden");
+function resetGame() { 
+    gameIsActive = false; hands=[[],[],[],[]]; stacks=[0,0,0,0]; bets=[0,0,0,0]; 
+    folded=[false,false,false,false]; communityCards=[]; pot=0; 
+    document.getElementById("start-game-btn").classList.remove("hidden"); 
     document.getElementById("cash-out-btn").classList.add("hidden");
-    setStatus("Waiting to start...");
-    renderTable();
+    setStatus("Waiting to start..."); 
+    renderTable(); 
 }
 
 // ── 6. AI LOGIC ───────────────────────────────
+function checkAITurn() { 
+    if (gameMode === "online" || isGameOver || activeTurn === (myId-1)) return; 
+    setTimeout(aiAction, 1200); 
+}
+
 function aiAction() {
-    if (activeTurn !== 2 || isGameOver) return;
-    
-    const diff = playerBet - opponentBet;
+    if (isGameOver || activeTurn === (myId-1)) return;
+    const pIdx = activeTurn;
+    const diff = currentBetToMatch - bets[pIdx];
     const canCheck = (diff === 0);
     
-    let currentBest = evaluateHand([...opponentHand, ...communityCards]);
+    let currentBest = evaluateHand([...hands[pIdx], ...communityCards]);
     let handRank = Math.floor(currentBest.score / 10000000000);
     
     let action = "check-call";
-    let amount = 0;
+    let raiseAmt = 0;
     let r = Math.random();
     
-    if (aiDiff === "easy") {
-        if (!canCheck && r < 0.2) action = "fold";
-    } else if (aiDiff === "normal") {
-        if (!canCheck && handRank === 0 && diff > BIG_BLIND * 2 && r < 0.7) {
-            action = "fold";
-        } else if (handRank >= 2 && r < 0.4 && opponentStack > BIG_BLIND) {
-            action = "raise";
-            amount = diff + BIG_BLIND * 2;
+    if (aiDifficulty === "easy") {
+        if (!canCheck && r < 0.3) action = "fold";
+    } else if (aiDifficulty === "normal") {
+        if (!canCheck && handRank === 0 && diff > BIG_BLIND * 2 && r < 0.5) action = "fold";
+        else if (handRank >= 2 && r < 0.3 && stacks[pIdx] > BIG_BLIND) {
+            action = "raise"; raiseAmt = diff + BIG_BLIND;
         }
-    } else if (aiDiff === "hard") {
-        if (handRank >= 1 && r < 0.5 && opponentStack > BIG_BLIND) {
-            action = "raise";
-            amount = diff + BIG_BLIND * 3;
-        } else if (handRank === 0 && !canCheck && r < 0.8) {
-            if (r < 0.2 && opponentStack > BIG_BLIND) {
-                action = "raise"; amount = diff + BIG_BLIND * 2;
-            } else {
-                action = "fold";
-            }
+    } else if (aiDifficulty === "hard") {
+        if (handRank >= 1 && r < 0.5 && stacks[pIdx] > BIG_BLIND) {
+            action = "raise"; raiseAmt = diff + (BIG_BLIND * 2);
+        } else if (handRank === 0 && !canCheck && r < 0.6) {
+            if (r < 0.2) { action = "raise"; raiseAmt = diff + BIG_BLIND; }
+            else action = "fold";
         }
     }
     
-    if (action === "raise" && amount > opponentStack) amount = opponentStack;
-    if (action === "raise" && amount === 0) action = "check-call";
+    if (action === "raise" && raiseAmt > stacks[pIdx]) raiseAmt = stacks[pIdx];
+    if (action === "raise" && raiseAmt === 0) action = "check-call";
 
-    if (action === "fold") {
-        fold(2);
-    } else if (action === "raise") {
-        postBet(2, amount);
-        SystemUI.playSound('chipStack');
-        advancePhase();
-    } else {
-        if (diff > 0) {
-            postBet(2, diff);
-            SystemUI.playSound('chipStack');
-        } else {
-            SystemUI.playSound('click');
-        }
-        advancePhase();
-    }
+    if (action === "fold") handleAction('fold');
+    else if (action === "raise") handleAction('raise', raiseAmt);
+    else handleAction('check-call');
 }
 
 // ── 7. UI EVENTS ──────────────────────────────
 document.getElementById("start-game-btn").addEventListener("click", startGame);
 
 document.getElementById("cash-out-btn").addEventListener("click", () => {
-    if (confirm("Cash out your current stack of $" + playerStack + "?")) {
-        SystemUI.money += playerStack;
+    if (confirm("Cash out $" + stacks[myId - 1] + "?")) {
+        SystemUI.money += stacks[myId - 1];
         SystemUI.updateMoneyDisplay();
-        
-        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("poker", playerStack);
+        if (typeof SystemStats !== 'undefined') SystemStats.recordWin("poker", stacks[myId - 1]);
         resetGame();
     }
 });
@@ -657,209 +583,91 @@ document.getElementById("btn-fold").addEventListener("click", () => handleAction
 document.getElementById("btn-check-call").addEventListener("click", () => handleAction('check-call'));
 document.getElementById("btn-raise").addEventListener("click", () => handleAction('raise', selectedBet));
 
-document.getElementById("btn-show-guide").addEventListener("click", () => {
-    document.getElementById("hand-guide-modal").classList.remove("hidden");
-});
-document.getElementById("close-guide-btn").addEventListener("click", () => {
-    document.getElementById("hand-guide-modal").classList.add("hidden");
-});
-
-function showToast(title, msg) {
-    document.getElementById("modal-title").innerText = title;
-    document.getElementById("modal-message").innerText = msg;
-    document.getElementById("toast-modal").classList.remove("hidden");
-    setTimeout(() => {
-        document.getElementById("toast-modal").classList.add("hidden");
-    }, 3000);
+function showToast(title, msg) { 
+    document.getElementById("modal-title").innerText = title; 
+    document.getElementById("modal-message").innerText = msg; 
+    document.getElementById("toast-modal").classList.remove("hidden"); 
+    setTimeout(() => document.getElementById("toast-modal").classList.add("hidden"), 3000); 
 }
 
-// ── 8. ONLINE MULTIPLAYER (Match Controller) ──────────────────────────────
-
+// ── 8. ONLINE MULTIPLAYER ──────────────────────
 function setupOnlineMode() {
-    SystemMatch.setup({
-        gameId:   "holdem",
-        roomPath: "holdem_rooms",
-        onHost:   function(roomId) { listenToHoldemRoom(); },
-        onJoin:   function(roomId) { listenToHoldemRoom(); },
-        onLeave:  function() {
-            gameMode = "ai"; myId = 1; isHost = true; chatStarted = false;
-            resetGame();
+    SystemUI.v2Lobby.setup({
+        settingsConfig: [
+            { id: "lobby-count", label: "PLAYERS", type: "select", default: playerCount, options: [{value:2, label:"2"},{value:3, label:"3"},{value:4, label:"4"}] }
+        ],
+        onSettingsRendered: () => updateLobbyPreview(),
+        onSettingChange: (key, val) => {
+            if (key === "lobby-count") playerCount = parseInt(val);
+            updateLobbyPreview();
         },
-        onStart:  function() { },
-        onClose:  function() { if (!gameIsActive) { } }
+        onHost: () => {
+            currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
+            isHost = true; myId = 1; seats = [{ type: "human", name: SystemUI.getPlayerName() }];
+            for (let i = 1; i < playerCount; i++) seats.push({ type: "ai", name: "AI " + (i + 1) });
+            window.dbSet(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "waiting", seats: seats, ts: Date.now() }).then(() => { 
+                SystemUI.v2Lobby.showRoomPhase(currentRoomId, true); listenToRoom(); 
+            });
+        },
+        onJoin: (code) => {
+            window.dbGet(window.dbChild(window.dbRef(window.db), `holdem_rooms/${code}`)).then((snap) => {
+                if (snap.exists()) {
+                    const data = snap.val(); let jIdx = data.seats.findIndex(s => s.type === "ai");
+                    if (jIdx !== -1) {
+                        currentRoomId = code; isHost = false; myId = jIdx + 1;
+                        let updated = data.seats; updated[jIdx] = { type: "human", name: SystemUI.getPlayerName() };
+                        window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + code), { seats: updated, ts: Date.now() });
+                        SystemUI.v2Lobby.showRoomPhase(code, false); listenToRoom();
+                    } else SystemUI.v2Lobby.showError("ROOM FULL");
+                } else SystemUI.v2Lobby.showError("NOT FOUND");
+            });
+        },
+        onLeave: () => location.reload(),
+        onStart: () => window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "playing", ts: Date.now() })
     });
 }
 
-function listenToHoldemRoom() {
-    const roomId  = SystemMatch.getRoomId();
-    const roomRef = window.dbRef(window.db, 'holdem_rooms/' + roomId);
-    const unsub   = window.dbOnValue(roomRef, function(snap) {
-        const data = snap.val();
-        if (!data) return;
-
-        SystemMatch.setSeats(data.seats || []);
-        SystemUI.v2Lobby.renderSeats(SystemMatch.getSeats());
-
-        if (isHost && data.seats && data.seats[1] && data.seats[1].type === 'human') {
-            p2Name = data.seats[1].name || "Opponent";
-            updateNames();
-            const startBtn = document.getElementById('v2-btn-start');
-            if (startBtn) startBtn.classList.remove('sys-hidden');
-        }
-
-        if (data.status === 'playing') {
-            SystemUI.v2Lobby.hide();
-            myId   = SystemMatch.getMyId();
-            isHost = SystemMatch.isHost();
-            if (!chatStarted) {
-                SystemUI.startChat(roomId, SystemUI.getPlayerName());
-                chatStarted = true;
-            }
-            if (isHost && !gameIsActive) {
-                p1Name = SystemMatch.getSeatName(1);
-                p2Name = SystemMatch.getSeatName(2);
-                updateNames();
-                startGame();
-            }
-            if (!isHost) {
-                p1Name = SystemUI.getPlayerName();
-                setStatus("Waiting for host to deal...");
-            }
-        }
-
-        if (!isHost && data.gameState) {
-            applyHostState(data.gameState);
-        }
-
-        if (isHost && data.playerAction && data.playerAction.ts !== lastActionTs) {
-            lastActionTs = data.playerAction.ts;
-            processJoinerAction(data.playerAction);
-        }
-    });
-    SystemMatch.setListener(unsub);
+function updateLobbyPreview() {
+    const slots = [{ type: "host", name: SystemUI.getPlayerName(), color: "#e74c3c" }];
+    for (let i = 1; i < playerCount; i++) slots.push({ type: "ai", name: "AI " + (i + 1), color: "#3498db" });
+    SystemUI.v2Lobby.updatePreview(slots);
 }
 
-function pushHostState(statusMsg, matchOver, joinerPayout) {
-    if (gameMode !== "online" || !isHost || !window.db) return;
-    const roomId = SystemMatch.getRoomId();
-    if (!roomId) return;
-    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + roomId), {
-        gameState: {
-            p1Hand:            playerHand,
-            p2Hand:            opponentHand,
-            allCommunityCards: allCommunityCards,
-            communityCards:    communityCards,
-            pot:               pot,
-            p1Bet:             playerBet,
-            p2Bet:             opponentBet,
-            p1Stack:           playerStack,
-            p2Stack:           opponentStack,
-            activeTurn:        activeTurn,
-            currentPhase:      currentPhase,
-            dealerButton:      dealerButton,
-            isGameOver:        isGameOver,
-            gameIsActive:      gameIsActive,
-            isAllIn:           isAllIn,
-            statusMsg:         statusMsg || currentPhase.toUpperCase(),
-            p1Name:            p1Name,
-            matchOver:         matchOver    || false,
-            joinerPayout:      joinerPayout || 0
+function listenToRoom() {
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), (snap) => {
+        const data = snap.val(); if (!data) return;
+        seats = data.seats || []; SystemUI.v2Lobby.renderSeats(seats); playerNames = seats.map(s => s.name);
+        playerCount = seats.length;
+        if (data.status === "playing") {
+            SystemUI.v2Lobby.hide(); document.getElementById("action-zone").classList.remove("hidden");
+            if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
+            if (isHost && !gameIsActive) startGame(); else if (!isHost && data.gameState) applyHostState(data.gameState);
+        }
+        if (isHost && data.playerAction && data.playerAction.ts !== lastActionTs) { 
+            lastActionTs = data.playerAction.ts; processJoinerAction(data.playerAction); 
         }
     });
 }
 
-function sendJoinerAction(type, amount = 0) {
-    if (gameMode !== "online" || isHost || !window.db) return;
-    const roomId = SystemMatch.getRoomId();
-    if (!roomId) return;
-    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + roomId), {
-        playerAction: { action: type, amount: amount, ts: Date.now() }
+function pushHostState() {
+    if (gameMode !== "online" || !isHost) return;
+    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { 
+        gameState: { hands, allCommunityCards, communityCards, pot, bets, stacks, folded, isAllIn, activeTurn, currentPhase, dealerButton, isGameOver, gameIsActive, currentBetToMatch, ts: Date.now() } 
     });
 }
 
-function processJoinerAction(payload) {
-    const action = payload.action;
-    const amount = payload.amount || 0;
-
-    if (activeTurn !== 2 || isGameOver) return;
-    if (action === 'fold') {
-        isGameOver = true;
-        resolvePot(1);
-        const foldMsg = p2Name + " folds.";
-        setStatus(foldMsg);
-        SystemUI.playSound('card');
-        renderTable();
-        pushHostState(foldMsg, false, 0);
-        setTimeout(checkMatchOver, 2000);
-    } else if (action === 'check-call') {
-        const diff = playerBet - opponentBet;
-        if (diff > 0) {
-            postBet(2, diff);
-            SystemUI.playSound('chipStack');
-        } else {
-            SystemUI.playSound('click');
-        }
-        advancePhase();
-    } else if (action === 'raise') {
-        if (amount > 0) {
-            postBet(2, amount);
-            SystemUI.playSound('chipStack');
-        }
-        advancePhase();
-    }
+function sendJoinerAction(type, amount) {
+    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { 
+        playerAction: { action: type, amount, pIdx: (myId - 1), ts: Date.now() } 
+    });
 }
 
-function applyHostState(state) {
-    if (!state) return;
-    playerHand        = state.p2Hand            || [];
-    opponentHand      = state.p1Hand            || [];
-    allCommunityCards = state.allCommunityCards  || [];
-    communityCards    = state.communityCards     || [];
-    pot               = state.pot               || 0;
-    playerBet         = state.p2Bet             || 0;
-    opponentBet       = state.p1Bet             || 0;
-    playerStack       = state.p2Stack           || 0;
-    opponentStack     = state.p1Stack           || 0;
-    activeTurn        = state.activeTurn        || 1;
-    currentPhase      = state.currentPhase      || "preflop";
-    dealerButton      = state.dealerButton      || 1;
-    isGameOver        = state.isGameOver        || false;
-    gameIsActive      = state.gameIsActive      || false;
-    isAllIn           = state.isAllIn           || false;
-    if (state.p1Name) { p2Name = state.p1Name; updateNames(); }
+function processJoinerAction(p) { if (activeTurn === p.pIdx) handleAction(p.action, p.amount); }
 
-    if (gameIsActive && !joinerBoughtIn) {
-        joinerBoughtIn = true;
-        if (SystemUI.money >= BUY_IN) {
-            SystemUI.money -= BUY_IN;
-            SystemUI.updateMoneyDisplay();
-            if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("poker");
-        }
-    }
-
-    if (gameIsActive) {
-        document.getElementById("start-game-btn").classList.add("hidden");
-        document.getElementById("cash-out-btn").classList.remove("hidden");
-    }
-
-    renderTable();
-    setStatus(state.statusMsg || (activeTurn === 2 ? "YOUR TURN" : "Opponent's Turn..."));
-
-    if (state.matchOver) {
-        if (state.joinerPayout > 0) {
-            SystemUI.money += state.joinerPayout;
-            SystemUI.updateMoneyDisplay();
-            if (typeof SystemStats !== 'undefined') SystemStats.recordWin("poker", state.joinerPayout);
-        } else {
-            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("poker");
-        }
-        joinerBoughtIn = false;
-        setTimeout(function() {
-            resetGame();
-            document.getElementById("start-game-btn").classList.add("hidden");
-            setStatus("Waiting for host to start new match...");
-        }, 3000);
-    }
+function applyHostState(s) {
+    if (!s || s.ts <= lastSyncTime) return; lastSyncTime = s.ts;
+    hands=s.hands; allCommunityCards=s.allCommunityCards; communityCards=s.communityCards; pot=s.pot; bets=s.bets; stacks=s.stacks; folded=s.folded; isAllIn=s.isAllIn; activeTurn=s.activeTurn; currentPhase=s.currentPhase; dealerButton=s.dealerButton; isGameOver=s.isGameOver; gameIsActive=s.gameIsActive; currentBetToMatch=s.currentBetToMatch;
+    renderTable(); setStatus(activeTurn === (myId-1) ? "YOUR TURN" : playerNames[activeTurn].toUpperCase() + "'S TURN");
 }
 
-renderTable();
+setupOnlineMode();

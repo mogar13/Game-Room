@@ -504,9 +504,15 @@ function handleActionCard(card, playerNum) {
         
         if (gameMode === 'online') {
             pushGameState(null, "WINS!", playerNames[playerNum-1]);
-            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished", ts: Date.now() + 1 }); 
         }
-        setTimeout(resetGame, 2500);
+        
+        setTimeout(() => {
+            resetGame();
+            if (gameMode === 'online' && isHost) {
+                window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting", deck: null, discardPile: null, hands: null, ts: Date.now() }); 
+            }
+        }, 2500);
         return; 
     }
 
@@ -669,16 +675,26 @@ function listenToRoom() {
         SystemUI.v2Lobby.renderSeats(seats);
         playerNames = seats.map(s => s.name);
         playerCount = seats.length;
+        
         if (data.status === "playing" || data.status === "finished") {
             SystemUI.v2Lobby.hide();
             if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
             
             if (isHost && !onlineGameStarted && data.status === "playing") {
                 onlineGameStarted = true;
-                startGame(); 
+                if (!data.deck) {
+                    startGame(); 
+                } else {
+                    syncFromFirebase(data);
+                }
             } else {
                 onlineGameStarted = true;
                 syncFromFirebase(data);
+            }
+        } else if (data.status === "waiting") {
+            onlineGameStarted = false;
+            if (document.getElementById("game-area") && !document.getElementById("game-area").classList.contains("hidden")) {
+                resetGame();
             }
         }
     });
@@ -736,9 +752,19 @@ function syncFromFirebase(data) {
             if (winnerIdx !== -1 && winnerIdx !== myId - 1) {
                 playCustomSound('lose');
                 showResultModal(`😞 ${playerNames[winnerIdx]} WINS!`, "#e74c3c");
-                setTimeout(resetGame, 2500);
+                setTimeout(() => {
+                    resetGame();
+                    if (isHost) {
+                        window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting", deck: null, hands: null, discardPile: null, ts: Date.now() });
+                    }
+                }, 2500);
             } else if (winnerIdx === -1) {
-                setTimeout(resetGame, 2500);
+                setTimeout(() => {
+                    resetGame();
+                    if (isHost) {
+                        window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting", deck: null, hands: null, discardPile: null, ts: Date.now() });
+                    }
+                }, 2500);
             }
         }
     }

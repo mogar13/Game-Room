@@ -20,9 +20,6 @@
       <div id="streak-counter" style="background:rgba(0,0,0,0.6); padding:5px 10px; border-radius:10px; color:#f1c40f; font-weight:bold; border: 1px solid #f1c40f; font-size: 0.9rem;">
         🔥 Streak: <span id="streak-val">0</span>
       </div>
-      <div id="table-pot-display" class="hidden" style="background:rgba(0,0,0,0.6); padding:5px 10px; border-radius:10px; color:#3498db; font-weight:bold; border: 1px solid #3498db; font-size: 0.9rem; text-align: center;">
-        POT: $0
-      </div>
     </div>
 
     <div class="dealer-tray">
@@ -45,16 +42,42 @@
       <h3>INSURANCE PAYS 2 TO 1</h3>
     </div>
 
-    <div class="boxes-arc">
-      <div class="box-slot slot-4">
-        <div id="table-bet-chips"></div> 
+    <div id="players-arc">
+      
+      <div class="box-slot hidden" id="box-slot-2">
+        <div id="player-name-2" class="nameplate"></div>
+        <div id="table-pot-display-2" class="pot-display hidden"></div>
+        <div id="table-bet-chips-2" class="bet-chips"></div>
+        <div id="player-score-2" class="score-bubble hidden">0</div>
+        <div id="player-cards-2" class="card-container"></div>
       </div>
+
+      <div class="box-slot hidden" id="box-slot-0">
+        <div id="player-name-0" class="nameplate"></div>
+        <div id="table-pot-display-0" class="pot-display hidden"></div>
+        <div id="table-bet-chips-0" class="bet-chips"></div>
+        <div id="player-score-0" class="score-bubble hidden">0</div>
+        <div id="player-cards-0" class="card-container"></div>
+      </div>
+
+      <div class="box-slot hidden" id="box-slot-1">
+        <div id="player-name-1" class="nameplate"></div>
+        <div id="table-pot-display-1" class="pot-display hidden"></div>
+        <div id="table-bet-chips-1" class="bet-chips"></div>
+        <div id="player-score-1" class="score-bubble hidden">0</div>
+        <div id="player-cards-1" class="card-container"></div>
+      </div>
+
+      <div class="box-slot hidden" id="box-slot-3">
+        <div id="player-name-3" class="nameplate"></div>
+        <div id="table-pot-display-3" class="pot-display hidden"></div>
+        <div id="table-bet-chips-3" class="bet-chips"></div>
+        <div id="player-score-3" class="score-bubble hidden">0</div>
+        <div id="player-cards-3" class="card-container"></div>
+      </div>
+
     </div>
 
-    <div class="card-area" id="player-area">
-      <div id="player-score" class="score-bubble hidden">0</div>
-      <div id="player-cards" class="card-container"></div>
-    </div>
   </div>
 
   <div id="action-zone">
@@ -80,6 +103,32 @@
       <p id="modal-message">Message goes here.</p>
     </div>
   </div>
+
+  <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+      import { getDatabase, ref, set, onValue, update, get, child } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+      
+      const firebaseConfig = {
+        apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
+        databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com",
+        authDomain: "game-room-26e34.firebaseapp.com",
+        projectId: "game-room-26e34",
+        storageBucket: "game-room-26e34.firebasestorage.app",
+        messagingSenderId: "769541427914",
+        appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
+      };
+      
+      const app = initializeApp(firebaseConfig);
+      const database = getDatabase(app);
+      
+      window.db = database;
+      window.dbRef = ref;
+      window.dbSet = set;
+      window.dbOnValue = onValue;
+      window.dbUpdate = update;
+      window.dbGet = get;
+      window.dbChild = child;
+  </script>
 
   <script src="../../system/system_profile.js"></script>
   <script src="../../system/system_audio.js"></script>

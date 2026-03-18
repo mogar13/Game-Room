@@ -119,27 +119,89 @@ body {
 .shoe-glass { display: none; }
 .shoe-opening { display: none; }
 
-/* Betting arc circles removed */
-.boxes-arc {
+/* =============================================
+   MULTIPLAYER ARC & SEATS (4 Positions)
+   ============================================= */
+#players-arc {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  pointer-events: none; z-index: 1;
+  pointer-events: none; z-index: 2;
 }
 
 .box-slot {
-  width: 66px; height: 96px;
-  position: absolute; pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: absolute;
+  pointer-events: auto;
+  z-index: 3;
 }
 
-.slot-4 {
-  left: 50%; bottom: 22%;
-  transform: translateX(-50%);
-  opacity: 1;
+/* Slot 2 (Far-Left Position) */
+#box-slot-2 {
+  left: 18%; bottom: 22%;
+  transform: translateX(-50%) rotate(15deg);
 }
 
-#table-bet-chips {
-  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 46px; height: 46px;
-  display: flex; flex-direction: row; justify-content: center; align-items: center; gap: 10px;
+/* Slot 0 (Mid-Left Position - Host) */
+#box-slot-0 {
+  left: 38%; bottom: 12%;
+  transform: translateX(-50%) rotate(5deg);
+}
+
+/* Slot 1 (Mid-Right Position) */
+#box-slot-1 {
+  left: 62%; bottom: 12%;
+  transform: translateX(-50%) rotate(-5deg);
+}
+
+/* Slot 3 (Far-Right Position) */
+#box-slot-3 {
+  left: 82%; bottom: 22%;
+  transform: translateX(-50%) rotate(-15deg);
+}
+
+.nameplate {
+  font-family: 'Playfair Display', 'Georgia', serif;
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: #e8d5a0;
+  background: rgba(0,0,0,0.7);
+  border: 1px solid rgba(195,155,60,0.6);
+  border-radius: 4px;
+  padding: 3px 8px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  white-space: nowrap;
+  transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
+}
+
+.box-slot.active-turn .nameplate {
+  border-color: #2ecc71;
+  color: #2ecc71;
+  box-shadow: 0 0 12px rgba(46,204,113,0.5), 0 2px 4px rgba(0,0,0,0.8);
+}
+
+.pot-display {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #3498db;
+  background: rgba(0,0,0,0.6);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #3498db;
+  margin-bottom: 4px;
+}
+
+.bet-chips {
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 6px;
+  gap: 8px;
 }
 
 /* =============================================
@@ -152,7 +214,6 @@ body {
   text-transform: uppercase;
   pointer-events: none; z-index: 0;
   font-family: 'Playfair Display', 'Georgia', serif;
-  /* Mix into the felt so it looks painted, not floating */
   mix-blend-mode: overlay;
   opacity: 0.55;
 }
@@ -163,7 +224,6 @@ body {
   border-bottom: 1px solid rgba(232, 213, 160, 0.4);
   padding-bottom: 6px; margin-bottom: 6px;
   display: inline-block;
-  /* Rough edge to simulate brush strokes */
   text-shadow:
     0 1px 0 rgba(0,0,0,0.6),
     0 -1px 0 rgba(255,255,255,0.08),
@@ -187,27 +247,17 @@ body {
 }
 
 /* =============================================
-   PLAYER & DEALER CARD AREAS
+   DEALER CARD AREA
    ============================================= */
 #dealer-area {
   position: absolute;
-  top: 55px; /* ← move dealer cards UP/DOWN */
+  top: 55px; 
   width: 100%; z-index: 2;
-}
-
-#player-area {
-  position: absolute;
-  bottom: 10%; /* ← move player cards UP/DOWN */
-  width: 100%; z-index: 2;
-}
-
-.card-area {
   display: flex; flex-direction: column; align-items: center;
-  position: relative;
 }
 
 .card-container {
-  display: flex; justify-content: center;
+  display: flex; justify-content: center; position: relative;
 }
 
 #dealer-bet-chips {
@@ -218,12 +268,10 @@ body {
 
 /* =============================================
    SCORE BUBBLE
-   — sits below the player cards, above the rail
-   — anchored absolutely so nothing overlaps
    ============================================= */
 .score-bubble {
   position: absolute;
-  top: calc(100% + 15px); /* ← move bubble DOWN by increasing this value */
+  top: calc(100% + 15px); /* Drops below cards */
   left: 50%; transform: translateX(-50%);
   background: rgba(0,0,0,0.92); color: white;
   min-width: 36px; height: 34px; border-radius: 17px;
@@ -265,13 +313,6 @@ body {
 
 #dealer-cards .card:first-child { z-index: 2; }
 #dealer-cards .card:nth-child(2) { z-index: 1; }
-
-/* =============================================
-   STATS (streak / pot) — top left overlay
-   ============================================= */
-#table-stats-container {
-  z-index: 8 !important;
-}
 
 /* =============================================
    ACTION ZONE — mahogany wood panel
@@ -376,9 +417,6 @@ body {
   .chip-rows   { width: 120px; height: 8px; }
   .dealer-shoe { width: 42px; height: 64px; right: 3%; top: 8px; }
 
-  .boxes-arc::before { width: 160px; height: 160px; }
-  .boxes-arc::after  { width: 95px;  height: 95px; }
-
   #table-stats-container { transform: scale(0.82); transform-origin: top left; }
 }
 
@@ -388,16 +426,25 @@ body {
     border-bottom-width: 16px;
     border-left-width: 12px;
     border-right-width: 12px;
-    border-radius: 0 0 35% 35% / 0 0 25% 25%; /* Relaxed curve to prevent clipping */
+    border-radius: 0 0 35% 35% / 0 0 25% 25%;
   }
 
   .card {
-    width: 60px; height: 86px;
-    font-size: 20px; margin-left: -30px;
+    width: 58px; height: 84px;
+    font-size: 18px; margin-left: -32px;
   }
   
   #dealer-area { top: 30px; }
-  #player-area { bottom: 15%; }
+  
+  /* Pull the arc in for 4 players on tiny screens */
+  #box-slot-2 { left: 18%; bottom: 18%; transform: translateX(-50%) rotate(15deg); }
+  #box-slot-0 { left: 38%; bottom: 8%; transform: translateX(-50%) rotate(5deg); }
+  #box-slot-1 { left: 62%; bottom: 8%; transform: translateX(-50%) rotate(-5deg); }
+  #box-slot-3 { left: 82%; bottom: 18%; transform: translateX(-50%) rotate(-15deg); }
+
+  .nameplate { font-size: 0.55rem; padding: 2px 4px; letter-spacing: 0px; }
+  .pot-display { font-size: 0.7rem; padding: 1px 4px; }
+  .bet-chips { height: 32px; }
   
   .score-bubble { min-width: 32px; height: 32px; font-size: 0.9rem; border-radius: 16px; top: calc(100% + 10px); }
   
@@ -408,7 +455,6 @@ body {
   
   .button-grid { gap: 8px; }
   
-  /* Fat, highly tappable buttons */
   .action-btn { 
     padding: 16px 12px; 
     font-size: 1rem; 
@@ -432,6 +478,4 @@ body {
   #action-zone { padding: 18px 40px; }
   .card { width: 80px; height: 115px; font-size: 26px; margin-left: -40px; }
   .button-grid { max-width: 600px; }
-  .boxes-arc::before { width: 280px; height: 280px; }
-  .boxes-arc::after  { width: 170px; height: 170px; }
 }

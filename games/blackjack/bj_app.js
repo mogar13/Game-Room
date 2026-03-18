@@ -1,8 +1,9 @@
 // =============================================
-// BLACKJACK PRO — audited & fixed
+// BLACKJACK PRO — V2.1 Multiplayer Engine (4-Player)
 // =============================================
 
 let savedDifficulty = localStorage.getItem("blackjack_diff") || "17";
+let lobbyPlayerCount = parseInt(localStorage.getItem("blackjack_pcount") || "1");
 
 SystemUI.init({
     gameName: "BLACKJACK PRO",
@@ -21,6 +22,16 @@ SystemUI.init({
                 { value: "15", label: "Easy" },
                 { value: "17", label: "Normal" },
                 { value: "19", label: "Hard" }
+            ]
+        },
+        {
+            id: "sys-pcount",
+            label: "Players",
+            options: [
+                { value: "1", label: "1 Seat" },
+                { value: "2", label: "2 Seats" },
+                { value: "3", label: "3 Seats" },
+                { value: "4", label: "4 Seats" }
             ]
         },
         {
@@ -43,12 +54,61 @@ let seats         = [];
 let myId          = 1; 
 let isHost        = true; 
 
+let lastPushTime = 0;
+let lastSyncTime = 0;
+
+// --- Multiplayer State Arrays (Expanded to 4) ---
+let playerHands  = [[], [], [], []];
+let dealerHand   = [];
+let currentBets  = [0, 0, 0, 0];
+let playerStatus = ["active", "active", "active", "active"]; 
+let gamePhase    = "betting"; 
+let activeSeat   = 0;
+let deck         = [];
+let winStreak    = parseInt(localStorage.getItem("blackjack_streak")) || 0;
+
 // UI Sync
 setTimeout(() => {
     document.getElementById("sys-difficulty").value = savedDifficulty;
-    document.getElementById("sys-bj-mode").value = gameMode;
+    document.getElementById("sys-pcount").value = String(lobbyPlayerCount);
+    
+    const modeEl = document.getElementById("sys-bj-mode");
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", function () {
+            gameMode = this.value;
+            localStorage.setItem("blackjack_mode", gameMode);
+            syncPCountVisibility();
+            if (this.value === "online") {
+                SystemUI.v2Lobby.show();
+            } else {
+                SystemUI.v2Lobby.hide();
+                myId = 1; isHost = true;
+                SystemUI.stopChat(); chatStarted = false;
+                if(roomListener) { roomListener(); roomListener = null; }
+                resetTableForBetting();
+            }
+        });
+    }
+
+    const countEl = document.getElementById("sys-pcount");
+    if (countEl) {
+        countEl.addEventListener("change", (e) => {
+            lobbyPlayerCount = parseInt(e.target.value);
+            localStorage.setItem("blackjack_pcount", e.target.value);
+            resetTableForBetting();
+        });
+    }
+
+    syncPCountVisibility();
     updateDealerRuleText();
 }, 10);
+
+function syncPCountVisibility() {
+    const wrap = document.getElementById("sys-pcount")?.closest(".hud-dropdown-wrap") ||
+                 document.getElementById("sys-pcount")?.parentElement;
+    if (wrap) wrap.style.display = gameMode === "ai" ? "" : "none";
+}
 
 function updateDealerRuleText() {
     const el = document.getElementById("dealer-rule-text");
@@ -67,18 +127,6 @@ document.getElementById("sys-difficulty").addEventListener("change", (e) => {
     updateBetUI();
 });
 
-document.getElementById("sys-bj-mode").addEventListener("change", function () {
-    gameMode = this.value;
-    if (this.value === "online") {
-        SystemUI.v2Lobby.show();
-    } else {
-        SystemUI.v2Lobby.hide();
-        myId = 1; isHost = true;
-        SystemUI.stopChat(); chatStarted = false;
-        resetTableForBetting();
-    }
-});
-
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
     if(confirm("Reset your Blackjack streak and difficulty?")) {
         localStorage.removeItem("blackjack_streak");
@@ -87,90 +135,108 @@ document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
     }
 });
 
-
-let playerHand = [];
-let dealerHand = [];
-let currentBet = 0;
-let isGameOver = true;
-let deck = [];
-let winStreak = parseInt(localStorage.getItem("blackjack_streak")) || 0;
-
-function updateStreakUI() { document.getElementById("streak-val").innerText = winStreak; }
+function updateStreakUI() { 
+    const el = document.getElementById("streak-val");
+    if (el) el.innerText = winStreak; 
+}
 updateStreakUI();
 
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
-        if (!isGameOver) return;
-        if (currentBet + val > SystemUI.money) {
+        if (gamePhase !== "betting") return;
+        if (currentBets[myId - 1] + val > SystemUI.money) {
             showToast("Not Enough Cash", "You don't have enough bankroll for that bet.");
             return;
         }
-        if (currentBet === 0) SystemUI.playSound('chipTable');
+        if (currentBets[myId - 1] === 0) SystemUI.playSound('chipTable');
         else SystemUI.playSound('chipStack');
 
-        currentBet += val;
+        currentBets[myId - 1] += val;
         updateBetUI();
+        if (gameMode === "online") pushGameState();
     },
     onClear: function() {
-        if (!isGameOver) return;
-        currentBet = 0;
+        if (gamePhase !== "betting") return;
+        currentBets[myId - 1] = 0;
         updateBetUI();
+        if (gameMode === "online") pushGameState();
     }
 });
 
 function updateBetUI() {
-    SystemUI.updateBetDisplay(currentBet);
-    SystemUI.enableBetting(isGameOver); 
+    SystemUI.updateBetDisplay(currentBets[myId - 1]);
+    SystemUI.enableBetting(gamePhase === "betting"); 
     
     let minBet = (savedDifficulty === "19") ? 10 : (savedDifficulty === "17" ? 5 : 2);
     const dealBtn = document.getElementById("deal-btn");
     
-    if (currentBet < minBet) {
-        dealBtn.disabled = true;
-        dealBtn.innerText = `DEAL (Min $${minBet})`; 
-    } else {
-        dealBtn.disabled = false;
-        dealBtn.innerText = `DEAL`;
+    if (dealBtn) {
+        if (gameMode === "online" && !isHost) {
+            dealBtn.disabled = true;
+            dealBtn.innerText = "WAITING FOR HOST";
+        } else if (currentBets[0] < minBet) {
+            dealBtn.disabled = true;
+            dealBtn.innerText = `DEAL (Min $${minBet})`; 
+        } else {
+            dealBtn.disabled = false;
+            dealBtn.innerText = `DEAL`;
+        }
     }
     
     renderTableChips();
 }
 
 function renderTableChips() {
-    const potDisplay = document.getElementById("table-pot-display");
-    if (currentBet === 0) {
-        if (potDisplay) potDisplay.classList.add("hidden");
-        SystemUI.renderTableStacks(0, "table-bet-chips");
-        return;
+    const activeCount = gameMode === "online" ? seats.length : lobbyPlayerCount;
+    
+    for (let i = 0; i < 4; i++) {
+        const betContainer = document.getElementById(`table-bet-chips-${i}`);
+        const potDisplay = document.getElementById(`table-pot-display-${i}`);
+        
+        if (!betContainer) continue;
+        
+        if (i >= activeCount) {
+            betContainer.innerHTML = "";
+            if (potDisplay) potDisplay.classList.add("hidden");
+            continue;
+        }
+
+        if (currentBets[i] === 0) {
+            if (potDisplay) potDisplay.classList.add("hidden");
+            SystemUI.renderTableStacks(0, `table-bet-chips-${i}`);
+        } else {
+            if (potDisplay) {
+                potDisplay.innerText = `$${currentBets[i]}`;
+                potDisplay.classList.remove("hidden");
+            }
+            SystemUI.renderTableStacks(currentBets[i], `table-bet-chips-${i}`);
+        }
     }
-    if (potDisplay) {
-        potDisplay.innerText = `POT: $${currentBet * 2}`;
-        potDisplay.classList.remove("hidden");
-    }
-    SystemUI.renderTableStacks(currentBet, "table-bet-chips");
 }
 
 let modalTimer;
 let resetPending = false;
 function showToast(title, message, resetTableAfter = false) {
-  document.getElementById("modal-title").innerText = title;
-  document.getElementById("modal-message").innerText = message;
+  const tEl = document.getElementById("modal-title");
+  const mEl = document.getElementById("modal-message");
+  if(tEl) tEl.innerText = title;
+  if(mEl) mEl.innerText = message;
   const overlay = document.getElementById("toast-modal");
-  overlay.classList.remove("hidden");
+  if (overlay) overlay.classList.remove("hidden");
   resetPending = resetTableAfter;
 
   clearTimeout(modalTimer);
   modalTimer = setTimeout(() => {
-    overlay.classList.add("hidden");
-    if (resetTableAfter) resetTableForBetting();
+    if (overlay) overlay.classList.add("hidden");
+    if (resetTableAfter && isHost) resetTableForBetting();
   }, 3500);
 }
 
-document.getElementById("toast-modal").addEventListener("click", function() {
+document.getElementById("toast-modal")?.addEventListener("click", function() {
   if (!this.classList.contains("hidden")) {
     clearTimeout(modalTimer);
     this.classList.add("hidden");
-    if (resetPending) {
+    if (resetPending && isHost) {
       resetPending = false;
       resetTableForBetting();
     }
@@ -178,16 +244,23 @@ document.getElementById("toast-modal").addEventListener("click", function() {
 });
 
 function resetTableForBetting() {
-  isGameOver = true;
-  playerHand = [];
+  if (!isHost && gameMode === "online") return;
+  gamePhase = "betting";
+  playerHands = [[], [], [], []];
   dealerHand = [];
-  // Note: we keep currentBet so "repeat" betting works
+  playerStatus = ["active", "active", "active", "active"];
+  activeSeat = 0;
+  
   updateBetUI(); 
   updateStreakUI();
   renderGame(); 
-  document.getElementById("playing-controls").classList.add("hidden");
-  document.getElementById("betting-controls").classList.remove("hidden");
-  if (gameMode === "online") pushToFirebase();
+  
+  const playingBox = document.getElementById("playing-controls");
+  const bettingBox = document.getElementById("betting-controls");
+  if (playingBox) playingBox.classList.add("hidden");
+  if (bettingBox) bettingBox.classList.remove("hidden");
+  
+  if (gameMode === "online") pushGameState();
 }
 
 const suits = ["♠", "♥", "♦", "♣"];
@@ -230,184 +303,257 @@ function calculateScore(hand) {
   return score;
 }
 
+// ── GAME FLOW ─────────────────────────────────
+
 document.getElementById("deal-btn").addEventListener("click", () => {
-  if (gameMode === "online" && myId === 2) return;
-  if (SystemUI.money < currentBet) {
+  if (gameMode === "online" && !isHost) return;
+  if (SystemUI.money < currentBets[0] && myId === 1) {
       showToast("Bankrupt", "You can't afford this bet anymore. Clear or lower your bet.");
       return;
   }
   
-  SystemUI.money -= currentBet; 
+  SystemUI.money -= currentBets[0]; 
   SystemUI.updateMoneyDisplay();
+  
+  const activeCount = gameMode === "online" ? seats.length : lobbyPlayerCount;
+  for (let i = 1; i < activeCount; i++) {
+      if ((gameMode === "online" && seats[i]?.type === "ai") || gameMode === "ai") {
+          if (currentBets[i] === 0) currentBets[i] = 10; 
+      }
+  }
   
   if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("blackjack");
   
-  isGameOver = false;
+  gamePhase = "dealing";
   updateBetUI(); 
   SystemUI.playSound('shuffle');
 
   document.getElementById("betting-controls").classList.add("hidden");
   document.getElementById("playing-controls").classList.remove("hidden");
-  document.getElementById("hit-btn").disabled = true;
-  document.getElementById("stand-btn").disabled = true;
-  document.getElementById("double-btn").disabled = true;
-  document.getElementById("insurance-btn").classList.add("hidden");
+  disableActionButtons();
 
   let numDecks = (savedDifficulty === "19") ? 6 : (savedDifficulty === "17" ? 4 : 1);
-  if (deck.length < 20) { createDeck(numDecks); shuffleDeck(); }
+  if (deck.length < (activeCount * 5) + 10) { createDeck(numDecks); shuffleDeck(); }
 
-  setTimeout(() => dealCard(playerHand), 100);
-  setTimeout(() => dealCard(dealerHand), 300);
-  setTimeout(() => dealCard(playerHand), 500);
-  setTimeout(() => {
-      dealCard(dealerHand);
-      renderGame();
-      document.getElementById("hit-btn").disabled = false;
-      document.getElementById("stand-btn").disabled = false;
-      document.getElementById("double-btn").disabled = false;
-      if (dealerHand[0].name === "A") document.getElementById("insurance-btn").classList.remove("hidden");
-      if (calculateScore(playerHand) === 21) handleStand();
-      if (gameMode === "online") pushToFirebase();
-  }, 700);
+  let delay = 100;
+  for (let i = 0; i < activeCount; i++) {
+      setTimeout(() => { dealCard(playerHands[i]); renderGame(); }, delay);
+      delay += 200;
+  }
+  setTimeout(() => { dealCard(dealerHand); renderGame(); }, delay);
+  delay += 200;
+  for (let i = 0; i < activeCount; i++) {
+      setTimeout(() => { dealCard(playerHands[i]); renderGame(); }, delay);
+      delay += 200;
+  }
+  setTimeout(() => { 
+      dealCard(dealerHand); 
+      gamePhase = "playing";
+      activeSeat = 0;
+      for(let i=0; i<activeCount; i++) {
+          if(calculateScore(playerHands[i]) === 21) playerStatus[i] = "blackjack";
+      }
+      renderGame(); 
+      updateTurnUI();
+      if (gameMode === "online") pushGameState();
+      processTurn(); 
+  }, delay);
 });
 
-document.getElementById("hit-btn").addEventListener("click", () => {
-  if (isGameOver) return;
-  document.getElementById("insurance-btn").classList.add("hidden");
-  document.getElementById("double-btn").disabled = true; 
-  dealCard(playerHand);
-  renderGame();
-  
-  if (calculateScore(playerHand) > 21) determineWinner();
-  else if (calculateScore(playerHand) === 21) handleStand();
-  if (gameMode === "online") pushToFirebase();
-});
-
-document.getElementById("stand-btn").addEventListener("click", handleStand);
-
-function handleStand() {
-  if (isGameOver) return;
-  document.getElementById("insurance-btn").classList.add("hidden");
-  
-  const currentSeatIdx = 1; 
-  if (gameMode === "online" && seats[currentSeatIdx] && seats[currentSeatIdx].type === "human") {
-      if (myId === 1) {
-          showToast("Waiting", "Waiting for Dealer to move...");
-          return;
-      }
-  }
-
-  const difficultyLimit = Number(savedDifficulty);
-  function playDealerTurn() {
-      let dealerScore = calculateScore(dealerHand);
-      if (dealerScore < difficultyLimit) {
-          dealCard(dealerHand);
-          renderGame();
-          setTimeout(playDealerTurn, 600);
-      } else {
-          determineWinner();
-      }
-  }
-  playDealerTurn();
+function disableActionButtons() {
+    document.getElementById("hit-btn").disabled = true;
+    document.getElementById("stand-btn").disabled = true;
+    document.getElementById("double-btn").disabled = true;
+    document.getElementById("split-btn").disabled = true;
+    document.getElementById("insurance-btn").classList.add("hidden");
 }
 
+function updateTurnUI() {
+    disableActionButtons();
+    for(let i=0; i<4; i++) {
+        const box = document.getElementById(`box-slot-${i}`);
+        if(box) box.classList.toggle("active-turn", i === activeSeat && gamePhase === "playing");
+    }
+    if (gamePhase !== "playing") return;
+    if (activeSeat === myId - 1) {
+        document.getElementById("hit-btn").disabled = false;
+        document.getElementById("stand-btn").disabled = false;
+        document.getElementById("double-btn").disabled = (playerHands[activeSeat].length > 2);
+        if (dealerHand.length > 0 && dealerHand[0].name === "A" && playerHands[activeSeat].length === 2) {
+            document.getElementById("insurance-btn").classList.remove("hidden");
+        }
+    }
+}
+
+function processTurn() {
+    if (gamePhase !== "playing") return;
+    const activeCount = gameMode === "online" ? seats.length : lobbyPlayerCount;
+    while (activeSeat < activeCount && playerStatus[activeSeat] !== "active") {
+        activeSeat++;
+    }
+    if (activeSeat >= activeCount) {
+        if (isHost) handleDealerTurn();
+        return;
+    }
+    updateTurnUI();
+    if (gameMode === "online" && isHost) pushGameState();
+    if (isHost) {
+        const isBot = (gameMode === "online") ? seats[activeSeat]?.type === "ai" : (activeSeat > 0);
+        if (isBot) {
+            setTimeout(() => playAiTurn(), 1000);
+        }
+    }
+}
+
+function playAiTurn() {
+    if (gamePhase !== "playing" || playerStatus[activeSeat] !== "active") return;
+    const score = calculateScore(playerHands[activeSeat]);
+    if (score < 17) {
+        dealCard(playerHands[activeSeat]);
+        renderGame();
+        if (calculateScore(playerHands[activeSeat]) > 21) {
+            playerStatus[activeSeat] = "busted";
+        }
+        if (gameMode === "online") pushGameState();
+        setTimeout(processTurn, 1000);
+    } else {
+        playerStatus[activeSeat] = "stand";
+        if (gameMode === "online") pushGameState();
+        processTurn();
+    }
+}
+
+document.getElementById("hit-btn").addEventListener("click", () => {
+  if (gamePhase !== "playing" || activeSeat !== myId - 1) return;
+  document.getElementById("insurance-btn").classList.add("hidden");
+  dealCard(playerHands[activeSeat]);
+  renderGame();
+  const score = calculateScore(playerHands[activeSeat]);
+  if (score > 21) playerStatus[activeSeat] = "busted";
+  else if (score === 21) playerStatus[activeSeat] = "stand";
+  if (gameMode === "online") pushGameState();
+  processTurn();
+});
+
+document.getElementById("stand-btn").addEventListener("click", () => {
+  if (gamePhase !== "playing" || activeSeat !== myId - 1) return;
+  document.getElementById("insurance-btn").classList.add("hidden");
+  playerStatus[activeSeat] = "stand";
+  if (gameMode === "online") pushGameState();
+  processTurn();
+});
+
 document.getElementById("double-btn").addEventListener("click", () => {
-  if (isGameOver || playerHand.length > 2) return;
-  if (SystemUI.money < currentBet) {
+  if (gamePhase !== "playing" || activeSeat !== myId - 1 || playerHands[activeSeat].length > 2) return;
+  if (SystemUI.money < currentBets[activeSeat]) {
     showToast("Not enough cash", "You don't have enough to double down!");
     return;
   }
-  
   document.getElementById("insurance-btn").classList.add("hidden");
-  SystemUI.money -= currentBet;
-  currentBet *= 2;
+  SystemUI.money -= currentBets[activeSeat];
+  currentBets[activeSeat] *= 2;
   SystemUI.updateMoneyDisplay();
-  
   renderTableChips();
-  dealCard(playerHand);
+  dealCard(playerHands[activeSeat]);
   renderGame();
-  
-  if (calculateScore(playerHand) > 21) determineWinner();
-  else handleStand();
-  if (gameMode === "online") pushToFirebase();
+  if (calculateScore(playerHands[activeSeat]) > 21) playerStatus[activeSeat] = "busted";
+  else playerStatus[activeSeat] = "stand";
+  if (gameMode === "online") pushGameState();
+  processTurn();
 });
 
 document.getElementById("insurance-btn").addEventListener("click", () => {
-  if (isGameOver) return;
-  const insBet = currentBet / 2;
+  if (gamePhase !== "playing" || activeSeat !== myId - 1) return;
+  const insBet = currentBets[activeSeat] / 2;
   if (SystemUI.money < insBet) {
     showToast("Not enough cash", "You don't have enough for insurance!");
     return;
   }
-  
   SystemUI.money -= insBet;
   SystemUI.updateMoneyDisplay();
   document.getElementById("insurance-btn").classList.add("hidden");
-  
   if (calculateScore(dealerHand) === 21) {
     SystemUI.money += (insBet * 3); 
     SystemUI.updateMoneyDisplay();
     SystemUI.playSound('win');
     if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", insBet * 3);
     showToast("Insurance Paid!", `Dealer has Blackjack. You won $${insBet * 2}.`);
-    setTimeout(handleStand, 2500);
+    setTimeout(() => {
+        gamePhase = "dealerTurn";
+        if (gameMode === "online" && isHost) pushGameState();
+        if (isHost) handleDealerTurn();
+    }, 2500);
   } else {
     showToast("Safe!", "Dealer does not have Blackjack.");
+    if (gameMode === "online") pushGameState();
   }
-  if (gameMode === "online") pushToFirebase();
 });
 
-function determineWinner() {
-  isGameOver = true;
-  document.getElementById("hit-btn").disabled = true;
-  document.getElementById("stand-btn").disabled = true;
-  document.getElementById("double-btn").disabled = true;
+function handleDealerTurn() {
+  if (!isHost) return;
+  gamePhase = "dealerTurn";
+  if (gameMode === "online") pushGameState();
   renderGame(); 
+  const allDone = playerStatus.every(s => s === "busted" || s === "blackjack" || s === "inactive");
+  const difficultyLimit = Number(savedDifficulty);
+  function playDealerAction() {
+      let dealerScore = calculateScore(dealerHand);
+      if (!allDone && dealerScore < difficultyLimit) {
+          dealCard(dealerHand);
+          renderGame();
+          if (gameMode === "online") pushGameState();
+          setTimeout(playDealerAction, 800);
+      } else {
+          determineWinners();
+      }
+  }
+  setTimeout(playDealerAction, 800);
+}
 
-  const pScore = calculateScore(playerHand);
+function determineWinners() {
+  gamePhase = "payout";
+  disableActionButtons();
+  renderGame(); 
   const dScore = calculateScore(dealerHand);
-  const playerHasBlackjack = (pScore === 21 && playerHand.length === 2);
   const dealerHasBlackjack = (dScore === 21 && dealerHand.length === 2);
-
+  const myIdx = myId - 1;
+  const pScore = calculateScore(playerHands[myIdx]);
+  const playerHasBlackjack = (pScore === 21 && playerHands[myIdx].length === 2);
+  const bet = currentBets[myIdx];
   let title = "", message = "";
-
-  if (pScore > 21) {
-    title = "Busted!"; message = `You went over 21. Lost $${currentBet}.`;
+  if (playerStatus[myIdx] === "busted") {
+    title = "Busted!"; message = `You went over 21. Lost $${bet}.`;
     winStreak = 0; SystemUI.playSound('lose');
     if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("blackjack");
   } else if (playerHasBlackjack && !dealerHasBlackjack) {
-    title = "Blackjack!"; message = `Natural 21! Won $${currentBet * 1.5}!`;
-    SystemUI.money += (currentBet * 2.5); winStreak++; SystemUI.playSound('win');
-    if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", currentBet * 2.5);
+    title = "Blackjack!"; message = `Natural 21! Won $${bet * 1.5}!`;
+    SystemUI.money += (bet * 2.5); winStreak++; SystemUI.playSound('win');
+    if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", bet * 2.5);
     if (typeof SystemUI.unlockAchievement !== 'undefined') SystemUI.unlockAchievement("blackjack_hand");
   } else if (dScore > 21 || pScore > dScore) {
-    title = "You Win!"; message = `Beat the dealer! Won $${currentBet * 2}!`;
-    SystemUI.money += (currentBet * 2); winStreak++; SystemUI.playSound('win');
-    if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", currentBet * 2);
-  } else if (dScore > pScore) {
-    title = "Dealer Wins!"; message = `Dealer had a higher score. Lost $${currentBet}.`;
+    title = "You Win!"; message = `Beat the dealer! Won $${bet * 2}!`;
+    SystemUI.money += (bet * 2); winStreak++; SystemUI.playSound('win');
+    if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", bet * 2);
+  } else if (dScore > pScore || (dealerHasBlackjack && !playerHasBlackjack)) {
+    title = "Dealer Wins!"; message = `Dealer had a higher score. Lost $${bet}.`;
     winStreak = 0; SystemUI.playSound('lose');
     if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("blackjack");
   } else {
     title = "Push (Tie)!"; message = "It's a tie. Bet returned.";
-    SystemUI.money += currentBet; winStreak = 0; SystemUI.playSound('tie');
+    SystemUI.money += bet; winStreak = 0; SystemUI.playSound('tie');
   }
-
   SystemUI.updateMoneyDisplay();
   localStorage.setItem("blackjack_streak", winStreak);
+  updateStreakUI();
+  if (gameMode === "online") pushGameState();
   setTimeout(() => { showToast(title, message, true); }, 1000);
 }
 
-// --- EQUIPMENT & STORE INTEGRATION ---
 function getEquipment() {
     const inv = (window.SystemProfile && window.SystemProfile.data.inventory) ? window.SystemProfile.data.inventory : [];
-    
-    // Check for Jumbo Deck
     const useJumbo = inv.includes("deck_alt");
     const deckFolder = useJumbo ? "standard-1" : "standard";
-    
-    // Check for Card Backs (highest price one wins if multiple owned)
-    let backImg = useJumbo ? "back01.png" : "cardBack_blue1.png"; // Defaults
+    let backImg = useJumbo ? "back01.png" : "cardBack_blue1.png"; 
     const backs = [
         { id: "back_b1", img: "cardBack_blue1.png" },
         { id: "back_b5", img: "cardBack_blue5.png" },
@@ -415,19 +561,13 @@ function getEquipment() {
         { id: "back_r5", img: "cardBack_red5.png" },
         { id: "back_g1", img: "cardBack_green1.png" }
     ];
-    
-    // We only change the back if they don't have jumbo deck (as jumbo has its own back style)
-    if (!useJumbo) {
-        backs.forEach(b => { if(inv.includes(b.id)) backImg = b.img; });
-    }
-
+    if (!useJumbo) { backs.forEach(b => { if(inv.includes(b.id)) backImg = b.img; }); }
     return { folder: deckFolder, back: backImg };
 }
 
 function getCardImage(card) {
   const equip = getEquipment();
   const suitMap = { "♠": "Spades", "♥": "Hearts", "♦": "Diamonds", "♣": "Clubs" };
-  
   if (equip.folder === "standard-1") {
       const jumboSuitMap = { "♠": "spades", "♥": "hearts", "♦": "diamonds", "♣": "clubs" };
       let nameStr = card.name;
@@ -436,10 +576,8 @@ function getCardImage(card) {
       else if (nameStr === "Q") nameStr = "queen";
       else if (nameStr === "K") nameStr = "king";
       else if (parseInt(nameStr) < 10) nameStr = "0" + nameStr;
-      
       return `../../system/images/cards/standard-1/${jumboSuitMap[card.suit]}_${nameStr}.png`;
   }
-  
   return `../../system/images/cards/standard/card${suitMap[card.suit]}${card.name}.png`;
 }
 
@@ -447,14 +585,12 @@ function createCardElement(card, isHidden) {
   const equip = getEquipment();
   const cardEl = document.createElement("div");
   cardEl.classList.add("card");
-  
   if (isHidden) {
     cardEl.classList.add("hidden-card");
     const backPath = `../../system/images/cards/${equip.folder}/${equip.back}`;
     cardEl.innerHTML = `<img src="${backPath}" style="width: 100%; height: 100%; border-radius: 6px; display: block;">`;
     return cardEl;
   }
-  
   let imgFile = getCardImage(card);
   cardEl.innerHTML = `<img src="${imgFile}" style="width: 100%; height: 100%; border-radius: 6px; display: block;">`;
   cardEl.style.border = "none"; cardEl.style.backgroundColor = "transparent";
@@ -462,69 +598,167 @@ function createCardElement(card, isHidden) {
 }
 
 function renderGame() {
-  const playerEl = document.getElementById("player-cards");
   const dealerEl = document.getElementById("dealer-cards");
-  const pBubble = document.getElementById("player-score");
   const dBubble = document.getElementById("dealer-score");
-
-  playerEl.innerHTML = ""; dealerEl.innerHTML = "";
-
-  playerHand.forEach((card) => playerEl.appendChild(createCardElement(card, false)));
+  if (dealerEl) dealerEl.innerHTML = "";
   dealerHand.forEach((card, index) => {
-    let isHidden = (index === 1 && !isGameOver);
-    dealerEl.appendChild(createCardElement(card, isHidden));
+    let isHidden = (index === 1 && gamePhase !== "dealerTurn" && gamePhase !== "payout");
+    if (dealerEl) dealerEl.appendChild(createCardElement(card, isHidden));
   });
+  if (dBubble) {
+      if (dealerHand.length > 0 && (gamePhase === "dealerTurn" || gamePhase === "payout")) {
+          dBubble.innerText = calculateScore(dealerHand); 
+          dBubble.classList.remove("hidden");
+      } else { dBubble.classList.add("hidden"); }
+  }
 
-  if (playerHand.length > 0) {
-    pBubble.innerText = calculateScore(playerHand); pBubble.classList.remove("hidden");
-  } else { pBubble.classList.add("hidden"); }
+  const activeCount = gameMode === "online" ? seats.length : lobbyPlayerCount;
+  for (let i = 0; i < 4; i++) {
+      const pEl = document.getElementById(`player-cards-${i}`);
+      const pBubble = document.getElementById(`player-score-${i}`);
+      const pLabel = document.getElementById(`player-name-${i}`);
+      const boxSlot = document.getElementById(`box-slot-${i}`);
+      if (!pEl) continue;
+      if (i >= activeCount) { if (boxSlot) boxSlot.classList.add("hidden"); continue; }
+      if (boxSlot) boxSlot.classList.remove("hidden");
+      
+      if (pLabel) {
+          if (gameMode === "online" && seats[i]) pLabel.innerText = seats[i].name;
+          else if (i === 0) pLabel.innerText = SystemUI.getPlayerName();
+          else pLabel.innerText = `AI ${i+1}`;
+      }
 
-  if (dealerHand.length > 0) {
-    if (isGameOver) {
-      dBubble.innerText = calculateScore(dealerHand); dBubble.classList.remove("hidden");
-    } else { dBubble.classList.add("hidden"); }
-  } else { dBubble.classList.add("hidden"); }
+      pEl.innerHTML = "";
+      playerHands[i].forEach((card, idx) => {
+          // Dealer Privacy Logic: Hide other players' second card and subsequent ones
+          // Like the dealer, we hide cards starting at index 1 for opponents
+          let isHidden = (i !== myId - 1 && idx >= 1 && gamePhase !== "payout");
+          pEl.appendChild(createCardElement(card, isHidden));
+      });
+
+      if (pBubble) {
+          // Only show score bubble for the local player OR at the end for everyone
+          if (playerHands[i].length > 0 && (i === myId - 1 || gamePhase === "payout")) {
+              pBubble.innerText = calculateScore(playerHands[i]); 
+              pBubble.classList.remove("hidden");
+          } else { pBubble.classList.add("hidden"); }
+      }
+  }
 }
 
 // --- V2 MULTIPLAYER (Lobby Hooks) ---
+
+function updateLobbyPreview() {
+    const slots = [{ type: "host", name: SystemUI.getPlayerName(), color: "#e74c3c" }];
+    for (let i = 1; i < lobbyPlayerCount; i++) {
+        slots.push({ type: "ai", name: "AI " + i, color: "#3498db" });
+    }
+    SystemUI.v2Lobby.updatePreview(slots);
+}
+
 SystemUI.v2Lobby.setup({
+    settingsConfig: [
+        {
+            id: "lobby-count",
+            label: "PLAYERS",
+            type: "select",
+            default: lobbyPlayerCount,
+            options: [
+                { value: 1, label: "1 PLAYER" },
+                { value: 2, label: "2 PLAYERS" },
+                { value: 3, label: "3 PLAYERS" },
+                { value: 4, label: "4 PLAYERS" }
+            ]
+        },
+        {
+            id: "sys-difficulty-lobby",
+            label: "RULES",
+            type: "select",
+            default: savedDifficulty,
+            options: [
+                { value: "15", label: "EASY (Stand 15)" },
+                { value: "17", label: "NORMAL (Stand 17)" },
+                { value: "19", label: "HARD (Stand 19)" }
+            ]
+        }
+    ],
+    onSettingsRendered: () => { updateLobbyPreview(); },
+    onSettingChange: (key, val) => {
+        if (key === "lobby-count") {
+            lobbyPlayerCount = parseInt(val);
+            localStorage.setItem("blackjack_pcount", val);
+            const localPCount = document.getElementById("sys-pcount");
+            if (localPCount) localPCount.value = val;
+        } else if (key === "sys-difficulty-lobby") {
+            savedDifficulty = val;
+            localStorage.setItem("blackjack_diff", val);
+            const localDiff = document.getElementById("sys-difficulty");
+            if (localDiff) localDiff.value = val;
+            updateDealerRuleText();
+        }
+        updateLobbyPreview();
+    },
     onHost: () => {
+        if(!window.db) { alert("Server error."); return; }
         currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
         isHost = true; myId = 1; chatStarted = false;
-        seats = [{ type: "human", name: SystemUI.getPlayerName() }, { type: "ai", name: "Dealer" }];
-        window.dbSet(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{
-            status: "waiting", seats: seats, pHand: [], dHand: [], isGameOver: true, bet: 0
+        seats = [{ type: "human", name: SystemUI.getPlayerName() }];
+        for (let i = 1; i < lobbyPlayerCount; i++) seats.push({ type: "ai", name: "AI " + i });
+        window.dbSet(window.dbRef(window.db,'bj_rooms/'+currentRoomId), {
+            status: "waiting", seats: seats, ts: Date.now()
         }).then(()=>{
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToRoom();
         });
     },
     onJoin: (code) => {
+        if(!window.db) return;
         window.dbGet(window.dbChild(window.dbRef(window.db),`bj_rooms/${code}`)).then(snap=>{
             if(snap.exists()){
                 let data = snap.val();
-                if (data.seats && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-                    window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{ seats: updatedSeats, status: "playing" });
+                let joinedIdx = -1;
+                const updatedSeats = data.seats ? [...data.seats] : [];
+                for (let i = 1; i < updatedSeats.length; i++) {
+                    if (updatedSeats[i].type === "ai") {
+                        joinedIdx = i;
+                        updatedSeats[i] = { type: "human", name: SystemUI.getPlayerName() };
+                        break;
+                    }
+                }
+                if (joinedIdx !== -1) {
+                    currentRoomId = code; isHost = false; myId = joinedIdx + 1; chatStarted = false;
+                    window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{ seats: updatedSeats, status: "playing", ts: Date.now() });
                     SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
                     listenToRoom();
-                }
-            }
+                } else { SystemUI.v2Lobby.showError("ROOM FULL"); }
+            } else { SystemUI.v2Lobby.showError("ROOM NOT FOUND"); }
         });
     },
     onLeave: () => {
-        gameMode="ai"; myId=1; isHost=true; resetTableForBetting();
+        if (isHost && currentRoomId && window.db) window.dbSet(window.dbRef(window.db, `bj_rooms/${currentRoomId}`), null);
+        gameMode="ai"; myId=1; isHost=true; 
+        document.getElementById("sys-bj-mode").value = "ai";
+        localStorage.setItem("blackjack_mode", "ai");
+        syncPCountVisibility();
+        resetTableForBetting();
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{ status: "playing" });
+        if(window.db) window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{ status: "playing", ts: Date.now() });
+    },
+    onClose: () => {
+        if (gameMode === "online" && gamePhase === "betting") {
+            if (isHost && currentRoomId && window.db) window.dbSet(window.dbRef(window.db, `bj_rooms/${currentRoomId}`), null);
+            gameMode = "ai";
+            document.getElementById("sys-bj-mode").value = "ai";
+            syncPCountVisibility();
+            myId = 1; isHost = true;
+        }
     }
 });
 
 function listenToRoom() {
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db,'bj_rooms/'+currentRoomId), snap=>{
+    roomListener = window.dbOnValue(window.dbRef(window.db,'bj_rooms/'+currentRoomId), snap=>{
         const data=snap.val(); if(!data) return;
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
@@ -532,24 +766,59 @@ function listenToRoom() {
             onlineGameStarted = true; SystemUI.v2Lobby.hide();
             if(!chatStarted){ chatStarted=true; SystemUI.startChat(currentRoomId,SystemUI.getPlayerName()); }
         }
-        syncOnline(data);
+        if (onlineGameStarted && data.gameState) syncOnlineState(data.gameState);
     });
 }
 
-function syncOnline(data) {
-    playerHand = data.pHand || [];
-    dealerHand = data.dHand || [];
-    isGameOver = data.isGameOver;
-    currentBet  = data.bet || 0;
-    renderGame();
-    updateBetUI();
-}
-
-function pushToFirebase() {
-    if (gameMode !== "online") return;
-    window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{
-        pHand: playerHand, dHand: dealerHand, isGameOver: isGameOver, bet: currentBet
+function pushGameState() {
+    if (gameMode !== "online" || !window.db) return;
+    const now = Date.now();
+    lastPushTime = now;
+    window.dbUpdate(window.dbRef(window.db, 'bj_rooms/' + currentRoomId), {
+        gameState: JSON.stringify({
+            gamePhase: gamePhase,
+            activeSeat: activeSeat,
+            playerHands: playerHands,
+            dealerHand: dealerHand,
+            currentBets: currentBets,
+            playerStatus: playerStatus,
+            ts: now,
+            pusher: myId
+        })
     });
 }
 
+function syncOnlineState(stateJson) {
+    try {
+        const data = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
+        if (!data.ts || (data.pusher === myId && data.ts === lastPushTime) || data.ts <= lastSyncTime) return;
+        lastSyncTime = data.ts;
+        gamePhase = data.gamePhase;
+        activeSeat = data.activeSeat;
+        playerHands = data.playerHands || [[], [], [], []];
+        dealerHand = data.dealerHand || [];
+        currentBets = data.currentBets || [0, 0, 0, 0];
+        playerStatus = data.playerStatus || ["active", "active", "active", "active"];
+        if (gamePhase === "betting") {
+            document.getElementById("playing-controls")?.classList.add("hidden");
+            document.getElementById("betting-controls")?.classList.remove("hidden");
+        } else {
+            document.getElementById("betting-controls")?.classList.add("hidden");
+            document.getElementById("playing-controls")?.classList.remove("hidden");
+        }
+        renderGame(); updateBetUI(); updateTurnUI();
+        if (isHost && gamePhase === "playing") {
+            const isBot = seats[activeSeat]?.type === "ai";
+            if (isBot) playAiTurn();
+        }
+    } catch (e) { console.error("Sync Error:", e); }
+}
+
+window.addEventListener("beforeunload", () => { 
+    if (isHost && currentRoomId && gameMode === "online" && window.db) {
+        window.dbSet(window.dbRef(window.db, `bj_rooms/${currentRoomId}`), null);
+    }
+});
+
+resetTableForBetting();
 updateBetUI();
