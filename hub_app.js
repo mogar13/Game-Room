@@ -930,11 +930,24 @@ function renderStore() {
             else if (item.type === 'dice') iconHtml = `<div class="store-icon" style="font-size:2.5rem;">🎲</div>`;
             else if (item.type === 'title') iconHtml = `<div class="store-icon" style="font-size:2rem;">📜</div>`;
             
+            let actionHtml = '';
+            if (owned) {
+                const loadout = window.SystemProfile.getLoadout ? window.SystemProfile.getLoadout() : {};
+                const isEquipped = loadout[item.type] === item.id;
+                if (isEquipped) {
+                    actionHtml = `<button class="btn-equip hub-interactive" disabled style="background:#2ecc71; color:#000; border:none; font-weight:bold; cursor:default; padding:8px; border-radius:4px; width:100%;">✓ EQUIPPED</button>`;
+                } else {
+                    actionHtml = `<button class="btn-equip hub-interactive" data-type="${item.type}" data-id="${item.id}" style="background:transparent; color:#f1c40f; border:1px solid #f1c40f; font-weight:bold; cursor:pointer; padding:8px; border-radius:4px; width:100%;">EQUIP</button>`;
+                }
+            } else {
+                actionHtml = `<button class="btn-buy hub-interactive" data-id="${item.id}">$${item.price.toLocaleString()}</button>`;
+            }
+            
             div.innerHTML = `
                 ${iconHtml}
                 <div class="store-name">${item.name}</div>
                 <div class="store-desc">${item.desc}</div>
-                <button class="btn-buy hub-interactive" data-id="${item.id}">$${item.price.toLocaleString()}</button>
+                ${actionHtml}
             `;
             container.appendChild(div);
         });
@@ -957,6 +970,19 @@ function renderStore() {
                     e.target.innerText = originalText;
                     e.target.disabled = false;
                 }
+            }
+        });
+    });
+
+    document.querySelectorAll('.btn-equip').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            if (e.target.disabled) return;
+            playHubSound('click');
+            const id = e.target.dataset.id;
+            const type = e.target.dataset.type;
+            if (window.SystemProfile && window.SystemProfile.setLoadout) {
+                window.SystemProfile.setLoadout(type, id);
+                renderStore(); 
             }
         });
     });

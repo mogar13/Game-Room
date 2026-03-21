@@ -550,18 +550,26 @@ function determineWinners() {
 }
 
 function getEquipment() {
-    const inv = (window.SystemProfile && window.SystemProfile.data.inventory) ? window.SystemProfile.data.inventory : [];
-    const useJumbo = inv.includes("deck_alt");
+    const loadout = (window.SystemProfile && window.SystemProfile.getLoadout) ? window.SystemProfile.getLoadout() : {};
+    const useJumbo = loadout.deck === "deck_alt";
     const deckFolder = useJumbo ? "standard-1" : "standard";
     let backImg = useJumbo ? "back01.png" : "cardBack_blue1.png"; 
-    const backs = [
-        { id: "back_b1", img: "cardBack_blue1.png" },
-        { id: "back_b5", img: "cardBack_blue5.png" },
-        { id: "back_r1", img: "cardBack_red1.png" },
-        { id: "back_r5", img: "cardBack_red5.png" },
-        { id: "back_g1", img: "cardBack_green1.png" }
-    ];
-    if (!useJumbo) { backs.forEach(b => { if(inv.includes(b.id)) backImg = b.img; }); }
+    
+    const equippedId = loadout.cardback || "back_b1";
+
+    if (useJumbo) {
+        const match = equippedId.match(/\d+/);
+        if (match) {
+            let numStr = match[0];
+            if (numStr.length === 1) numStr = "0" + numStr;
+            backImg = "back" + numStr + ".png";
+        }
+    } else {
+        if (window.SystemStore && window.SystemStore.CATALOG && window.SystemStore.CATALOG[equippedId]) {
+            backImg = window.SystemStore.CATALOG[equippedId].value;
+        }
+    }
+    
     return { folder: deckFolder, back: backImg };
 }
 

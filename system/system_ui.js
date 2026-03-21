@@ -154,6 +154,14 @@ window.SystemUI = {
                     </div>
                 </div>
             </div>
+            
+            <div id="sys-loadout-modal" class="sys-hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 4, 16, 0.95); z-index: 1001; display: flex; align-items: center; justify-content: center;">
+                <div class="sys-modal-box" style="width: 90%; max-width: 400px; max-height: 80vh; overflow-y: auto;">
+                    <button id="sys-close-loadout-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: #f1c40f; font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
+                    <h2 style="color: #f1c40f; font-family: 'Orbitron', sans-serif; margin: 0 0 15px 0; text-align: center; letter-spacing: 2px;">🎨 MY STYLE</h2>
+                    <div id="sys-loadout-content" style="display: flex; flex-direction: column; gap: 15px;"></div>
+                </div>
+            </div>
 
             <div id="sys-hub-menu" class="sys-hidden">
                 <div class="sys-hub-menu-box">
@@ -162,6 +170,7 @@ window.SystemUI = {
                     <button class="sys-hub-menu-btn" id="sys-hm-resume">▶&nbsp;&nbsp;RESUME GAME</button>
                     <button class="sys-hub-menu-btn" id="sys-hm-restart">🔄&nbsp;&nbsp;RESTART GAME</button>
                     <button class="sys-hub-menu-btn" id="sys-hm-info">📖&nbsp;&nbsp;GAME INFO</button>
+                    <button class="sys-hub-menu-btn" id="sys-hm-style">🎨&nbsp;&nbsp;MY STYLE</button>
                     <div class="sys-hub-menu-divider"></div>
                     <button class="sys-hub-menu-btn sys-hub-menu-btn-exit" id="sys-hm-exit">🏠&nbsp;&nbsp;RETURN TO LIBRARY</button>
                 </div>
@@ -311,6 +320,17 @@ window.SystemUI = {
                     errorEl.classList.remove("sys-hidden");
                 });
         });
+        
+        document.getElementById('sys-hm-style').addEventListener('click', () => {
+            this.playSound('click');
+            this.closeHubMenu();
+            this.openLoadoutModal();
+        });
+
+        document.getElementById('sys-close-loadout-btn').addEventListener('click', () => {
+            this.playSound('click');
+            document.getElementById('sys-loadout-modal').classList.add('sys-hidden');
+        });
 
         const refillBtn = document.getElementById('sys-bankrupt-refill');
         if (refillBtn) refillBtn.addEventListener('click', () => this.refillBankroll());
@@ -374,6 +394,90 @@ window.SystemUI = {
 
     closeHubMenu: function() {
         document.getElementById('sys-hub-menu').classList.add('sys-hidden');
+    },
+
+    openLoadoutModal: function() {
+        const modal = document.getElementById('sys-loadout-modal');
+        const content = document.getElementById('sys-loadout-content');
+        if (!modal || !content) return;
+
+        const profile = window.SystemProfile ? window.SystemProfile.getProfile() : {};
+        const inv = profile.inventory || [];
+        const loadout = window.SystemProfile && window.SystemProfile.getLoadout ? window.SystemProfile.getLoadout() : {};
+
+        const categories = {
+            cardback: { label: "Card Backs", items: [] },
+            deck: { label: "Card Faces", items: [] },
+            dice: { label: "Dice", items: [] }
+        };
+
+        const catalogFallback = {
+            'back_b1': { name: 'Blue Standard', type: 'cardback' },
+            'back_b5': { name: 'Blue Ornate', type: 'cardback' },
+            'back_r1': { name: 'Red Standard', type: 'cardback' },
+            'back_r5': { name: 'Red Ornate', type: 'cardback' },
+            'back_g1': { name: 'Green Standard', type: 'cardback' },
+            'deck_alt': { name: 'Jumbo Index', type: 'deck' },
+            'dice_red': { name: 'Red Casino Dice', type: 'dice' },
+            'dice_gold': { name: 'Gold Dice', type: 'dice' }
+        };
+
+        inv.forEach(itemId => {
+            let itemData = null;
+            if (window.SystemStore && window.SystemStore.CATALOG && window.SystemStore.CATALOG[itemId]) {
+                itemData = window.SystemStore.CATALOG[itemId];
+            } else if (catalogFallback[itemId]) {
+                itemData = catalogFallback[itemId];
+                itemData.id = itemId;
+            }
+
+            if (itemData && categories[itemData.type]) {
+                categories[itemData.type].items.push({ id: itemId, name: itemData.name });
+            }
+        });
+
+        let html = '';
+        Object.keys(categories).forEach(type => {
+            const cat = categories[type];
+            if (cat.items.length === 0) return;
+            
+            html += `<div style="margin-bottom: 10px;">
+                        <div style="color: #aaa; font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">${cat.label}</div>
+                        <div style="display: flex; flex-direction: column; gap: 5px;">`;
+            
+            const isDefaultEquipped = !loadout[type];
+            html += `<button class="sys-btn sys-loadout-btn" data-type="${type}" data-id="" style="background: ${isDefaultEquipped ? '#2ecc71' : 'transparent'}; color: ${isDefaultEquipped ? '#000' : '#fff'}; border: 1px solid ${isDefaultEquipped ? '#2ecc71' : '#555'}; text-align: left; padding: 8px 12px; font-size: 0.9rem;">
+                        ${isDefaultEquipped ? '✓ ' : ''}Default
+                     </button>`;
+
+            cat.items.forEach(item => {
+                const isEquipped = loadout[type] === item.id;
+                html += `<button class="sys-btn sys-loadout-btn" data-type="${type}" data-id="${item.id}" style="background: ${isEquipped ? '#2ecc71' : 'transparent'}; color: ${isEquipped ? '#000' : '#fff'}; border: 1px solid ${isEquipped ? '#2ecc71' : '#555'}; text-align: left; padding: 8px 12px; font-size: 0.9rem;">
+                            ${isEquipped ? '✓ ' : ''}${item.name}
+                         </button>`;
+            });
+            html += `</div></div>`;
+        });
+
+        if (html === '') {
+            html = `<div style="text-align: center; color: #888; font-size: 0.9rem; padding: 20px;">You don't own any table cosmetics yet. Visit the Store in the Hub to buy some!</div>`;
+        }
+
+        content.innerHTML = html + `<div style="color: #f1c40f; font-size: 0.75rem; text-align: center; margin-top: 10px;">Note: Changes apply on the next hand/round.</div>`;
+
+        content.querySelectorAll('.sys-loadout-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                this.playSound('click');
+                const type = e.currentTarget.dataset.type;
+                const id = e.currentTarget.dataset.id || null;
+                if (window.SystemProfile && window.SystemProfile.setLoadout) {
+                    window.SystemProfile.setLoadout(type, id);
+                    this.openLoadoutModal(); 
+                }
+            });
+        });
+
+        modal.classList.remove('sys-hidden');
     },
 
     // ==========================================

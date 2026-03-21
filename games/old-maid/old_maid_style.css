@@ -1,0 +1,245 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap');
+
+* { 
+  box-sizing: border-box; 
+  margin: 0; 
+  padding: 0; 
+  user-select: none; 
+  touch-action: manipulation; 
+}
+
+.hidden { display: none !important; }
+
+body {
+  background-color: #1a1a1a;
+  background-image: radial-gradient(circle at center, #2a2a2a 0%, #111 100%);
+  color: white; 
+  font-family: 'Nunito', 'Segoe UI', sans-serif;
+  height: 100dvh; 
+  display: flex; 
+  flex-direction: column; 
+  overflow: hidden;
+}
+
+#game-container {
+  flex-grow: 1; 
+  display: flex; 
+  flex-direction: column;
+  padding-top: 20px; 
+  align-items: center; 
+  justify-content: space-between; 
+  position: relative;
+}
+
+/* =============================================
+   THE CARD TABLE (Family Game Night Vibe)
+   ============================================= */
+#card-table {
+  position: relative; 
+  width: 96vw; max-width: 900px; 
+  height: 68vh; min-height: 480px;
+  margin: 10px auto;
+  
+  /* Soft blue/green cloth center */
+  background: radial-gradient(ellipse at center, #2980b9 0%, #2471a3 60%, #1a5276 100%);
+  border-radius: 120px; 
+  
+  /* Thick wooden border */
+  border: 18px solid #5c3a21;
+  box-shadow: 
+    inset 0 0 0 4px rgba(0,0,0,0.4), 
+    inset 0 0 40px rgba(0,0,0,0.6), 
+    0 15px 30px rgba(0,0,0,0.8);
+}
+
+/* Subtle texture for the cloth */
+#card-table::after {
+  content: ""; 
+  position: absolute; 
+  inset: 0; 
+  border-radius: 100px;
+  background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 2px, transparent 2px, transparent 4px);
+  pointer-events: none; 
+  z-index: 1;
+}
+
+/* =============================================
+   SEATING & AREAS
+   ============================================= */
+.player-seat {
+  position: absolute; 
+  display: flex; 
+  flex-direction: column; 
+  align-items: center; 
+  gap: 8px; 
+  z-index: 5;
+}
+
+#opponent-area { top: 20px; left: 50%; transform: translateX(-50%); width: 250px; } 
+#player-area { bottom: 15px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 600px; }
+
+.side-seat { width: 150px; top: 50%; transform: translateY(-50%); }
+#left-area { left: 15px; }
+#right-area { right: 15px; }
+
+/* Center discard area */
+#center-area { 
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 100%; max-width: 400px; display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 4; 
+}
+
+.table-middle-row { 
+  display: flex; align-items: center; justify-content: center; width: 100%;
+  height: 120px;
+}
+
+/* Player Nameplates */
+.player-info {
+  background: rgba(0,0,0,0.7); 
+  border: 2px solid #fff; 
+  border-radius: 20px;
+  padding: 6px 16px; 
+  font-weight: 900; 
+  font-size: 0.9rem; 
+  color: #fff; 
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+  white-space: nowrap; 
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+/* Glow effect when it's a player's turn */
+.active-turn .player-info {
+  border-color: #f1c40f;
+  color: #f1c40f;
+  box-shadow: 0 0 15px rgba(241, 196, 15, 0.6);
+  transform: scale(1.05);
+}
+
+/* =============================================
+   CARDS & CONTAINERS
+   ============================================= */
+.card-container { 
+  display: flex; 
+  justify-content: center; 
+  align-items: center;
+  min-height: 90px; 
+  position: relative;
+}
+
+/* Make cards overlap nicely so big hands fit on screen */
+#player-cards .card { margin-left: -35px; }
+#player-cards .card:first-child { margin-left: 0; }
+
+#opp-cards .card { margin-left: -30px; }
+#opp-cards .card:first-child { margin-left: 0; }
+
+/* Side hands spread vertically */
+.side-seat .card-container { flex-direction: column; padding: 10px 0; }
+.side-seat .card { margin-top: -65px; margin-left: 0; transform: rotate(90deg); }
+.side-seat .card:first-child { margin-top: 0; }
+#right-area .card { transform: rotate(-90deg); }
+
+.card {
+  width: 64px; height: 92px;
+  background-size: cover; background-position: center;
+  border-radius: 6px; 
+  box-shadow: -2px 4px 10px rgba(0,0,0,0.5);
+  border: 1px solid rgba(0,0,0,0.2);
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s;
+  position: relative;
+}
+
+.hidden-card {
+  background: url('../../system/images/cards/standard/cardBack_red5.png') center/cover no-repeat;
+}
+
+/* Opponent cards hover effect (when stealing) */
+.stealable-card { cursor: pointer; }
+.stealable-card:hover {
+  transform: translateY(-15px) scale(1.1) !important;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.8);
+  z-index: 100 !important;
+  border: 2px solid #f1c40f;
+}
+
+/* The discard pile where matches go */
+#discard-pile { position: relative; width: 100px; height: 120px; }
+#discard-pile .card { position: absolute; left: 50%; top: 50%; transform-origin: center; }
+
+/* =============================================
+   STATUS TEXT & UI
+   ============================================= */
+#game-status-text {
+  font-family: 'Nunito', sans-serif; 
+  font-weight: 900;
+  color: #fff; 
+  font-size: 1.1rem;
+  letter-spacing: 1px; 
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8); 
+  background: rgba(0,0,0,0.6);
+  padding: 8px 20px; 
+  border-radius: 20px; 
+  border: 2px solid rgba(255,255,255,0.2);
+  text-align: center;
+}
+
+/* =============================================
+   ACTION ZONE
+   ============================================= */
+#action-zone {
+  width: 100%; 
+  background: linear-gradient(to bottom, #222, #111);
+  padding: 15px; 
+  border-top: 2px solid #444; 
+  box-shadow: 0 -5px 15px rgba(0,0,0,0.8);
+}
+
+.action-btn {
+  border: none; padding: 14px 24px; font-size: 1.1rem; font-weight: 900;
+  border-radius: 8px; color: white; cursor: pointer; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 0 rgba(0,0,0,0.5); transition: 0.1s;
+  font-family: 'Nunito', sans-serif;
+}
+.action-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 0 0 rgba(0,0,0,0.5); }
+.primary-btn { background: linear-gradient(to bottom, #27ae60, #1e8449); }
+
+/* Modal */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.88); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.toast-box { background: linear-gradient(to bottom, #2c3e50, #1a252f); padding: 30px; border-radius: 15px; border: 3px solid #f1c40f; color: white; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+.toast-box h2 { color: #f1c40f; margin-bottom: 12px; font-weight: 900; font-size: 1.8rem;}
+
+/* =============================================
+   MOBILE OVERRIDES
+   ============================================= */
+@media (max-width: 600px) {
+  #card-table { border-radius: 80px; border-width: 12px; height: 65vh; margin-top: 5px; }
+  .side-seat { width: 80px; }
+  #left-area { left: 5px; }
+  #right-area { right: 5px; }
+  
+  .card { width: 50px; height: 72px; }
+  #player-cards .card { margin-left: -28px; }
+  #opp-cards .card { margin-left: -25px; }
+  .side-seat .card { margin-top: -50px; }
+  
+  #game-status-text { font-size: 0.9rem; padding: 6px 15px; }
+  .player-info { font-size: 0.75rem; padding: 4px 10px; }
+}
+
+/* =============================================
+   QoL ANIMATIONS
+   ============================================= */
+.highlight-pair {
+  transform: translateY(-20px) scale(1.15) !important;
+  box-shadow: 0 0 25px #2ecc71 !important;
+  border: 3px solid #2ecc71 !important;
+  z-index: 100 !important;
+}
+
+.anim-steal {
+  transform: translateY(20px) scale(1.1) !important;
+  box-shadow: 0 0 20px #e74c3c !important;
+  border: 2px solid #e74c3c !important;
+  z-index: 100 !important;
+}

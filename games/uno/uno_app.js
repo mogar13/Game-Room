@@ -303,6 +303,25 @@ function renderTable() {
     const dirContainer = document.getElementById("direction-container");
     if (dirContainer) {
         dirContainer.className = playDirection === 1 ? "dir-clockwise" : "dir-counter";
+        
+        const arrowTop = dirContainer.querySelector('.arrow-top');
+        const arrowRight = dirContainer.querySelector('.arrow-right');
+        const arrowBottom = dirContainer.querySelector('.arrow-bottom');
+        const arrowLeft = dirContainer.querySelector('.arrow-left');
+        
+        if (arrowTop && arrowRight && arrowBottom && arrowLeft) {
+            if (playDirection === 1) {
+                arrowTop.innerText = "→";
+                arrowRight.innerText = "↓";
+                arrowBottom.innerText = "←";
+                arrowLeft.innerText = "↑";
+            } else {
+                arrowTop.innerText = "←";
+                arrowRight.innerText = "↑";
+                arrowBottom.innerText = "→";
+                arrowLeft.innerText = "↓";
+            }
+        }
     }
 
     const seatMap = {
@@ -418,16 +437,16 @@ function resetGame() {
     document.getElementById("game-area").classList.add("hidden");
     document.getElementById("uno-btn").classList.add("hidden");
 
-    // NEW LOGIC: Handle returning to the online lobby vs offline menu
     if (gameMode === "online" && currentRoomId) {
         document.getElementById("start-screen").classList.add("hidden");
         
-        // The host updates the room back to "waiting" to trigger the lobby for everyone
+        // FIXED: Host explicitly resets the Lobby UI and room status to allow a new round
         if (isHost) {
+            document.getElementById("v2-lobby-overlay").classList.remove("sys-hidden");
+            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting" });
         }
     } else {
-        // Offline behavior: show the main start screen
         document.getElementById("start-screen").classList.remove("hidden");
         const startBtn = document.getElementById("start-game-btn");
         if (gameMode === "online" && !isHost) { 
@@ -515,7 +534,8 @@ function handleActionCard(card, playerNum) {
         
         if (gameMode === 'online') {
             pushGameState(null, "WINS!", playerNames[playerNum-1]);
-            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished" }); 
+            // SURGICAL FIX: Adding +50 to the timestamp guarantees the Host will process this final "finished" packet.
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished", ts: Date.now() + 50 }); 
         }
         setTimeout(resetGame, 2500);
         return; 
@@ -576,7 +596,6 @@ function advanceTurn(steps, logMsg) {
 }
 
 function aiTurn() {
-    // FIX: Strict safety check to guarantee AI never steals a human player's turn
     if (gameMode === "online" && seats[currentTurn - 1]?.type !== 'ai') return;
 
     const pIdx = currentTurn - 1;
@@ -684,11 +703,11 @@ function listenToRoom() {
         playerNames = seats.map(s => s.name);
         playerCount = seats.length;
         
-        // NEW LOGIC: Listen for the "waiting" status to show the lobby again
         if (data.status === "waiting") {
+            document.getElementById("v2-lobby-overlay").classList.remove("sys-hidden");
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, isHost);
             document.getElementById("game-area").classList.add("hidden");
-            onlineGameStarted = false; // Reset the trigger so the host can start a new game!
+            onlineGameStarted = false; 
         } 
         else if (data.status === "playing" || data.status === "finished") {
             SystemUI.v2Lobby.hide();
@@ -728,11 +747,14 @@ function syncFromFirebase(data) {
     if (data.ts && (data.ts <= lastSyncTime)) return;
     if (data.ts) lastSyncTime = data.ts;
 
-    if ((data.status === "playing" || data.status === "finished") && data.deck) {
+    // Only force visibility changes if the status is explicitly "playing"
+    if (data.status === "playing" && data.deck) {
         document.getElementById("start-screen").classList.add("hidden");
         document.getElementById("game-area").classList.remove("hidden");
         document.getElementById("move-log").classList.remove("hidden");
-        
+    }
+
+    if ((data.status === "playing" || data.status === "finished") && data.deck) {
         let oldLens = hands.map(h => (h && h.length) ? h.length : 0);
         deck = data.deck; discardPile = data.discardPile; currentTurn = data.turn; 
         playDirection = data.direction; currentPlayColor = data.currentColor; hands = data.hands;
@@ -749,7 +771,6 @@ function syncFromFirebase(data) {
         renderHand(); renderTable();
         
         if (data.status === "playing") {
-            // FIX: Added data.pusher !== myId to prevent the Host from double-scheduling AI turns
             if (isHost && data.pusher !== myId && (seats[currentTurn - 1]?.type === 'ai' || (gameMode === "ai" && currentTurn !== 1))) {
                 setTimeout(aiTurn, 1500);
             }

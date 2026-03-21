@@ -31,7 +31,7 @@
     "id": "blackjack",
     "name": "Blackjack",
     "searchTags": "blackjack cards 21 dealer",
-    "category": "casino",
+    "category": "board",
     "icon": "system/images/icons/blackjack.png",
     "iconStyle": "",
     "url": "games/blackjack/blackjack.html",
@@ -98,6 +98,20 @@
     "roomPath": "c4_rooms"
   },
   {
+    "id": "crazy8",
+    "name": "Crazy 8s",
+    "searchTags": "crazy 8s eights cards wild multiplayer",
+    "category": "board",
+    "icon": "system/images/cards/standard/cardSpades8.png",
+    "iconStyle": "",
+    "url": "games/crazy8/crazy8.html",
+    "badges": [
+      "👥 Online",
+      "🤖 Solo"
+    ],
+    "roomPath": "c8_rooms"
+  },
+  {
     "id": "domino",
     "name": "Domino",
     "searchTags": "classic domino",
@@ -154,6 +168,20 @@
     "roomPath": "mono_rooms"
   },
   {
+    "id": "old-maid",
+    "name": "Old Maid",
+    "searchTags": "old maid",
+    "category": "board",
+    "icon": "system/images/cards/standard-1/hearts_queen.png",
+    "iconStyle": "border-radius: 5px;",
+    "url": "games/old-maid/old_maid.html",
+    "badges": [
+      "👥 Online",
+      "🤖 Solo"
+    ],
+    "roomPath": "maid_rooms"
+  },
+  {
     "id": "risk",
     "name": "Risk",
     "searchTags": "risk the board game",
@@ -171,7 +199,7 @@
     "id": "roulette",
     "name": "Roulette",
     "searchTags": "roulette spin wheel casino",
-    "category": "casino",
+    "category": "board",
     "icon": "system/images/wheel.png",
     "iconStyle": "border-radius: 50%;",
     "url": "games/roulette/roulette.html",
@@ -212,7 +240,7 @@
     "id": "slots",
     "name": "Slots",
     "searchTags": "slots spin high roller casino",
-    "category": "casino",
+    "category": "board",
     "icon": "system/images/icons/slots-icon.png",
     "iconStyle": "border-radius: 8px;",
     "url": "games/slots/slots.html",
@@ -266,7 +294,7 @@
     "id": "texas_holdem",
     "name": "Texas Hold 'Em",
     "searchTags": "Texas Hold Em Poker",
-    "category": "casino",
+    "category": "board",
     "icon": "system/images/cards/standard/cardSpadesK.png",
     "iconStyle": "",
     "url": "games/holdem/texas_holdem.html",
@@ -334,7 +362,7 @@
     "id": "war",
     "name": "War",
     "searchTags": "war cards battle flip",
-    "category": "casino",
+    "category": "board",
     "icon": "system/images/cards/standard/cardSpadesA.png",
     "iconStyle": "",
     "url": "games/war/war.html",

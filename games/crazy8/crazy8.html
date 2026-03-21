@@ -8,9 +8,10 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#111111">
   <meta name="color-scheme" content="dark">
-  <title>UNO Pro — The Game Shack</title>
+  <title>Crazy 8s</title>
+  
   <link rel="stylesheet" href="../../system/system_ui.css">
-  <link rel="stylesheet" href="uno_style.css">
+  <link rel="stylesheet" href="crazy8_styles.css">
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
@@ -40,26 +41,23 @@
 </head>
 <body>
 
-  <div id="color-picker-modal" class="hidden">
-    <div class="color-picker-box">
-      <h3>CHOOSE A COLOR</h3>
-      <div class="color-options">
-        <div class="color-btn" style="background: #e74c3c;" data-color="red"></div>
-        <div class="color-btn" style="background: #3498db;" data-color="blue"></div>
-        <div class="color-btn" style="background: #2ecc71;" data-color="green"></div>
-        <div class="color-btn" style="background: #f1c40f;" data-color="yellow"></div>
+  <div id="suit-picker-overlay" class="hidden">
+    <div class="suit-picker-content">
+      <p>PICK A NEW SUIT</p>
+      <div class="suit-grid">
+        <div class="suit-option red" data-suit="h">♥</div>
+        <div class="suit-option red" data-suit="d">♦</div>
+        <div class="suit-option black" data-suit="c">♣</div>
+        <div class="suit-option black" data-suit="s">♠</div>
       </div>
     </div>
   </div>
 
-  <div id="uno-shout-display" class="hidden">UNO!</div>
-
   <div id="game-container">
-
     <div id="start-screen">
         <div class="ss-logo">🃏</div>
-        <h1 class="ss-title">UNO PRO</h1>
-        <p class="ss-tagline">THE ULTIMATE CARD BATTLE</p>
+        <h1 class="ss-title">CRAZY 8s</h1>
+        <p class="ss-tagline">THE CLASSIC CARD MATCH</p>
         <div id="start-settings">
             <div class="ss-row">
                 <div class="ss-label">PLAYERS</div>
@@ -69,7 +67,7 @@
                     <button class="ss-chip"        data-group="count" data-val="4">4</button>
                 </div>
             </div>
-            <div class="ss-row" id="ss-ai-row">
+            <div class="ss-row">
                 <div class="ss-label">AI LEVEL</div>
                 <div class="ss-pills">
                     <button class="ss-chip"        data-group="ai-diff" data-val="easy">EASY</button>
@@ -77,79 +75,63 @@
                     <button class="ss-chip"        data-group="ai-diff" data-val="hard">HARD</button>
                 </div>
             </div>
-            
-            <div id="uno-bet-container"></div>
-            
         </div>
         <button id="start-game-btn">START GAME</button>
     </div>
 
     <div id="game-area" class="hidden">
-        
-        <div id="opponent-area" class="player-area">
-          <h3 id="p2-label">AI 2</h3>
-          <div id="opponent-hand" class="hand"></div>
-        </div>
-
-        <div id="middle-row" class="middle-row">
-          
-          <div id="left-area" class="player-area side-area hidden">
-            <h3 id="p3-label">AI 3</h3>
-            <div id="left-hand" class="hand side-hand"></div>
+      <div id="card-table">
+          <div id="opponent-area" class="player-area">
+            <h3 id="p2-label" class="player-info">AI 2</h3>
+            <div id="opponent-hand" class="hand"></div>
           </div>
-
-          <div id="center-table">
-            
-            <div id="direction-container" class="dir-clockwise">
-                <div class="dir-arrow arrow-top">→</div>
-                <div class="dir-arrow arrow-right">↓</div>
-                <div class="dir-arrow arrow-bottom">←</div>
-                <div class="dir-arrow arrow-left">↑</div>
+          <div id="middle-row" class="middle-row">
+            <div id="left-area" class="player-area side-area hidden">
+              <h3 id="p3-label" class="player-info">AI 3</h3>
+              <div id="left-hand" class="hand side-hand"></div>
             </div>
-
-            <div class="piles-wrapper">
-              <div id="draw-pile" class="pile">
-                <div class="card-back"></div>
-                <div id="deck-count" class="count-bubble hidden">0</div>
+            <div id="center-table">
+              <div class="piles-wrapper">
+                <div id="draw-pile" class="pile">
+                  <div class="card-back"></div>
+                  <div id="deck-count" class="count-bubble hidden">0</div>
+                </div>
+                <div id="discard-pile" class="pile"></div>
               </div>
-              <div id="discard-pile" class="pile"></div>
+              <div id="suit-indicator" class="hidden">SUIT: ♥</div>
+              <div id="turn-banner" class="hidden">Waiting...</div>
+              <div id="move-log" class="hidden"></div>
             </div>
-
-            <div id="color-indicator" class="hidden">CURRENT COLOR: RED</div>
-            
-            <div id="turn-banner" class="hidden">Waiting...</div>
-
-            <button id="uno-btn" class="sys-btn hidden">YELL UNO!</button>
-            
-            <div id="move-log" class="hidden"></div>
+            <div id="right-area" class="player-area side-area hidden">
+              <h3 id="p4-label" class="player-info">AI 4</h3>
+              <div id="right-hand" class="hand side-hand"></div>
+            </div>
           </div>
-
-          <div id="right-area" class="player-area side-area hidden">
-            <h3 id="p4-label">AI 4</h3>
-            <div id="right-hand" class="hand side-hand"></div>
+          <div id="player-area" class="player-area">
+            <div id="player-hand-wrapper" class="hand-wrapper">
+              <div id="player-hand" class="hand"></div>
+            </div>
+            <h3 id="p1-label" class="player-info">You</h3>
           </div>
-
-        </div>
-
-        <div id="player-area" class="player-area">
-          <h3 id="p1-label">You</h3>
-          <div id="player-hand-wrapper" class="hand-wrapper">
-            <div id="player-hand" class="hand"></div>
-          </div>
-        </div>
-
+      </div>
     </div>
+  </div>
 
+  <div id="toast-modal" class="hidden modal-overlay">
+    <div id="modal-box" class="toast-box">
+      <h2 id="modal-title">Result</h2>
+      <p id="modal-message">Message goes here.</p>
+    </div>
   </div>
 
   <script src="../../system/system_profile.js"></script>
   <script src="../../system/system_audio.js"></script>
   <script src="../../system/system_stats.js"></script>
   <script src="../../system/system_achievements.js"></script>
-  <script src="../../system/system_betting.js"></script>
   <script src="../../system/system_lobby.js"></script>
   <script src="../../system/system_chat.js"></script>
   <script src="../../system/system_ui.js"></script>
-  <script src="uno_app.js"></script>
+  <script src="../../system/system_match.js"></script>
+  <script src="crazy8_app.js"></script>
 </body>
 </html>

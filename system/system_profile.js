@@ -17,7 +17,8 @@ window.SystemProfile = {
         totalWagered: 0,
         xp: 0,
         level: 1,
-        isDev: false
+        isDev: false,
+        loadout: { cardback: null, dice: null, deck: null, avatar: null, title: null, color: null }
     },
 
     init: function() {
@@ -84,6 +85,25 @@ window.SystemProfile = {
 
     setPlayerName: function(newName) {
         this.data.name = newName.trim() || "Player";
+        this.saveProfile();
+    },
+
+    // --- LOADOUT & EQUIP SYSTEM ---
+
+    getLoadout: function() {
+        // Ensure loadout object exists for legacy players migrating over
+        if (!this.data.loadout) {
+            this.data.loadout = { cardback: null, dice: null, deck: null, avatar: null, title: null, color: null };
+            this.saveProfile();
+        }
+        return this.data.loadout;
+    },
+
+    setLoadout: function(type, itemId) {
+        if (!this.data.loadout) {
+            this.data.loadout = { cardback: null, dice: null, deck: null, avatar: null, title: null, color: null };
+        }
+        this.data.loadout[type] = itemId;
         this.saveProfile();
     },
 
