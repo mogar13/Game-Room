@@ -41,6 +41,20 @@
     ],
     "roomPath": "bj_rooms"
   },
+    {
+    "id": "bowman",
+    "name": "Bow-man",
+    "searchTags": "bow bowman bow-man",
+    "category": "board",
+    "icon": "system/images/icons/bowman.png",
+    "iconStyle": "",
+    "url": "games/bowman/bowman.html",
+    "badges": [
+      "👥 Online",
+      "🤖 Solo"
+    ],
+    "roomPath": "bowman_rooms"
+  },
   {
     "id": "checkers",
     "name": "Checkers",

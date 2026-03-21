@@ -20,50 +20,58 @@
 <body>
 
   <div class="profile-banner">
-    <div id="auth-logged-in" class="auth-wrapper" style="display: flex; width: 100%; justify-content: space-between;">
-      <div class="profile-left">
-        <div class="player-info-row">
-          <span id="display-player-avatar" class="profile-icon">👤</span>
-          <span id="display-player-name" class="hub-interactive" style="cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px;" title="View Profile">Player</span>
-          <span id="display-player-level" class="level-badge">Lv.1</span>
+    <div id="auth-logged-in" class="auth-wrapper" style="display: flex; width: 100%; justify-content: space-between; align-items: center">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div class="profile-left">
+          <div class="player-info-row">
+            <span id="display-player-avatar" class="profile-icon">👤</span>
+            <span id="display-player-name" class="hub-interactive" style="cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px;" title="View Profile">Player</span>
+            <span id="display-player-level" class="level-badge">Lv.1</span>
+          </div>
+          <div class="xp-bar-container">
+            <div id="xp-bar-fill" class="xp-bar-fill"></div>
+            <span id="xp-text" class="xp-text">0 / 500 XP</span>
+          </div>
+          <div id="display-player-title" class="player-title">Newcomer</div>
         </div>
-        <div class="xp-bar-container">
-          <div id="xp-bar-fill" class="xp-bar-fill"></div>
-          <span id="xp-text" class="xp-text">0 / 500 XP</span>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="sys-dev-btn" class="dev-only hub-interactive" style="background:#f1c40f; color:#000; border:none; border-radius:8px; font-size:0.75rem; font-weight:bold; cursor:pointer; padding:4px 10px; font-family:'Orbitron',sans-serif;">🛠️ DEV</button>
+          <button id="sys-logout-btn" class="dev-only hub-interactive" style="background:transparent; border:1px solid #e74c3c; color:#e74c3c; border-radius:8px; font-size:0.75rem; font-weight:bold; cursor:pointer; padding:4px 10px; font-family:'Orbitron',sans-serif;">LOGOUT</button>
         </div>
-        <div id="display-player-title" class="player-title">Newcomer</div>
       </div>
       <div class="profile-right" style="display: flex; align-items: center; gap: 10px;">
-        <div class="money-display">
-          <span class="profile-icon">💰</span> 
-          $<span id="display-player-money">5000</span>
-        </div>
-        <button id="daily-bonus-btn" class="hub-interactive">Claim +$1,000</button>
-        <button class="btn-store hub-interactive" style="background: #2ecc71; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);" title="Item Store">🛒</button>
-        <button id="btn-achievements" class="hub-interactive" style="background: #3498db; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(52, 152, 219, 0.4);" title="Trophy Room">🏆</button>
-        <button class="btn-leaderboards hub-interactive" style="background: #f39c12; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(243, 156, 18, 0.4);" title="Leaderboards">🏅</button>
-        <button class="btn-report-bug hub-interactive" style="background: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2);" title="Report a Bug">🐞</button>
-        <select id="theme-dropdown" class="hub-interactive" onchange="changeTheme(this.value)">
+                <select id="theme-dropdown" class="hub-interactive" onchange="changeTheme(this.value)">
           <option value="default">Night Mode</option>
           <option value="casino">Casino Felt</option>
           <option value="arcade">Deep Arcade</option>
         </select>
+        <button class="btn-store hub-interactive" style="background: #2ecc71; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);" title="Item Store">🛒</button>
+        <button id="btn-achievements" class="hub-interactive" style="background: #3498db; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(52, 152, 219, 0.4);" title="Trophy Room">🏆</button>
+        <button class="btn-leaderboards hub-interactive" style="background: #f39c12; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(243, 156, 18, 0.4);" title="Leaderboards">🏅</button>
+        <button class="btn-report-bug hub-interactive" style="background: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2);" title="Report a Bug">🐞</button>
+                <div class="money-display">
+          <span class="profile-icon">💰</span> 
+          $<span id="display-player-money">5000</span>
+        </div>
+        <button id="daily-bonus-btn" class="hub-interactive">Claim +$1,000</button>
       </div>
     </div>
 
     <div id="auth-logged-out" class="auth-wrapper hidden" style="display: flex; width: 100%; justify-content: space-between; align-items: center;">
-      <div class="logged-out-welcome" style="font-family: 'Orbitron', sans-serif; font-size: 1rem; color: #fff; letter-spacing: 2px; font-weight: bold;">WELCOME GUEST</div>
-      <div class="logged-out-actions" style="display: flex; gap: 10px; align-items: center;">
+      <div class="logged-out-welcome" style="font-family: 'Orbitron', sans-serif; font-size: 1rem; color: #fff; letter-spacing: 2px; font-weight: bold;">WELCOME GUEST
         <button id="btn-open-login" class="hub-interactive" style="background: transparent; border: 2px solid var(--accent-color); color: var(--accent-color); padding: 6px 16px; border-radius: 20px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: 0.2s;">SIGN IN</button>
         <button id="btn-open-register" class="hub-interactive" style="background: var(--accent-color); border: 2px solid var(--accent-color); color: #000; padding: 6px 16px; border-radius: 20px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: 0.2s;">REGISTER</button>
-        <button class="btn-store hub-interactive" style="background: #2ecc71; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);" title="Item Store">🛒</button>
-        <button class="btn-leaderboards hub-interactive" style="background: #f39c12; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(243, 156, 18, 0.4);" title="Leaderboards">🏅</button>
-        <button class="btn-report-bug hub-interactive" style="background: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2);" title="Report a Bug">🐞</button>
+      </div>
+      <div class="logged-out-actions" style="display: flex; gap: 10px; align-items: center;">
         <select id="theme-dropdown-loggedout" class="hub-interactive" onchange="changeTheme(this.value)" style="background: rgba(0,0,0,0.6); color: var(--accent-color); border: 1px solid var(--accent-color); border-radius: 8px; padding: 3px 8px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; cursor: pointer; outline: none;">
           <option value="default">Night Mode</option>
           <option value="casino">Casino Felt</option>
           <option value="arcade">Deep Arcade</option>
         </select>
+        <button class="btn-store hub-interactive" style="background: #2ecc71; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);" title="Item Store">🛒</button>
+        <button class="btn-leaderboards hub-interactive" style="background: #f39c12; border: none; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(243, 156, 18, 0.4);" title="Leaderboards">🏅</button>
+        <button class="btn-report-bug hub-interactive" style="background: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; color: #e74c3c; border-radius: 8px; font-size: 1.2rem; cursor: pointer; padding: 2px 8px; box-shadow: 0 0 10px rgba(231, 76, 60, 0.2);" title="Report a Bug">🐞</button>
+
       </div>
     </div>
   </div>
@@ -76,7 +84,7 @@
   </div>
 
   <div id="active-matches-bar" class="hidden">
-    <span class="rp-label" style="color: #e74c3c;"><span class="live-dot"></span>LIVE MATCHES</span>
+    <span class="rp-label" style="color: #f81900;"><span class="live-dot"></span>LIVE MATCHES</span>
     <div class="am-list rp-list"></div>
   </div>
 
@@ -84,7 +92,7 @@
   
   <div id="chat-panel" class="hidden">
     <div class="chat-header">
-      <span class="chat-title">🌐 GLOBAL CHAT</span>
+      <span class="chat-title">GLOBAL CHAT</span>
       <button id="close-chat-btn" class="hub-interactive">&times;</button>
     </div>
     <div id="chat-messages" class="chat-messages"></div>
@@ -159,8 +167,8 @@
   <div id="modal-bug-report" class="hidden auth-modal-overlay" style="position: fixed; inset: 0; background: rgba(5, 5, 5, 0.9); z-index: 200000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
     <div class="ach-modal-box auth-modal-box" style="border-color: #e74c3c; box-shadow: 0 10px 40px rgba(0,0,0,0.8), 0 0 20px rgba(231, 76, 60, 0.2);">
       <button id="close-bug-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: #e74c3c; font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
-      <h2 style="color: #e74c3c; font-family: 'Orbitron', sans-serif; margin: 0 0 10px 0; text-align: center; letter-spacing: 2px;">🐞 REPORT BUG</h2>
-      <p style="color: #aaa; font-size: 0.75rem; text-align: center; margin-bottom: 15px;">Found a glitch? Let us know so we can squash it.</p>
+      <h2 style="color: #e74c3c; font-family: 'Orbitron', sans-serif; margin: 0 0 10px 0; text-align: center; letter-spacing: 2px;">BUG REPORTS<br> AND SUGGESTIONS</h2>
+      <p style="color: #aaa; font-size: 0.75rem; text-align: center; margin-bottom: 15px;">Found a Glitch and/or You Would Like to Make a Suggestion? <br> Please Let Me Know!</p>
       <div class="auth-form" style="display: flex; flex-direction: column; gap: 12px;">
         <input type="text" id="bug-title" placeholder="Short Title (e.g. Card didn't flip)" maxlength="50" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #e74c3c; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none;">
         <textarea id="bug-desc" placeholder="Describe what happened and how to trigger it..." class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #e74c3c; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; resize: vertical; min-height: 100px;"></textarea>

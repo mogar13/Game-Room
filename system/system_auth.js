@@ -43,7 +43,8 @@ window.SystemAuth = {
             title:        "Newcomer",
             equippedCardBack: "cardBack_blue1.png",
             equippedDice: "default",
-            inventory:    []
+            inventory:    [],
+            loadout:      { cardback: null, dice: null, deck: null, avatar: null, title: null, color: null }
         };
     },
 

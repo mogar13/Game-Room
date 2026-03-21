@@ -412,12 +412,29 @@ window.SystemUI = {
         };
 
         const catalogFallback = {
-            'back_b1': { name: 'Blue Standard', type: 'cardback' },
-            'back_b5': { name: 'Blue Ornate', type: 'cardback' },
-            'back_r1': { name: 'Red Standard', type: 'cardback' },
-            'back_r5': { name: 'Red Ornate', type: 'cardback' },
-            'back_g1': { name: 'Green Standard', type: 'cardback' },
-            'deck_alt': { name: 'Jumbo Index', type: 'deck' },
+            'back_b1': { name: 'Blue Back 1', type: 'cardback' },
+            'back_b2': { name: 'Blue Back 2', type: 'cardback' },
+            'back_b3': { name: 'Blue Back 3', type: 'cardback' },
+            'back_b4': { name: 'Blue Back 4', type: 'cardback' },
+            'back_b5': { name: 'Blue Back 5', type: 'cardback' },
+            'back_r1': { name: 'Red Back 1', type: 'cardback' },
+            'back_r2': { name: 'Red Back 2', type: 'cardback' },
+            'back_r3': { name: 'Red Back 3', type: 'cardback' },
+            'back_r4': { name: 'Red Back 4', type: 'cardback' },
+            'back_r5': { name: 'Red Back 5', type: 'cardback' },
+            'back_g1': { name: 'Green Back 1', type: 'cardback' },
+            'back_g2': { name: 'Green Back 2', type: 'cardback' },
+            'back_g3': { name: 'Green Back 3', type: 'cardback' },
+            'back_g4': { name: 'Green Back 4', type: 'cardback' },
+            'back_g5': { name: 'Green Back 5', type: 'cardback' },
+            'back_j2': { name: 'Jumbo Red', type: 'cardback' },
+            'back_j3': { name: 'Jumbo Gold', type: 'cardback' },
+            'back_j4': { name: 'Jumbo Purple', type: 'cardback' },
+            'back_j5': { name: 'Jumbo Dark', type: 'cardback' },
+            'back_j6': { name: 'Jumbo Light', type: 'cardback' },
+            'back_j7': { name: 'Jumbo Hex', type: 'cardback' },
+            'back_j8': { name: 'Jumbo Tech', type: 'cardback' },
+            'deck_alt': { name: 'Jumbo Deck', type: 'deck' },
             'dice_red': { name: 'Red Casino Dice', type: 'dice' },
             'dice_gold': { name: 'Gold Dice', type: 'dice' }
         };
@@ -472,6 +489,9 @@ window.SystemUI = {
                 const id = e.currentTarget.dataset.id || null;
                 if (window.SystemProfile && window.SystemProfile.setLoadout) {
                     window.SystemProfile.setLoadout(type, id);
+                    if (window.SystemAuth && window.SystemAuth.isLoggedIn()) {
+                        window.SystemAuth.saveCurrentUserData();
+                    }
                     this.openLoadoutModal(); 
                 }
             });

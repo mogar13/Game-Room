@@ -1057,10 +1057,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const logoutBtnHTML = `<button id="sys-logout-btn" class="sys-btn-logout dev-only">LOGOUT</button>`;
         bannerActions.insertAdjacentHTML('afterbegin', logoutBtnHTML);
         bannerActions.insertAdjacentHTML('afterbegin', devBtnHTML);
-
-        document.getElementById("sys-dev-btn").addEventListener("click", openDevMenu);
-        document.getElementById("sys-logout-btn").addEventListener("click", systemLogout);
     }
+
+    const devBtnEl = document.getElementById("sys-dev-btn");
+    const logoutBtnEl = document.getElementById("sys-logout-btn");
+    if (devBtnEl) devBtnEl.addEventListener("click", openDevMenu);
+    if (logoutBtnEl) logoutBtnEl.addEventListener("click", systemLogout);
 
     const confirmLogoutBtn = document.getElementById("btn-confirm-logout");
     const cancelLogoutBtn = document.getElementById("btn-cancel-logout");
