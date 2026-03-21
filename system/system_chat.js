@@ -79,7 +79,7 @@ window.SystemChat = {
                 if (this.lastKey && k <= this.lastKey) return;
                 const msg = data[k];
                 const isMine = msg.from === this.playerName;
-                this.renderBubble(msg.text, msg.from, isMine);
+                this.renderBubble(msg.text, msg.from, isMine, msg.color);
                 this.lastKey = k;
 
                 if (!this.isOpen && !isMine) {
@@ -144,14 +144,21 @@ window.SystemChat = {
 
         if (typeof window.dbSet !== 'undefined' && window.db) {
             const key = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+            
+            let chatColor = "#ffffff";
+            if (window.SystemProfile) {
+                const profile = window.SystemProfile.getProfile();
+                if (profile && profile.chatColor) chatColor = profile.chatColor;
+            }
+
             window.dbSet(
                 window.dbRef(window.db, 'chat/' + this.roomId + '/messages/' + key),
-                { text: text, from: this.playerName, ts: Date.now() }
+                { text: text, from: this.playerName, color: chatColor, ts: Date.now() }
             );
         }
     },
 
-    renderBubble: function(text, from, isMine) {
+    renderBubble: function(text, from, isMine, color) {
         const msgs = document.getElementById('sys-chat-messages');
         const row = document.createElement('div');
         row.className = 'chat-bubble-row ' + (isMine ? 'mine' : 'theirs');
@@ -159,6 +166,9 @@ window.SystemChat = {
         const sender = document.createElement('div');
         sender.className = 'chat-sender';
         sender.innerText = from;
+        if (color) {
+            sender.style.cssText = `color: ${color};`;
+        }
 
         const bubble = document.createElement('div');
         bubble.className = 'chat-bubble';

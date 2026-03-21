@@ -553,21 +553,17 @@ function getEquipment() {
     const loadout = (window.SystemProfile && window.SystemProfile.getLoadout) ? window.SystemProfile.getLoadout() : {};
     const useJumbo = loadout.deck === "deck_alt";
     const deckFolder = useJumbo ? "standard-1" : "standard";
-    let backImg = useJumbo ? "back01.png" : "cardBack_blue1.png"; 
     
+    let backImg = "cardBack_blue1.png"; 
     const equippedId = loadout.cardback || "back_b1";
 
-    if (useJumbo) {
-        const match = equippedId.match(/\d+/);
-        if (match) {
-            let numStr = match[0];
-            if (numStr.length === 1) numStr = "0" + numStr;
-            backImg = "back" + numStr + ".png";
-        }
-    } else {
-        if (window.SystemStore && window.SystemStore.CATALOG && window.SystemStore.CATALOG[equippedId]) {
-            backImg = window.SystemStore.CATALOG[equippedId].value;
-        }
+    if (window.SystemStore && window.SystemStore.CATALOG && window.SystemStore.CATALOG[equippedId]) {
+        backImg = window.SystemStore.CATALOG[equippedId].value;
+    }
+    
+    // Safely route mix-and-matched decks and backs without any math hacks
+    if (useJumbo && !backImg.includes("../")) {
+        backImg = "../standard/" + backImg;
     }
     
     return { folder: deckFolder, back: backImg };
@@ -628,7 +624,17 @@ function renderGame() {
       const boxSlot = document.getElementById(`box-slot-${i}`);
       if (!pEl) continue;
       if (i >= activeCount) { if (boxSlot) boxSlot.classList.add("hidden"); continue; }
-      if (boxSlot) boxSlot.classList.remove("hidden");
+      
+      if (boxSlot) {
+          boxSlot.classList.remove("hidden");
+          if (activeCount === 1 && i === 0) {
+              boxSlot.style.left = "50%";
+              boxSlot.style.transform = "translateX(-50%) rotate(0deg)";
+          } else {
+              boxSlot.style.left = "";
+              boxSlot.style.transform = "";
+          }
+      }
       
       if (pLabel) {
           if (gameMode === "online" && seats[i]) pLabel.innerText = seats[i].name;
@@ -638,15 +644,12 @@ function renderGame() {
 
       pEl.innerHTML = "";
       playerHands[i].forEach((card, idx) => {
-          // Dealer Privacy Logic: Hide other players' second card and subsequent ones
-          // Like the dealer, we hide cards starting at index 1 for opponents
-          let isHidden = (i !== myId - 1 && idx >= 1 && gamePhase !== "payout");
+          let isHidden = false;
           pEl.appendChild(createCardElement(card, isHidden));
       });
 
       if (pBubble) {
-          // Only show score bubble for the local player OR at the end for everyone
-          if (playerHands[i].length > 0 && (i === myId - 1 || gamePhase === "payout")) {
+          if (playerHands[i].length > 0) {
               pBubble.innerText = calculateScore(playerHands[i]); 
               pBubble.classList.remove("hidden");
           } else { pBubble.classList.add("hidden"); }

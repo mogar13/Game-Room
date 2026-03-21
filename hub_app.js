@@ -760,8 +760,14 @@ function wireGlobalChat() {
                     const date = new Date(msg.timestamp);
                     const timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                     const nameClass = msg.isDev ? "chat-username dev-name" : "chat-username";
-                    const nameColor = msg.chatColor || (msg.isDev ? '' : '#ffffff');
-                    const nameStyle = msg.isDev ? '' : `color: ${nameColor};`;
+                    
+                    // FIX: Allow Dev accounts to use custom glowing colors. Only fallback to Gold if they use default white.
+                    let nameStyle = '';
+                    if (msg.chatColor && msg.chatColor !== '#ffffff') {
+                        nameStyle = `color: ${msg.chatColor};`;
+                    } else if (!msg.isDev) {
+                        nameStyle = `color: #ffffff;`;
+                    }
                     
                     // Basic sanitize to prevent code injection
                     const safeText = msg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -810,8 +816,8 @@ function wireLeaderboards() {
             sorted.sort((a, b) => (b.profile?.xp || 0) - (a.profile?.xp || 0));
         } else if (currentSort === "wins") {
             sorted.sort((a, b) => {
-                const aWins = a.stats?.wins || a.profile?.wins || 0;
-                const bWins = b.stats?.wins || b.profile?.wins || 0;
+                const aWins = a.stats?.global?.wins || a.profile?.wins || 0;
+                const bWins = b.stats?.global?.wins || b.profile?.wins || 0;
                 return bWins - aWins;
             });
         }
@@ -832,7 +838,8 @@ function wireLeaderboards() {
             } else if (currentSort === "level") {
                 statText = `Lv.${u.profile?.level || 1} <span style="font-size:0.6rem; color:#aaa;">(${u.profile?.xp || 0} XP)</span>`;
             } else if (currentSort === "wins") {
-                statText = `${u.stats?.wins || u.profile?.wins || 0} Wins`;
+                const winsAmt = u.stats?.global?.wins || u.profile?.wins || 0;
+                statText = `${winsAmt} Wins`;
             }
 
             const name = u.profile?.name || "Unknown";
@@ -982,6 +989,21 @@ function renderStore() {
             const type = e.target.dataset.type;
             if (window.SystemProfile && window.SystemProfile.setLoadout) {
                 window.SystemProfile.setLoadout(type, id);
+                
+                // NEW: Sync profile fields for chat colors, titles, and avatars immediately
+                if (window.SystemStore && window.SystemStore.CATALOG[id]) {
+                    const itemValue = window.SystemStore.CATALOG[id].value;
+                    if (type === 'color') window.SystemProfile.data.chatColor = itemValue;
+                    if (type === 'avatar') window.SystemProfile.data.avatar = itemValue;
+                    if (type === 'title') window.SystemProfile.data.title = itemValue;
+                    
+                    window.SystemProfile.saveProfile();
+                    if (window.SystemAuth && window.SystemAuth.isLoggedIn()) {
+                        window.SystemAuth.saveCurrentUserData();
+                    }
+                    if (typeof updateBonusUI === 'function') updateBonusUI();
+                }
+                
                 renderStore(); 
             }
         });
