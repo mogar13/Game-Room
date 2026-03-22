@@ -113,6 +113,10 @@ body {
   width: 100%;
   height: 100%;
   cursor: crosshair;
+  /* Mobile Fixes */
+  touch-action: none; /* Stops the screen from scrolling when aiming */
+  -webkit-tap-highlight-color: transparent; /* Removes blue flash on tap */
+  outline: none;
 }
 
 /* ── ACTION ZONE ────────────────────────────── */
@@ -262,4 +266,22 @@ body {
   #hp-row { padding: 4px 8px; min-height: 44px; }
   .hp-name { display: none; }
   .action-btn { font-size: 0.75rem; padding: 10px 20px; }
+}
+
+/* Prompt mobile users to turn their phone sideways */
+@media screen and (max-width: 768px) and (orientation: portrait) {
+  #game-outer::after {
+    content: "Please rotate your phone 🔄";
+    position: absolute;
+    inset: 0;
+    background: #0a0410;
+    color: #f1c40f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 900;
+    text-align: center;
+    z-index: 9999;
+  }
 }

@@ -1,0 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Playfair+Display:wght@700&display=swap');
+
+body {
+    background-image: url('../../system/images/bgs/background_1.png');
+    background-size: cover;
+    color: white; font-family: 'Segoe UI', sans-serif;
+    height: 100dvh; overflow: hidden; margin: 0; display: flex; flex-direction: column;
+}
+
+#game-container {
+    height: 100%; display: flex; flex-direction: column; justify-content: space-between;
+    padding-top: 40px;
+}
+
+/* --- THE TABLE --- */
+#dice-table {
+    position: relative; flex-grow: 1;
+    width: 96vw; max-width: 900px; min-height: 480px; margin: 10px auto;
+    background: radial-gradient(ellipse at center, #2d1b0d 0%, #1a0f07 100%);
+    border-radius: 180px; border: 15px solid #3d2b1f;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.9), 0 15px 30px rgba(0,0,0,0.9);
+}
+
+#dice-table::after {
+    content: ""; position: absolute; inset: 0; border-radius: 160px;
+    background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 2px, transparent 2px, transparent 4px);
+    pointer-events: none; z-index: 1;
+}
+
+/* --- SEATING LAYOUT --- */
+.player-seat {
+    position: absolute; display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 5;
+}
+
+#opponent-area { top: 30px; left: 50%; transform: translateX(-50%); width: 200px; }
+#player-area { bottom: 20px; left: 50%; transform: translateX(-50%); width: 200px; }
+
+.side-seat { width: 140px; top: 50%; transform: translateY(-50%); }
+#left-area { left: 20px; }
+#right-area { right: 20px; }
+
+.player-info {
+    background: rgba(0,0,0,0.85); border: 1px solid #c39b3c; padding: 4px 12px;
+    border-radius: 12px; font-family: 'Orbitron', sans-serif; font-size: 0.75rem; 
+    color: #f1c40f; box-shadow: 0 4px 10px rgba(0,0,0,0.5); white-space: nowrap;
+}
+
+/* --- CUPS & DICE --- */
+.cup-container {
+    width: 80px; height: 90px;
+    background: url('../../system/images/icons/cup.png') center/contain no-repeat; 
+    filter: drop-shadow(0 10px 15px rgba(0,0,0,0.8));
+    transition: transform 0.3s;
+}
+
+.shaking { animation: shake 0.1s infinite; }
+@keyframes shake { 0% { transform: rotate(3deg); } 100% { transform: rotate(-3deg); } }
+
+/* Let the PNG do the work, no backgrounds or borders here */
+.dice-grid { 
+    display: flex; gap: 6px; justify-content: center; align-items: center; 
+    flex-wrap: wrap; max-width: 180px; min-height: 45px;
+}
+
+.die {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+}
+
+.die img {
+    width: 100%; height: 100%; object-fit: contain;
+    filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.7)); /* Smooth PNG shadow */
+}
+
+/* --- CENTER STATUS --- */
+#center-area {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; width: 100%; max-width: 300px; z-index: 4;
+}
+
+#game-status-text {
+    font-family: 'Playfair Display', serif; font-size: 1.1rem; color: #e8d5a0;
+    margin-bottom: 15px; text-shadow: 0 2px 4px black; background: rgba(0,0,0,0.7);
+    padding: 6px 15px; border-radius: 12px; border: 1px solid #c39b3c;
+}
+
+#current-bid-display {
+    background: rgba(0,0,0,0.8); padding: 10px 25px; border-radius: 15px;
+    border: 2px solid #3498db; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+}
+.bid-label { font-size: 0.65rem; color: #3498db; display: block; letter-spacing: 2px; font-weight: bold; }
+.bid-values { font-family: 'Orbitron', sans-serif; font-size: 2rem; color: white; }
+
+/* --- CONTROLS --- */
+#action-zone {
+    width: 100%; background: linear-gradient(to bottom, #1c0f08, #0e0704);
+    padding: 15px; border-top: 2px solid #c39b3c; box-shadow: 0 -5px 15px rgba(0,0,0,0.8);
+}
+
+.bid-input-row { display: flex; gap: 20px; justify-content: center; margin-bottom: 15px; }
+.input-group { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.input-group label { font-size: 0.65rem; color: #aaa; font-weight: bold; letter-spacing: 1px; }
+
+/* Stepper UI */
+.stepper {
+    display: flex; align-items: center; background: #000; border: 1px solid #444; 
+    border-radius: 8px; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.8);
+}
+.stepper-btn {
+    background: #222; color: #f1c40f; border: none; padding: 12px 20px; 
+    font-weight: bold; cursor: pointer; font-size: 1.3rem; transition: 0.1s;
+}
+.stepper-btn:active { background: #444; }
+.stepper-val {
+    flex-grow: 1; text-align: center; color: white; font-weight: bold; 
+    font-size: 1.2rem; min-width: 70px; font-family: 'Orbitron', sans-serif;
+}
+
+.button-grid { display: flex; gap: 10px; max-width: 500px; margin: 0 auto; }
+.button-grid button { flex: 1; padding: 14px; font-size: 1rem; font-weight: bold; border-radius: 8px; cursor: pointer; border: none; color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); }
+.danger-btn { background: linear-gradient(to bottom, #c0392b, #922b21); box-shadow: 0 4px 0 #641e16; }
+.danger-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: none; }
+.danger-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.success-btn { background: linear-gradient(to bottom, #27ae60, #1e8449); box-shadow: 0 4px 0 #145a32; }
+.success-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: none; }
+.success-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+.primary-btn { background: linear-gradient(to bottom, #e67e22, #ca6f1e); width: 100%; max-width: 300px; margin: 0 auto; display: block; box-shadow: 0 4px 0 #873600; }
+.primary-btn:active { transform: translateY(4px); box-shadow: none; }
+
+.hidden { display: none !important; }

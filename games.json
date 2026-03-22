@@ -196,6 +196,16 @@
     "roomPath": "maid_rooms"
   },
   {
+  "id": "pool",
+  "name": "8-Ball Pool",
+  "searchTags": "pool billiards 8ball cue",
+  "category": "board",
+  "icon": "system/images/icons/8ball.png",
+  "url": "games/pool/pool.html",
+  "badges": ["👥 Online", "🤖 Solo"],
+  "roomPath": "pool_rooms"
+},
+  {
     "id": "risk",
     "name": "Risk",
     "searchTags": "risk the board game",
@@ -318,6 +328,16 @@
     ],
     "roomPath": null
   },
+  {
+  "id": "liars_dice",
+  "name": "Liar's Dice Pro",
+  "searchTags": "liars dice bluff cup shake table",
+  "category": "board",
+  "icon": "system/images/icons/icon14.png",
+  "url": "games/liars_dice/liars_dice.html",
+  "badges": ["👥 Online", "🤖 Solo"],
+  "roomPath": "liars_dice_rooms"
+},
   {
     "id": "ttt",
     "name": "Tic-Tac-Toe",

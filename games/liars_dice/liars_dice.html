@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Liar's Dice Pro</title>
+  <link rel="stylesheet" href="../../system/system_ui.css"> 
+  <link rel="stylesheet" href="liars_dice_style.css">
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, update, get, child } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
+      databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com",
+      authDomain: "game-room-26e34.firebaseapp.com",
+      projectId: "game-room-26e34",
+      storageBucket: "game-room-26e34.firebasestorage.app",
+      messagingSenderId: "769541427914",
+      appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
+    };
+    
+    const app = initializeApp(firebaseConfig);
+    window.db = getDatabase(app);
+    window.dbRef = ref; window.dbSet = set; window.dbOnValue = onValue;
+    window.dbUpdate = update; window.dbGet = get; window.dbChild = child;
+  </script>
+</head>
+<body>
+
+  <div id="game-container">
+    <div id="dice-table">
+      
+      <div id="opponent-area" class="player-seat">
+        <div class="player-info"><span id="p2-name">AI 2</span> | <span id="p2-count">5</span> Dice</div>
+        <div class="cup-container" id="p2-cup"></div>
+      </div>
+
+      <div id="left-area" class="player-seat side-seat hidden">
+        <div class="player-info"><span id="p3-name">AI 3</span> | <span id="p3-count">5</span> Dice</div>
+        <div class="cup-container" id="p3-cup"></div>
+      </div>
+
+      <div id="center-area">
+        <div id="game-status-text">Waiting...</div>
+        <div id="current-bid-display" class="hidden">
+            <span class="bid-label">CURRENT BID:</span>
+            <div class="bid-values">
+                <span id="bid-qty">0</span> × <span id="bid-face">?</span>
+            </div>
+        </div>
+      </div>
+
+      <div id="right-area" class="player-seat side-seat hidden">
+        <div class="cup-container" id="p4-cup"></div>
+        <div class="player-info"><span id="p4-name">AI 4</span> | <span id="p4-count">5</span> Dice</div>
+      </div>
+
+      <div id="player-area" class="player-seat">
+        <div id="your-dice-container" class="dice-grid"></div>
+        <div class="player-info"><span id="p1-name">You</span> | <span id="p1-count">5</span> Dice</div>
+      </div>
+
+    </div>
+
+    <div id="action-zone">
+      <div id="lobby-controls">
+        <button id="start-game-btn" class="sys-btn">START GAME</button>
+      </div>
+
+      <div id="game-controls" class="hidden">
+        <div class="bid-input-row">
+            <div class="input-group">
+                <label>QUANTITY</label>
+                <div class="stepper">
+                    <button id="btn-qty-down" class="stepper-btn">-</button>
+                    <span id="display-qty" class="stepper-val">1</span>
+                    <button id="btn-qty-up" class="stepper-btn">+</button>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>FACE VALUE</label>
+                <div class="stepper">
+                    <button id="btn-face-down" class="stepper-btn">&lt;</button>
+                    <span id="display-face" class="stepper-val">2s</span>
+                    <button id="btn-face-up" class="stepper-btn">&gt;</button>
+                </div>
+            </div>
+        </div>
+        <div class="button-grid">
+            <button id="btn-liar" class="danger-btn">LIAR!</button>
+            <button id="btn-bid" class="success-btn">PLACE BID</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../system/system_profile.js"></script>
+  <script src="../../system/system_audio.js"></script>
+  <script src="../../system/system_stats.js"></script>
+  <script src="../../system/system_ui.js"></script>
+  <script src="liars_dice_app.js"></script>
+</body>
+</html>

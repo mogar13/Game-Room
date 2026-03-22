@@ -1,0 +1,266 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Nunito:wght@700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; touch-action: manipulation; }
+
+body {
+  background: #060a06;
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── LAYOUT ──────────────────────────── */
+#game-outer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+#pool-canvas {
+  flex: 1;
+  display: block;
+  width: 100%;
+  cursor: crosshair;
+  min-height: 0;
+}
+
+/* ── ACTION ZONE ──────────────────────── */
+#action-zone {
+  background: linear-gradient(to bottom, #0d150d, #060a06);
+  border-top: 2px solid rgba(100,180,80,0.35);
+  padding: 8px 14px 6px;
+  flex-shrink: 0;
+}
+
+#info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* ── PLAYER INFO ──────────────────────── */
+.pinfo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+}
+.pinfo.right { flex-direction: row-reverse; }
+
+.pname {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: rgba(255,255,255,0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.ptype {
+  font-size: 0.55rem;
+  color: rgba(255,255,255,0.4);
+  white-space: nowrap;
+}
+
+.ball-dots {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  max-width: 90px;
+}
+
+.ball-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+/* ── CENTER CONTROLS ─────────────────── */
+#center-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+/* ── SPIN CONTROL ────────────────────── */
+#spin-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+#spin-title, #power-title {
+  font-size: 0.5rem;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.35);
+}
+
+#spin-canvas {
+  border-radius: 50%;
+  cursor: crosshair;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* ── POWER BAR ───────────────────────── */
+#power-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+#power-track {
+  width: 100px;
+  height: 8px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#power-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 4px;
+  background: #2ecc71;
+  transition: background 0.1s;
+}
+
+/* ── TURN MESSAGE ────────────────────── */
+#turn-msg {
+  text-align: center;
+  font-size: 0.6rem;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 5px;
+  min-height: 14px;
+}
+
+/* ── BUTTONS ─────────────────────────── */
+.pool-btn {
+  background: linear-gradient(to bottom, #f1c40f, #d4ac0d);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.5);
+  transition: all 0.1s;
+}
+.pool-btn:active { transform: translateY(4px); box-shadow: none; }
+
+/* ── MODAL ───────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.88);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000;
+}
+.modal-overlay.hidden { display: none; }
+
+.modal-box {
+  background: linear-gradient(135deg, #0d1f0d, #060a06);
+  border: 2px solid #2ecc71;
+  border-radius: 14px;
+  padding: 32px 28px;
+  text-align: center;
+  max-width: 380px;
+  width: 90%;
+  box-shadow: 0 0 40px rgba(46,204,113,0.2);
+}
+
+.modal-box h2 {
+  font-size: 1.6rem;
+  letter-spacing: 3px;
+  color: #f1c40f;
+  margin-bottom: 12px;
+}
+
+.modal-box p {
+  color: #ccc;
+  font-family: 'Nunito', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* ── MOBILE ──────────────────────────── */
+@media (max-width: 600px) {
+  #power-track { width: 70px; }
+  .pname { max-width: 55px; font-size: 0.5rem; }
+  .ptype { display: none; }
+  #spin-canvas { width: 44px; height: 44px; }
+  #center-controls { gap: 8px; }
+}
+
+/* Tighten action zone on short landscape screens (phones rotated) */
+@media (max-height: 480px) {
+  #action-zone { padding: 4px 10px 3px; }
+  #turn-msg { margin-top: 2px; min-height: 10px; font-size: 0.5rem; }
+  #spin-canvas { width: 38px; height: 38px; }
+  #power-track { width: 60px; height: 6px; }
+  #spin-title, #power-title { display: none; }
+  .ball-dot { width: 9px; height: 9px; }
+  .pname { font-size: 0.5rem; }
+  #center-controls { gap: 8px; }
+}
+
+/* Portrait-mode rotation prompt */
+#rotate-prompt {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #060a06;
+  z-index: 9999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  font-family: 'Orbitron', sans-serif;
+  color: #fff;
+  text-align: center;
+  padding: 30px;
+}
+
+#rotate-prompt .rotate-icon {
+  font-size: 4rem;
+  animation: rotate-hint 1.8s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+  0%   { transform: rotate(0deg); }
+  40%  { transform: rotate(-90deg); }
+  60%  { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
+}
+
+#rotate-prompt p {
+  font-size: 0.75rem;
+  letter-spacing: 2px;
+  color: rgba(255,255,255,0.6);
+  line-height: 1.6;
+}
+
+/* Show prompt only on portrait mobile */
+@media (orientation: portrait) and (max-width: 768px) {
+  #rotate-prompt { display: flex; }
+  #game-outer { display: none; }
+}
+
+/* iOS needs touch-action: none on the canvas to prevent scroll-hijacking */
+#pool-canvas { touch-action: none; }

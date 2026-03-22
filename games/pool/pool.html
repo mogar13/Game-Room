@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0a0410">
+  <title>8-Ball Pool</title>
+  <link rel="stylesheet" href="../../system/system_ui.css">
+  <link rel="stylesheet" href="pool_style.css">
+</head>
+<body>
+
+  <div id="rotate-prompt">
+    <div class="rotate-icon">📱</div>
+    <p>ROTATE YOUR DEVICE<br>TO LANDSCAPE MODE<br>TO PLAY</p>
+  </div>
+
+  <div id="game-outer">
+    <canvas id="pool-canvas"></canvas>
+
+    <div id="action-zone">
+      <div id="info-row">
+
+        <div class="pinfo" id="pinfo-0">
+          <span class="pname" id="pname-0">You</span>
+          <span class="ptype" id="ptype-0">—</span>
+          <div class="ball-dots" id="bdots-0"></div>
+        </div>
+
+        <div id="center-controls">
+          <div id="spin-wrap">
+            <div id="spin-title">SPIN</div>
+            <canvas id="spin-canvas" width="52" height="52"></canvas>
+          </div>
+          <div id="power-wrap">
+            <div id="power-title">POWER</div>
+            <div id="power-track"><div id="power-fill"></div></div>
+          </div>
+        </div>
+
+        <div class="pinfo right" id="pinfo-1">
+          <div class="ball-dots" id="bdots-1"></div>
+          <span class="ptype" id="ptype-1">—</span>
+          <span class="pname" id="pname-1">Opponent</span>
+        </div>
+
+      </div>
+      <div id="turn-msg">—</div>
+    </div>
+  </div>
+
+  <div id="result-modal" class="hidden modal-overlay">
+    <div class="modal-box">
+      <h2 id="modal-title">—</h2>
+      <p id="modal-msg">—</p>
+      <p id="modal-session" style="color:#f1c40f; font-size:0.8rem; margin-top:8px;"></p>
+      <button id="play-again-btn" class="pool-btn" style="margin-top:18px;">PLAY AGAIN</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, update, get, child } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    const firebaseConfig = {
+      apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
+      databaseURL: "https://game-room-26e34-default-rtdb.firebaseio.com",
+      authDomain: "game-room-26e34.firebaseapp.com",
+      projectId: "game-room-26e34",
+      storageBucket: "game-room-26e34.firebasestorage.app",
+      messagingSenderId: "769541427914",
+      appId: "1:769541427914:web:b7e7bb87c160a5b8cfda33"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db  = getDatabase(app);
+    window.db = db; window.dbRef = ref; window.dbSet = set;
+    window.dbOnValue = onValue; window.dbUpdate = update;
+    window.dbGet = get; window.dbChild = child;
+    window.poolFirebaseReady = true;
+  </script>
+
+  <script src="../../system/system_profile.js"></script>
+  <script src="../../system/system_audio.js"></script>
+  <script src="../../system/system_stats.js"></script>
+  <script src="../../system/system_achievements.js"></script>
+  <script src="../../system/system_lobby.js"></script>
+  <script src="../../system/system_chat.js"></script>
+  <script src="../../system/system_ui.js"></script>
+  <script src="pool_physics.js"></script>
+  <script src="pool_app.js"></script>
+</body>
+</html>

@@ -1,3 +1,18 @@
+const OS_UPDATE = {
+    version: "v2.2", // <-- Change this when you push a new update
+    title: "The Multiplayer & Customization Update",
+    changes: [
+        "Fixed custom chat glow colors not showing in-game.",
+        "Added Jumbo Uno Decks and Card Backs to the store.",
+        "Added new glowing chat colors and avatars."
+    ],
+    roadmap: [
+        "Working on Texas Hold'em Poker.",
+        "Seasonal resets for the Global Leaderboards.",
+        "More unlockable titles and dice."
+    ]
+};
+
 // --- 1. HUB AUDIO ENGINE ---
 const hubAudio = {
     click: new Audio('system/audio/click1.mp3'),
@@ -1049,6 +1064,51 @@ function wireStore() {
     });
 }
 
+function checkOSUpdate() {
+    const lastSeen = localStorage.getItem('casino_os_last_version');
+    if (lastSeen !== OS_UPDATE.version) {
+        let modal = document.getElementById('modal-os-update');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'modal-os-update';
+            modal.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 4, 16, 0.95); z-index: 10005; display: flex; align-items: center; justify-content: center;";
+            document.body.appendChild(modal);
+        }
+
+        let changesHtml = OS_UPDATE.changes.map(c => `<li style="margin-bottom: 8px; line-height: 1.4;">${c}</li>`).join('');
+        let roadmapHtml = OS_UPDATE.roadmap.map(r => `<li style="margin-bottom: 8px; line-height: 1.4;">${r}</li>`).join('');
+
+        modal.innerHTML = `
+            <div class="sys-modal-box" style="border-color: #2ecc71; box-shadow: 0 0 40px rgba(46, 204, 113, 0.2);">
+                <h2 style="color: #2ecc71; border-bottom: 1px solid #1e8449; margin-bottom: 15px; font-family: 'Orbitron', sans-serif; letter-spacing: 2px;">UPDATE ${OS_UPDATE.version}</h2>
+                <p style="text-align: center; color: #fff; font-weight: bold; margin-bottom: 25px; font-size: 1.1rem; text-transform: uppercase;">${OS_UPDATE.title}</p>
+                
+                <div class="sys-section" style="border-color: #1e8449; background: rgba(0,0,0,0.6);">
+                    <h3 style="color: #2ecc71; margin-bottom: 12px; font-size: 0.95rem;">✨ WHAT'S NEW</h3>
+                    <ul style="color: #ddd; font-size: 0.9rem; padding-left: 20px; text-align: left; margin: 0;">
+                        ${changesHtml}
+                    </ul>
+                </div>
+
+                <div class="sys-section" style="border-color: #3498db; background: rgba(0,0,0,0.6);">
+                    <h3 style="color: #3498db; margin-bottom: 12px; font-size: 0.95rem;">🚀 ROADMAP</h3>
+                    <ul style="color: #ddd; font-size: 0.9rem; padding-left: 20px; text-align: left; margin: 0;">
+                        ${roadmapHtml}
+                    </ul>
+                </div>
+
+                <button id="btn-close-os-update" class="sys-btn" style="background: #2ecc71; color: #000; font-weight: bold; font-size: 1.1rem; padding: 15px; border: none; margin-top: 10px; cursor: pointer; border-radius: 8px; width: 100%; box-shadow: 0 5px 15px rgba(46, 204, 113, 0.4);">AWESOME, LET'S PLAY</button>
+            </div>
+        `;
+
+        document.getElementById('btn-close-os-update').addEventListener('click', () => {
+            playHubSound('win');
+            localStorage.setItem('casino_os_last_version', OS_UPDATE.version);
+            modal.style.display = 'none';
+        });
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     // Inject Dev/Logout buttons into the banner if they don't exist
     const bannerActions = document.querySelector(".profile-right");
@@ -1057,12 +1117,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const logoutBtnHTML = `<button id="sys-logout-btn" class="sys-btn-logout dev-only">LOGOUT</button>`;
         bannerActions.insertAdjacentHTML('afterbegin', logoutBtnHTML);
         bannerActions.insertAdjacentHTML('afterbegin', devBtnHTML);
-    }
 
-    const devBtnEl = document.getElementById("sys-dev-btn");
-    const logoutBtnEl = document.getElementById("sys-logout-btn");
-    if (devBtnEl) devBtnEl.addEventListener("click", openDevMenu);
-    if (logoutBtnEl) logoutBtnEl.addEventListener("click", systemLogout);
+        document.getElementById("sys-dev-btn").addEventListener("click", openDevMenu);
+        document.getElementById("sys-logout-btn").addEventListener("click", systemLogout);
+    }
 
     const confirmLogoutBtn = document.getElementById("btn-confirm-logout");
     const cancelLogoutBtn = document.getElementById("btn-cancel-logout");
@@ -1121,6 +1179,8 @@ document.addEventListener("DOMContentLoaded", () => {
     wireStore();
     setTimeout(updateBonusUI, 0);
     
+    checkOSUpdate();
+
     // If the Event Emitter is ready, listen for future money changes
     if (window.SystemUI && typeof window.SystemUI.on === 'function') {
         window.SystemUI.on("money_changed", updateBonusUI);

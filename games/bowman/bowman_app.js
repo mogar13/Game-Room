@@ -233,8 +233,15 @@ function resizeCanvas() {
     const wrapper = document.getElementById('canvas-wrapper');
     W = wrapper.clientWidth;
     H = wrapper.clientHeight;
-    canvas.width = W;
-    canvas.height = H;
+    
+    // Mobile Fix: Scale canvas for High-DPI (Retina) screens so it isn't blurry
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.scale(dpr, dpr);
+    
     groundY = H * 0.78;
     playerBaseX[0] = W * 0.20;
     playerBaseX[1] = W * 0.80;
@@ -639,12 +646,17 @@ function isMyActiveTurn() {
 
 function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
-    const sx = canvas.width / rect.width;
-    const sy = canvas.height / rect.height;
-    if (e.touches) {
-        return { x: (e.touches[0].clientX - rect.left) * sx, y: (e.touches[0].clientY - rect.top) * sy };
+    // Mobile Fix: Since we scaled the context, we just need the raw CSS coordinates relative to the rect
+    if (e.touches && e.touches.length > 0) {
+        return { 
+            x: e.touches[0].clientX - rect.left, 
+            y: e.touches[0].clientY - rect.top 
+        };
     }
-    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+    return { 
+        x: e.clientX - rect.left, 
+        y: e.clientY - rect.top 
+    };
 }
 
 function getAimOrigin() {
