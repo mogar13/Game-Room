@@ -196,6 +196,16 @@
     "roomPath": "maid_rooms"
   },
   {
+  "id": "pong",
+  "name": "Pong",
+  "searchTags": "pong ball paddle classic arcade",
+  "category": "arcade",
+  "icon": "system/images/icons/icon2.png",
+  "url": "games/pong/pong.html",
+  "badges": ["👥 Online", "🤖 Solo"],
+  "roomPath": "pong_rooms"
+},
+  {
   "id": "pool",
   "name": "8-Ball Pool",
   "searchTags": "pool billiards 8ball cue",

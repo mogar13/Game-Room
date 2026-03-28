@@ -744,7 +744,8 @@ function pushGameState(unoYell = null, logMsg = null, actingPlayerName = null) {
 }
 
 function syncFromFirebase(data) {
-    if (data.ts && (data.ts <= lastSyncTime)) return;
+    if (data.pusher && data.pusher === myId) return;
+    if (data.ts && (data.ts < lastSyncTime)) return;
     if (data.ts) lastSyncTime = data.ts;
 
     // Only force visibility changes if the status is explicitly "playing"

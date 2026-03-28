@@ -300,6 +300,8 @@ function startGame() {
     gameActive = true;
     activeTurn = 0;
     roundNum = 1;
+    wallEnabled = getEffectiveSetting('wall') === 'on';
+    wallX = W / 2;
     wind = genWind();
     spawnPowerUps(2);
 
