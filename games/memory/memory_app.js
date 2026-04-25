@@ -145,79 +145,58 @@ document.getElementById("sys-reset-game-btn")?.addEventListener("click", () => {
 // ==========================================
 // 2. V2 MULTIPLAYER LOBBY
 // ==========================================
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        if(!window.db) { alert("Server connection error."); return; }
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
-        isHost = true;
-        myId = 1;
-        chatStarted = false;
-
-        seats = [
-            { type: "human", name: SystemUI.getPlayerName() },
-            { type: "ai", name: "AI (" + aiDifficulty + ")" }
-        ];
-
+SystemMatch.setup({
+    gameId:   "memory",
+    roomPath: "memory_rooms",
+    autoShow: false,
+    buildSeats: () => [
+        { type: "human", name: SystemUI.getPlayerName() },
+        { type: "ai",    name: "AI (" + aiDifficulty + ")" }
+    ],
+    extraRoomFields: () => {
         const cardSet = buildCardSet();
-        window.dbSet(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), {
-            cards: cardSet,
-            matched: Array(cardSet.length).fill(false),
-            turn: 1,
-            score1: 0,
-            score2: 0,
-            flip1: -1,
-            flip2: -1,
-            flipStage: 0,
-            status: "waiting",
-            gridDifficulty: gridDifficulty,
-            seats: seats
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        return {
+            cards:          cardSet,
+            matched:        Array(cardSet.length).fill(false),
+            turn:           1,
+            score1:         0,
+            score2:         0,
+            flip1:          -1,
+            flip2:          -1,
+            flipStage:      0,
+            gridDifficulty: gridDifficulty
+        };
     },
-    onJoin: (code) => {
-        if(!window.db) { alert("Server connection error."); return; }
-        window.dbGet(window.dbChild(window.dbRef(window.db), `memory_rooms/${code}`)).then((snapshot) => {
-            if (snapshot.exists()) {
-                const data = snapshot.val();
-                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
-                    currentRoomId = code;
-                    isHost = false;
-                    myId = 2;
-                    chatStarted = false;
-                    
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-
-                    window.dbUpdate(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), {
-                        seats: updatedSeats,
-                        status: "playing"
-                    });
-                    
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("Room is full!");
-                }
-            } else {
-                SystemUI.v2Lobby.showError("Room not found.");
-            }
-        });
+    onHost: (roomId) => {
+        currentRoomId = roomId;
+        isHost = true; myId = 1; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
+    },
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        // Memory auto-starts on join.
+        if (window.db && window.dbUpdate) {
+            window.dbUpdate(window.dbRef(window.db, 'memory_rooms/' + roomId), { status: "playing" });
+        }
+        listenToRoom();
     },
     onLeave: () => {
         gameMode = "ai";
         const modeEl = document.getElementById("sys-mem-mode");
-        if(modeEl) modeEl.value = "ai";
+        if (modeEl) modeEl.value = "ai";
         localStorage.setItem("mem_mode", "ai");
-        SystemUI.stopChat();
         chatStarted = false;
         myId = 1; isHost = true;
         if (roomListenerUnsub) { roomListenerUnsub(); roomListenerUnsub = null; }
         resetGame();
     },
     onStart: () => {
-        if(window.db) window.dbUpdate(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), { status: "playing" });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), { status: "playing" });
+        }
     }
 });
 

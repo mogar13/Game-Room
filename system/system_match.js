@@ -1,5 +1,5 @@
 /**
- * CASINO OS — SYSTEM MATCH MODULE (v1.0)
+ * CASINO OS — SYSTEM MATCH MODULE (v1.1)
  *
  * A Match Controller that handles room lifecycle, seat management,
  * and Firebase wiring so games don't have to repeat that boilerplate.
@@ -8,8 +8,16 @@
  * SystemMatch handles: v2Lobby wiring, room create/join, seat tracking, cleanup.
  *
  * Usage:
- * SystemMatch.setup({ gameId, roomPath, onHost, onJoin, onLeave, onStart, onClose })
- * SystemMatch.getMyId()              → 1 or 2
+ * SystemMatch.setup({
+ *   gameId, roomPath,
+ *   numSeats: 2,                    // optional, default 2 — total seat count
+ *   getSeatCount: () => playerCount,// optional, dynamic seat count for variable-player games
+ *   buildSeats: (count) => [...],   // optional, custom seat builder for host
+ *   extraRoomFields: () => ({...}), // optional, fields merged into the host room write
+ *   onHost, onJoin, onLeave, onStart, onClose
+ * })
+ *
+ * SystemMatch.getMyId()              → 1..N (host=1, joiners take first AI seat)
  * SystemMatch.isHost()               → bool
  * SystemMatch.getRoomId()            → string | null
  * SystemMatch.getRoomPath()          → string | null
@@ -50,30 +58,70 @@ window.SystemMatch = {
             return !!(window.db && window.dbRef && window.dbUpdate && window.dbGet);
         };
 
-        SystemUI.v2Lobby.setup({
+        const seatCount = function() {
+            if (typeof config.getSeatCount === 'function') {
+                const n = parseInt(config.getSeatCount(), 10);
+                if (n >= 2) return n;
+            }
+            return parseInt(config.numSeats, 10) || 2;
+        };
+
+        const buildSeats = function(count) {
+            if (typeof config.buildSeats === 'function') {
+                const built = config.buildSeats(count);
+                if (Array.isArray(built) && built.length >= 2) return built;
+            }
+            const seats = [{ type: 'human', name: SystemUI.getPlayerName() }];
+            for (let i = 1; i < count; i++) {
+                seats.push({ type: 'ai', name: 'AI ' + (i + 1) });
+            }
+            return seats;
+        };
+
+        const extraFields = function() {
+            if (typeof config.extraRoomFields === 'function') {
+                const extra = config.extraRoomFields();
+                return extra && typeof extra === 'object' ? extra : {};
+            }
+            return {};
+        };
+
+        // Forward host-side lobby settings the game cares about (e.g. player
+        // count or AI difficulty changes from the V2 lobby controls).
+        const lobbyHooks = {
+            settingsConfig:     config.settingsConfig,
+            customHostHTML:     config.customHostHTML,
+            onSettingsRendered: config.onSettingsRendered,
+            onSettingChange:    config.onSettingChange
+        };
+
+        SystemUI.v2Lobby.setup(Object.assign({}, lobbyHooks, {
             onHost: function() {
                 if (!fbReady()) {
                     SystemUI.v2Lobby.showError('CONNECTING — TRY AGAIN');
                     return;
                 }
                 const id = Math.random().toString(36).substr(2, 4).toUpperCase();
+                const count = seatCount();
+                const seats = buildSeats(count);
                 self._roomId  = id;
                 self._myId    = 1;
                 self._isHost  = true;
+                self._seats   = seats;
 
-                Promise.resolve(window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + id), {
+                const payload = Object.assign({}, extraFields(), {
                     status:    'waiting',
                     createdAt: Date.now(),
-                    seats: [
-                        { type: 'human', name: SystemUI.getPlayerName() },
-                        { type: 'open',  name: '' }
-                    ]
-                })).catch(function(e) {
-                    console.warn('Casino OS: host write failed', e);
-                    SystemUI.v2Lobby.showError('NETWORK ERROR');
-                    self._roomId = null;
-                    self._isHost = false;
+                    seats:     seats
                 });
+
+                Promise.resolve(window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + id), payload))
+                    .catch(function(e) {
+                        console.warn('Casino OS: host write failed', e);
+                        SystemUI.v2Lobby.showError('NETWORK ERROR');
+                        self._roomId = null;
+                        self._isHost = false;
+                    });
 
                 SystemUI.v2Lobby.showRoomPhase(id, true);
                 if (config.onHost) config.onHost(id);
@@ -91,27 +139,33 @@ window.SystemMatch = {
                     if (data.status !== 'waiting') { SystemUI.v2Lobby.showError('GAME ALREADY STARTED'); return; }
 
                     const seats = [...(data.seats || [])];
-                    if (!seats[1] || seats[1].type !== 'open') {
-                        SystemUI.v2Lobby.showError('SEAT TAKEN');
+                    // Find the first replaceable seat: open or AI.
+                    let claimIdx = -1;
+                    for (let i = 1; i < seats.length; i++) {
+                        const s = seats[i];
+                        if (!s) continue;
+                        if (s.type === 'open' || s.type === 'ai') { claimIdx = i; break; }
+                    }
+                    if (claimIdx === -1) {
+                        SystemUI.v2Lobby.showError('ROOM FULL');
                         return;
                     }
-                    seats[1] = { type: 'human', name: myName };
+                    seats[claimIdx] = { type: 'human', name: myName };
 
                     return window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + code), { seats: seats })
                         .then(function() {
-                            // Verify our claim after the write — if a concurrent joiner
-                            // overwrote us, bail out instead of pretending to be seated.
+                            // Verify our claim — concurrent joiners may have overwritten us.
                             return window.dbGet(window.dbRef(window.db, self._roomPath + '/' + code));
                         })
                         .then(function(verifySnap) {
                             const verified = verifySnap.val();
-                            const seat2 = verified && verified.seats && verified.seats[1];
-                            if (!seat2 || seat2.name !== myName) {
+                            const claimed = verified && verified.seats && verified.seats[claimIdx];
+                            if (!claimed || claimed.name !== myName) {
                                 SystemUI.v2Lobby.showError('SEAT TAKEN');
                                 return;
                             }
                             self._roomId = code;
-                            self._myId   = 2;
+                            self._myId   = claimIdx + 1; // 1-based seat ID
                             self._isHost = false;
                             self._seats  = verified.seats;
                             SystemUI.v2Lobby.showRoomPhase(code, false);
@@ -129,7 +183,7 @@ window.SystemMatch = {
             },
 
             onStart: function() {
-                // Host marks room as started — triggers onValue for both players
+                // Host marks room as started — triggers onValue for all players
                 if (self._isHost && self._roomId && fbReady()) {
                     Promise.resolve(window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + self._roomId), { status: 'playing' }))
                         .catch(function(e) { console.warn('Casino OS: start failed', e); });
@@ -140,9 +194,31 @@ window.SystemMatch = {
             onClose: function() {
                 if (config.onClose) config.onClose();
             }
-        });
+        }));
 
-        SystemUI.v2Lobby.show();
+        // Auto-show by default (matches v1 behavior). Games that wire setup
+        // at module load can opt out and call SystemUI.v2Lobby.show() later.
+        if (config.autoShow !== false) {
+            SystemUI.v2Lobby.show();
+        }
+    },
+
+    // Resize seats while waiting (host only). Used by N-player games whose
+    // lobby exposes a player-count picker.
+    resizeSeats: function(count) {
+        if (!this._isHost || !this._roomId || !this._roomPath) return;
+        if (!window.db || !window.dbUpdate) return;
+        count = parseInt(count, 10);
+        if (!(count >= 2)) return;
+
+        const newSeats = [];
+        for (let i = 0; i < count; i++) {
+            if (this._seats[i] && this._seats[i].type === 'human') newSeats.push(this._seats[i]);
+            else if (i === 0) newSeats.push({ type: 'human', name: SystemUI.getPlayerName() });
+            else newSeats.push({ type: 'ai', name: 'AI ' + (i + 1) });
+        }
+        this._seats = newSeats;
+        window.dbUpdate(window.dbRef(window.db, this._roomPath + '/' + this._roomId), { seats: newSeats });
     },
 
     // ── CLEANUP ───────────────────────────────────

@@ -758,59 +758,41 @@ function endGame(winner) {
 // ONLINE MULTIPLAYER (V2)
 // =============================================
 
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
-        isHost = true; myId = 1; myColor = "red"; chatStarted = false;
-        
+SystemMatch.setup({
+    gameId:   "checkers",
+    roomPath: "checkers_rooms",
+    autoShow: false,
+    buildSeats: () => {
         const diff = document.getElementById('sys-chk-diff').value;
-        seats = [
+        return [
             { type: "human", name: SystemUI.getPlayerName() },
-            { type: "ai", name: "AI (" + diff + ")" }
+            { type: "ai",    name: "AI (" + diff + ")" }
         ];
-        
-        window.dbSet(window.dbRef(window.db,'checkers_rooms/'+currentRoomId),{
-            status: "waiting",
-            currentTurn: "red",
-            board: null,
-            seats: seats
-        }).then(()=>{
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db),`checkers_rooms/${code}`)).then(snap=>{
-            if(snap.exists()){
-                let data = snap.val();
-                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myId = 2; myColor = "black"; chatStarted = false;
-                    
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-                    
-                    window.dbUpdate(window.dbRef(window.db,'checkers_rooms/'+currentRoomId),{
-                        seats: updatedSeats
-                    });
-                    
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM FULL OR NO AI TO REPLACE");
-                }
-            } else {
-                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
-            }
-        });
+    extraRoomFields: () => ({
+        currentTurn: "red",
+        board: null
+    }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
+        isHost = true; myId = 1; myColor = "red"; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
+    },
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2; myColor = "black"; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
     onLeave: () => {
-        gameMode="ai";
-        document.getElementById("sys-chk-mode").value="ai";
+        gameMode = "ai";
+        document.getElementById("sys-chk-mode").value = "ai";
         document.getElementById('sys-chk-diff').parentElement.style.display = '';
-        localStorage.setItem("chess_mode","ai");
+        localStorage.setItem("chess_mode", "ai");
         myId = 1;
         isHost = true;
-        SystemUI.stopChat(); chatStarted=false;
+        chatStarted = false;
         if (roomListener) { roomListener(); roomListener = null; }
         resetGame();
     },
@@ -819,17 +801,19 @@ SystemUI.v2Lobby.setup({
         currentTurn   = 'red';
         gameActive    = true;
         forcedJumpers = getForcedJumpers(currentTurn, board);
-        
-        window.dbUpdate(window.dbRef(window.db,'checkers_rooms/'+currentRoomId),{
-            status: "playing",
-            board: board,
-            currentTurn: currentTurn
-        });
+
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'checkers_rooms/' + currentRoomId), {
+                status: "playing",
+                board: board,
+                currentTurn: currentTurn
+            });
+        }
     },
     onClose: () => {
         if (gameMode === "online" && !gameActive) {
-            gameMode="ai";
-            document.getElementById("sys-chk-mode").value="ai";
+            gameMode = "ai";
+            document.getElementById("sys-chk-mode").value = "ai";
             document.getElementById('sys-chk-diff').parentElement.style.display = '';
             myId = 1;
             isHost = true;

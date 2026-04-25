@@ -725,43 +725,35 @@ function gameLoop(ts) {
 }
 
 // ── ONLINE MULTIPLAYER ────────────────────────
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substr(2, 4).toUpperCase();
+SystemMatch.setup({
+    gameId:   "pong",
+    roomPath: "pong_rooms",
+    autoShow: false,
+    extraRoomFields: () => ({ ts: Date.now() }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1;
         playerNames[0] = SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'P1';
-        window.dbSet(window.dbRef(window.db, 'pong_rooms/' + currentRoomId), {
-            status: 'waiting',
-            seats: [{ type: 'human', name: playerNames[0] }, { type: 'open', name: '' }],
-            createdAt: Date.now(), ts: Date.now()
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        listenToRoom();
     },
-    onJoin: code => {
-        window.dbGet(window.dbChild(window.dbRef(window.db), `pong_rooms/${code}`)).then(snap => {
-            if (!snap.exists()) { SystemUI.v2Lobby.showError('ROOM NOT FOUND'); return; }
-            const data = snap.val();
-            if (data.status !== 'waiting') { SystemUI.v2Lobby.showError('GAME IN PROGRESS'); return; }
-            currentRoomId = code; isHost = false; myId = 2;
-            playerNames[0] = data.seats[0]?.name || 'P1';
-            playerNames[1] = SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'P2';
-            const updated = [...data.seats];
-            updated[1] = { type: 'human', name: playerNames[1] };
-            window.dbUpdate(window.dbRef(window.db, 'pong_rooms/' + code), { seats: updated, ts: Date.now() });
-            SystemUI.v2Lobby.showRoomPhase(code, false);
-            listenToRoom();
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2;
+        const seats = SystemMatch.getSeats();
+        playerNames[0] = (seats[0] && seats[0].name) || 'P1';
+        playerNames[1] = SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'P2';
+        listenToRoom();
     },
     onLeave: () => {
         if (roomListener) { roomListener(); roomListener = null; }
-        SystemUI.stopChat(); chatStarted = false;
+        chatStarted = false;
         myId = 1; isHost = true; gameMode = 'ai';
         resetGame(); startCountdown();
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, 'pong_rooms/' + currentRoomId), { status: 'playing', ts: Date.now() });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'pong_rooms/' + currentRoomId), { status: 'playing', ts: Date.now() });
+        }
     }
 });
 

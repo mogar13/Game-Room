@@ -92,70 +92,53 @@ function syncDiffVisibility() {
 }
 
 // ==========================================
-// 2. V2 MULTIPLAYER LOBBY LOGIC
+// 2. V2 MULTIPLAYER LOBBY LOGIC (via SystemMatch)
 // ==========================================
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        if(!window.db) { alert("Server connection error."); return; }
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+SystemMatch.setup({
+    gameId:   "ttt",
+    roomPath: "ttt_rooms",
+    autoShow: false,
+    buildSeats: () => [
+        { type: "human", name: SystemUI.getPlayerName() },
+        { type: "ai",    name: "AI (" + aiDifficulty + ")" }
+    ],
+    extraRoomFields: () => ({
+        board: ["", "", "", "", "", "", "", "", ""],
+        turn:  "X"
+    }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true;
         mySymbol = "X";
         chatStarted = false;
-        
-        seats = [
-            { type: "human", name: (typeof SystemUI.getPlayerName === 'function' ? SystemUI.getPlayerName() : "Player") },
-            { type: "ai", name: "AI (" + aiDifficulty + ")" }
-        ];
-
-        window.dbSet(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), {
-            board: ["", "", "", "", "", "", "", "", ""],
-            turn: "X",
-            status: "waiting",
-            seats: seats
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom(); 
-        });
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-    onJoin: (code) => {
-        if(!window.db) { alert("Server connection error."); return; }
-        window.dbGet(window.dbChild(window.dbRef(window.db), `ttt_rooms/${code}`)).then((snapshot) => {
-            if (snapshot.exists()) {
-                const data = snapshot.val();
-                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
-                    currentRoomId = code;
-                    isHost = false;
-                    mySymbol = "O";
-                    chatStarted = false;
-                    
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: (typeof SystemUI.getPlayerName === 'function' ? SystemUI.getPlayerName() : "Player") };
-
-                    window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), {
-                        seats: updatedSeats,
-                        status: "playing"
-                    });
-                    
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("Room is full!");
-                }
-            } else {
-                SystemUI.v2Lobby.showError("Room not found.");
-            }
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false;
+        mySymbol = "O";
+        chatStarted = false;
+        seats = SystemMatch.getSeats();
+        // TTT auto-starts on join (no host-pressed Start button).
+        if (window.db && window.dbUpdate) {
+            window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + roomId), { status: "playing" });
+        }
+        listenToRoom();
     },
     onLeave: () => {
         gameMode = "local";
         const modeEl = document.getElementById("sys-ttt-mode");
-        if(modeEl) modeEl.value = "local";
-        SystemUI.stopChat(); chatStarted = false;
+        if (modeEl) modeEl.value = "local";
+        chatStarted = false;
         if (roomListener) { roomListener(); roomListener = null; }
+        currentRoomId = null;
         restartGame();
     },
     onStart: () => {
-        if(window.db) window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), { status: "playing" });
+        if (window.db && currentRoomId) {
+            window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), { status: "playing" });
+        }
     }
 });
 

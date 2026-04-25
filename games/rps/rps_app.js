@@ -283,98 +283,60 @@ document.querySelectorAll(".choice-btn").forEach(btn => {
 //     scores:        { p1: 0, p2: 0, ties: 0 }
 //     lastResult:    { p1Choice, p2Choice, winner, round }
 
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        if (!window.db) { alert("Server connection error."); return; }
-
-        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
+SystemMatch.setup({
+    gameId:   "rps",
+    roomPath: "rps_rooms",
+    autoShow: false,
+    buildSeats: () => [
+        { type: "human", name: p1Name || "Player 1" },
+        { type: "ai",    name: "Waiting for opponent…" }
+    ],
+    extraRoomFields: () => ({
+        p1Name:   p1Name || "Player 1",
+        round:    1,
+        p1Choice: "",
+        p2Choice: "",
+        scores:   { p1: 0, p2: 0, ties: 0 }
+    }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
-
-        // Ensure name is guaranteed to be a string
-        const hostName = p1Name || "Player 1";
-
-        seats = [
-            { type: "human", name: hostName },
-            { type: "ai",    name: "Waiting for opponent…"  }
-        ];
-
-        window.dbSet(window.dbRef(window.db, "rps_rooms/" + currentRoomId), {
-            status: "waiting",
-            p1Name: hostName,
-            seats,
-            round:    1,
-            p1Choice: "",
-            p2Choice: "",
-            scores:   { p1: 0, p2: 0, ties: 0 }
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        }).catch(err => {
-            console.error("Firebase Room Creation Error:", err);
-        });
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-
-    onJoin: code => {
-        if (!window.db) { alert("Server connection error."); return; }
-
-        window.dbGet(window.dbChild(window.dbRef(window.db), `rps_rooms/${code}`))
-            .then(snap => {
-                if (snap.exists() && snap.val().status === "waiting") {
-                    currentRoomId = code;
-                    isHost = false; myId = 2; chatStarted = false;
-
-                    const data = snap.val();
-                    const updatedSeats = data.seats || [];
-                    const guestName = p1Name || "Player 2";
-                    
-                    updatedSeats[1] = { type: "human", name: guestName };
-
-                    window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + code), {
-                        p2Name: guestName,
-                        seats: updatedSeats
-                    }).then(() => {
-                        SystemUI.v2Lobby.showRoomPhase(code, false);
-                        listenToRoom();
-                    }).catch(err => {
-                        console.error("Firebase Join Error:", err);
-                    });
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM NOT FOUND OR GAME ALREADY STARTED");
-                }
-            }).catch(err => {
-                console.error("Firebase Get Error:", err);
-                SystemUI.v2Lobby.showError("Network error finding room.");
-            });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        const guestName = p1Name || "Player 2";
+        if (window.db && window.dbUpdate) {
+            window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + roomId), { p2Name: guestName });
+        }
+        listenToRoom();
     },
 
     onLeave: () => {
-        // Refund any pending bet if the user leaves the room
         if (currentBet > 0) {
             SystemUI.money += currentBet;
             currentBet = 0;
         }
-        
         gameMode = "ai";
         if (roomListener) { roomListener(); roomListener = null; }
-        SystemUI.stopChat();
         chatStarted = false;
         enterAIUI();
         refreshAIUI();
     },
 
-    // Host taps "Start Game" in the lobby to begin the first round
     onStart: () => {
-        // AUDIT: Tracking game start
         if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("rps");
-
-        window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + currentRoomId), {
-            status: "choosing"
-        }).catch(err => console.error("Start game failed:", err));
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + currentRoomId), { status: "choosing" })
+                .catch(err => console.error("Start game failed:", err));
+        }
     },
 
     onClose: () => {
         if (gameMode === "online") {
-            // Refund any pending bet
             if (currentBet > 0) {
                 SystemUI.money += currentBet;
                 currentBet = 0;

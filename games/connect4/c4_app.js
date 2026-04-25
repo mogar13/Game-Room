@@ -513,72 +513,54 @@ document.getElementById("restart-btn").addEventListener("click", () => {
 
 // ── 13. ONLINE MULTIPLAYER (V2 LOBBY) ──────
 
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
-        isHost = true; myPlayer = 1; chatStarted = false;
-        
+SystemMatch.setup({
+    gameId:   "c4",
+    roomPath: "c4_rooms",
+    autoShow: false,
+    buildSeats: () => {
         const diff = document.getElementById('sys-c4-diff').value;
-        seats = [
+        return [
             { type: "human", name: SystemUI.getPlayerName() },
-            { type: "ai", name: "AI (" + diff + ")" }
+            { type: "ai",    name: "AI (" + diff + ")" }
         ];
-
-        window.dbSet(window.dbRef(window.db, "c4_rooms/" + currentRoomId), {
-            grid: gridToFirebase(),
-            turn: 1,
-            status: "waiting",
-            seats: seats
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db), `c4_rooms/${code}`)).then(snap => {
-            if (snap.exists()) {
-                let data = snap.val();
-                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myPlayer = 2; chatStarted = false;
-                    
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-                    
-                    window.dbUpdate(window.dbRef(window.db, "c4_rooms/" + currentRoomId), {
-                        seats: updatedSeats
-                    });
-                    
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM FULL OR NO AI TO REPLACE");
-                }
-            } else {
-                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
-            }
-        });
+    extraRoomFields: () => ({
+        grid: gridToFirebase(),
+        turn: 1
+    }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
+        isHost = true; myPlayer = 1; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
+    },
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myPlayer = 2; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
     onLeave: () => {
         gameMode = "ai";
         document.getElementById("sys-c4-mode").value = "ai";
         localStorage.setItem("c4_mode", "ai");
-        syncDiffVisibility(); 
+        syncDiffVisibility();
         myPlayer = 1;
         isHost = true;
-        SystemUI.stopChat(); chatStarted = false;
+        chatStarted = false;
         initGame();
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, "c4_rooms/" + currentRoomId), {
-            status: "playing"
-        });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, "c4_rooms/" + currentRoomId), { status: "playing" });
+        }
     },
     onClose: () => {
         if (gameMode === "online" && !gameActive) {
             gameMode = "ai";
             document.getElementById("sys-c4-mode").value = "ai";
             localStorage.setItem("c4_mode", "ai");
-            syncDiffVisibility(); 
+            syncDiffVisibility();
             myPlayer = 1;
             isHost = true;
             initGame();

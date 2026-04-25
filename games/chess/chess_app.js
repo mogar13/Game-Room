@@ -1103,72 +1103,57 @@ document.getElementById("btn-play-again").addEventListener("click", () => {
 // ── 17. NATIVE CASINO OS LOBBY & SYNC ────────
 let seats = [];
 
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+SystemMatch.setup({
+    gameId:   "chess",
+    roomPath: "chess_rooms",
+    autoShow: false,
+    buildSeats: () => [
+        { type: "human", name: SystemUI.getPlayerName() },
+        { type: "ai",    name: "AI (" + aiDiff + ")" }
+    ],
+    extraRoomFields: () => ({
+        board: serB(INIT.map(p => p ? {...p} : null)),
+        turn: "white",
+        cr: {wK:true, wQ:true, bK:true, bQ:true},
+        ept: -1,
+        lastMove: null,
+        capW: [], capB: [],
+        moveHistory: "[]",
+        moveCounts: {white: 0, black: 0}
+    }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1; playerColor = "white"; chatStarted = false;
-        
-        seats = [
-            { type: "human", name: SystemUI.getPlayerName() },
-            { type: "ai", name: "AI (" + aiDiff + ")" }
-        ];
-        
-        window.dbSet(window.dbRef(window.db,'chess_rooms/'+currentRoomId),{
-            board: serB(INIT.map(p=>p?{...p}:null)),
-            turn: "white", cr:{wK:true,wQ:true,bK:true,bQ:true},
-            ept:-1, lastMove:null, status:"waiting",
-            seats: seats,
-            capW: [], capB: [], moveHistory: "[]", moveCounts: {white:0, black:0}
-        }).then(()=>{
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db),`chess_rooms/${code}`)).then(snap=>{
-            if(snap.exists()){
-                let data = snap.val();
-                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myId = 2; playerColor = "black"; chatStarted = false;
-                    
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-                    
-                    window.dbUpdate(window.dbRef(window.db,'chess_rooms/'+currentRoomId),{
-                        seats: updatedSeats
-                    });
-                    
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM FULL OR NO AI TO REPLACE");
-                }
-            } else {
-                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
-            }
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2; playerColor = "black"; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
     onLeave: () => {
-        gameMode="ai";
-        document.getElementById("sys-chess-mode").value="ai";
-        localStorage.setItem("chess_mode","ai");
-        syncDiffVisibility(); 
+        gameMode = "ai";
+        document.getElementById("sys-chess-mode").value = "ai";
+        localStorage.setItem("chess_mode", "ai");
+        syncDiffVisibility();
         myId = 1;
         isHost = true;
-        SystemUI.stopChat(); chatStarted=false;
+        chatStarted = false;
         newGame();
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db,'chess_rooms/'+currentRoomId),{
-            status: "playing"
-        });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'chess_rooms/' + currentRoomId), { status: "playing" });
+        }
     },
     onClose: () => {
         if (gameMode === "online" && gameStatus !== "playing") {
-            gameMode="ai";
-            document.getElementById("sys-chess-mode").value="ai";
-            localStorage.setItem("chess_mode","ai");
-            syncDiffVisibility(); 
+            gameMode = "ai";
+            document.getElementById("sys-chess-mode").value = "ai";
+            localStorage.setItem("chess_mode", "ai");
+            syncDiffVisibility();
             myId = 1;
             isHost = true;
             newGame();
