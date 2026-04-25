@@ -592,7 +592,17 @@ function showToast(title, msg) {
 
 // ── 8. ONLINE MULTIPLAYER ──────────────────────
 function setupOnlineMode() {
-    SystemUI.v2Lobby.setup({
+    SystemMatch.setup({
+        gameId:   "holdem",
+        roomPath: "holdem_rooms",
+        autoShow: false,
+        getSeatCount: () => playerCount,
+        buildSeats: (count) => {
+            const out = [{ type: "human", name: SystemUI.getPlayerName() }];
+            for (let i = 1; i < count; i++) out.push({ type: "ai", name: "AI " + (i + 1) });
+            return out;
+        },
+        extraRoomFields: () => ({ ts: Date.now() }),
         settingsConfig: [
             { id: "lobby-count", label: "PLAYERS", type: "select", default: playerCount, options: [{value:2, label:"2"},{value:3, label:"3"},{value:4, label:"4"}] }
         ],
@@ -600,30 +610,30 @@ function setupOnlineMode() {
         onSettingChange: (key, val) => {
             if (key === "lobby-count") playerCount = parseInt(val);
             updateLobbyPreview();
+            if (isHost && currentRoomId && key === "lobby-count") {
+                SystemMatch.resizeSeats(playerCount);
+                seats = SystemMatch.getSeats();
+            }
         },
-        onHost: () => {
-            currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
-            isHost = true; myId = 1; seats = [{ type: "human", name: SystemUI.getPlayerName() }];
-            for (let i = 1; i < playerCount; i++) seats.push({ type: "ai", name: "AI " + (i + 1) });
-            window.dbSet(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "waiting", seats: seats, ts: Date.now() }).then(() => { 
-                SystemUI.v2Lobby.showRoomPhase(currentRoomId, true); listenToRoom(); 
-            });
+        onHost: (roomId) => {
+            currentRoomId = roomId;
+            isHost = true; myId = 1;
+            seats = SystemMatch.getSeats();
+            listenToRoom();
         },
-        onJoin: (code) => {
-            window.dbGet(window.dbChild(window.dbRef(window.db), `holdem_rooms/${code}`)).then((snap) => {
-                if (snap.exists()) {
-                    const data = snap.val(); let jIdx = data.seats.findIndex(s => s.type === "ai");
-                    if (jIdx !== -1) {
-                        currentRoomId = code; isHost = false; myId = jIdx + 1;
-                        let updated = data.seats; updated[jIdx] = { type: "human", name: SystemUI.getPlayerName() };
-                        window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + code), { seats: updated, ts: Date.now() });
-                        SystemUI.v2Lobby.showRoomPhase(code, false); listenToRoom();
-                    } else SystemUI.v2Lobby.showError("ROOM FULL");
-                } else SystemUI.v2Lobby.showError("NOT FOUND");
-            });
+        onJoin: (roomId) => {
+            currentRoomId = roomId;
+            isHost = false;
+            myId = SystemMatch.getMyId();
+            seats = SystemMatch.getSeats();
+            listenToRoom();
         },
         onLeave: () => location.reload(),
-        onStart: () => window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "playing", ts: Date.now() })
+        onStart: () => {
+            if (currentRoomId && window.db) {
+                window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "playing", ts: Date.now() });
+            }
+        }
     });
 }
 
