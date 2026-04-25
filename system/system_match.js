@@ -286,3 +286,23 @@ window.SystemMatch = {
         return (seat && seat.name) ? seat.name : ('Player ' + idx);
     }
 };
+
+// Catch the host closing the tab / refreshing / navigating away while a
+// room is still live — without this, abandoned host rooms pile up in
+// Firebase until the hub iframe-close sweeper happens to run. Mirrors
+// the per-game beforeunload that UNO has had for a while.
+window.addEventListener('beforeunload', function() {
+    const m = window.SystemMatch;
+    if (!m || !m._isHost || !m._roomId || !m._roomPath) return;
+    if (!window.db || !window.dbRef) return;
+    try {
+        const ref = window.dbRef(window.db, m._roomPath + '/' + m._roomId);
+        if (typeof window.dbRemove === 'function') {
+            window.dbRemove(ref);
+        } else if (typeof window.dbSet === 'function') {
+            window.dbSet(ref, null);
+        }
+    } catch (e) {
+        // beforeunload is best-effort — never block the unload
+    }
+});
