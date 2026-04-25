@@ -667,7 +667,17 @@ function updateLobbyPreview() {
     SystemUI.v2Lobby.updatePreview(slots);
 }
 
-SystemUI.v2Lobby.setup({
+SystemMatch.setup({
+    gameId:   "blackjack",
+    roomPath: "bj_rooms",
+    autoShow: false,
+    getSeatCount: () => lobbyPlayerCount,
+    buildSeats: (count) => {
+        const out = [{ type: "human", name: SystemUI.getPlayerName() }];
+        for (let i = 1; i < count; i++) out.push({ type: "ai", name: "AI " + i });
+        return out;
+    },
+    extraRoomFields: () => ({ ts: Date.now() }),
     settingsConfig: [
         {
             id: "lobby-count",
@@ -700,6 +710,10 @@ SystemUI.v2Lobby.setup({
             localStorage.setItem("blackjack_pcount", val);
             const localPCount = document.getElementById("sys-pcount");
             if (localPCount) localPCount.value = val;
+            if (isHost && currentRoomId) {
+                SystemMatch.resizeSeats(lobbyPlayerCount);
+                seats = SystemMatch.getSeats();
+            }
         } else if (key === "sys-difficulty-lobby") {
             savedDifficulty = val;
             localStorage.setItem("blackjack_diff", val);
@@ -709,56 +723,37 @@ SystemUI.v2Lobby.setup({
         }
         updateLobbyPreview();
     },
-    onHost: () => {
-        if(!window.db) { alert("Server error."); return; }
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
-        seats = [{ type: "human", name: SystemUI.getPlayerName() }];
-        for (let i = 1; i < lobbyPlayerCount; i++) seats.push({ type: "ai", name: "AI " + i });
-        window.dbSet(window.dbRef(window.db,'bj_rooms/'+currentRoomId), {
-            status: "waiting", seats: seats, ts: Date.now()
-        }).then(()=>{
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-    onJoin: (code) => {
-        if(!window.db) return;
-        window.dbGet(window.dbChild(window.dbRef(window.db),`bj_rooms/${code}`)).then(snap=>{
-            if(snap.exists()){
-                let data = snap.val();
-                let joinedIdx = -1;
-                const updatedSeats = data.seats ? [...data.seats] : [];
-                for (let i = 1; i < updatedSeats.length; i++) {
-                    if (updatedSeats[i].type === "ai") {
-                        joinedIdx = i;
-                        updatedSeats[i] = { type: "human", name: SystemUI.getPlayerName() };
-                        break;
-                    }
-                }
-                if (joinedIdx !== -1) {
-                    currentRoomId = code; isHost = false; myId = joinedIdx + 1; chatStarted = false;
-                    window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{ seats: updatedSeats, status: "playing", ts: Date.now() });
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else { SystemUI.v2Lobby.showError("ROOM FULL"); }
-            } else { SystemUI.v2Lobby.showError("ROOM NOT FOUND"); }
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; chatStarted = false;
+        myId = SystemMatch.getMyId();
+        seats = SystemMatch.getSeats();
+        // Blackjack auto-starts on join (matches original behavior).
+        if (window.db && window.dbUpdate) {
+            window.dbUpdate(window.dbRef(window.db, 'bj_rooms/' + roomId), { status: "playing", ts: Date.now() });
+        }
+        listenToRoom();
     },
     onLeave: () => {
-        if (isHost && currentRoomId && window.db) window.dbSet(window.dbRef(window.db, `bj_rooms/${currentRoomId}`), null);
-        gameMode="ai"; myId=1; isHost=true; 
+        gameMode = "ai"; myId = 1; isHost = true;
         document.getElementById("sys-bj-mode").value = "ai";
         localStorage.setItem("blackjack_mode", "ai");
         syncPCountVisibility();
         resetTableForBetting();
     },
     onStart: () => {
-        if(window.db) window.dbUpdate(window.dbRef(window.db,'bj_rooms/'+currentRoomId),{ status: "playing", ts: Date.now() });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'bj_rooms/' + currentRoomId), { status: "playing", ts: Date.now() });
+        }
     },
     onClose: () => {
         if (gameMode === "online" && gamePhase === "betting") {
-            if (isHost && currentRoomId && window.db) window.dbSet(window.dbRef(window.db, `bj_rooms/${currentRoomId}`), null);
             gameMode = "ai";
             document.getElementById("sys-bj-mode").value = "ai";
             syncPCountVisibility();

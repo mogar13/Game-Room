@@ -65,7 +65,7 @@ window.SystemMatch = {
         const seatCount = function() {
             if (typeof config.getSeatCount === 'function') {
                 const n = parseInt(config.getSeatCount(), 10);
-                if (n >= 2) return n;
+                if (n >= 1) return n;
             }
             return parseInt(config.numSeats, 10) || 2;
         };
@@ -73,7 +73,7 @@ window.SystemMatch = {
         const buildSeats = function(count) {
             if (typeof config.buildSeats === 'function') {
                 const built = config.buildSeats(count);
-                if (Array.isArray(built) && built.length >= 2) return built;
+                if (Array.isArray(built) && built.length >= 1) return built;
             }
             const seats = [{ type: 'human', name: SystemUI.getPlayerName() }];
             for (let i = 1; i < count; i++) {
@@ -213,7 +213,7 @@ window.SystemMatch = {
         if (!this._isHost || !this._roomId || !this._roomPath) return;
         if (!window.db || !window.dbUpdate) return;
         count = parseInt(count, 10);
-        if (!(count >= 2)) return;
+        if (!(count >= 1)) return;
 
         const newSeats = [];
         for (let i = 0; i < count; i++) {

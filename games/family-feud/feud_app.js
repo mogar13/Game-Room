@@ -52,7 +52,15 @@ function updateLobbyPreview() {
     SystemUI.v2Lobby.updatePreview(slots);
 }
 
-SystemUI.v2Lobby.setup({
+SystemMatch.setup({
+    gameId:   "family-feud",
+    roomPath: "feud_rooms",
+    autoShow: false,
+    buildSeats: () => [
+        { type: "human", name: SystemUI.getPlayerName() },
+        { type: "ai",    name: "AI (" + aiDifficulty + ")" }
+    ],
+    extraRoomFields: () => ({ ts: Date.now() }),
     settingsConfig: [
         {
             id: "lobby-rounds",
@@ -77,9 +85,7 @@ SystemUI.v2Lobby.setup({
             ]
         }
     ],
-    onSettingsRendered: () => {
-        updateLobbyPreview();
-    },
+    onSettingsRendered: () => updateLobbyPreview(),
     onSettingChange: (key, val) => {
         if (key === "lobby-rounds") {
             totalRounds = parseInt(val);
@@ -90,67 +96,36 @@ SystemUI.v2Lobby.setup({
         }
         updateLobbyPreview();
     },
-    onHost: () => {
-        if(!window.db) { alert("Server connection error."); return; }
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
-        
-        seats = [
-            { type: "human", name: SystemUI.getPlayerName() },
-            { type: "ai", name: "AI (" + aiDifficulty + ")" }
-        ];
-
-        window.dbSet(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-            status: "waiting", seats: seats, ts: Date.now()
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-    onJoin: (code) => {
-        if(!window.db) { alert("Server connection error."); return; }
-        window.dbGet(window.dbChild(window.dbRef(window.db), `feud_rooms/${code}`)).then(snapshot => {
-            if (snapshot.exists()) {
-                let data = snapshot.val();
-                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-                    window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
-                        seats: updatedSeats, ts: Date.now()
-                    });
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM FULL");
-                }
-            } else {
-                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
-            }
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
     onLeave: () => {
-        if (isHost && currentRoomId) {
-            window.dbSet(window.dbRef(window.db, `feud_rooms/${currentRoomId}`), null);
-        }
         gameMode = "ai";
         const modeEl = document.getElementById("sys-feud-mode");
-        if(modeEl) modeEl.value = "ai";
+        if (modeEl) modeEl.value = "ai";
         localStorage.setItem("feud_mode", "ai");
-        SystemUI.stopChat(); chatStarted = false;
+        chatStarted = false;
         myId = 1; isHost = true;
-        if(roomListener) { roomListener(); roomListener = null; }
+        if (roomListener) { roomListener(); roomListener = null; }
         resetGame();
         toggleGameVisibility(true);
     },
     onStart: () => {
-        if(window.db) window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), { status: "playing", ts: Date.now() });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), { status: "playing", ts: Date.now() });
+        }
     },
     onClose: () => {
         if (gameMode === "online" && gamePhase === "idle") {
-            if (isHost && currentRoomId) {
-                window.dbSet(window.dbRef(window.db, `feud_rooms/${currentRoomId}`), null);
-            }
             gameMode = "ai";
             const modeEl = document.getElementById("sys-feud-mode");
             if (modeEl) modeEl.value = "ai";

@@ -525,42 +525,38 @@ document.getElementById("start-game-btn").addEventListener("click", startGame);
 // ==========================================
 // 6. MULTIPLAYER (V2 Engine)
 // ==========================================
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substr(2, 4).toUpperCase();
+SystemMatch.setup({
+    gameId:   "domino",
+    roomPath: "domino_rooms",
+    autoShow: false,
+    buildSeats: () => [
+        { type: "human", name: SystemUI.getPlayerName() },
+        { type: "ai",    name: "AI" }
+    ],
+    extraRoomFields: () => ({ currentTurn: 1 }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
-        seats = [{ type: "human", name: SystemUI.getPlayerName() }, { type: "ai", name: "AI" }];
-        window.dbSet(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), {
-            status: "waiting", currentTurn: 1, seats: seats
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db), `domino_rooms/${code}`)).then((snapshot) => {
-            if (snapshot.exists()) {
-                let data = snapshot.val();
-                if (data.seats && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-                    window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { 
-                        seats: updatedSeats, 
-                        status: "playing" 
-                    });
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                }
-            }
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        if (window.db && window.dbUpdate) {
+            window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + roomId), { status: "playing" });
+        }
+        listenToRoom();
     },
     onLeave: () => {
         gameMode = "ai"; myId = 1; isHost = true;
         resetGame();
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "playing" });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "playing" });
+        }
     }
 });
 
