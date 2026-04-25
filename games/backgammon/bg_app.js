@@ -79,66 +79,54 @@ document.getElementById("sys-bg-diff").addEventListener("change", (e) => {
     localStorage.setItem("bg_diff", aiDifficulty);
 });
 
-// V2 Lobby Setup
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substr(2, 4).toUpperCase();
-        isHost = true; myId = 1; myColor = 'white'; chatStarted = false;
-        
-        seats = [
-            { type: "human", name: SystemUI.getPlayerName() },
-            { type: "ai", name: "AI (" + aiDifficulty + ")" }
-        ];
-
+// V2 Lobby Setup (via SystemMatch)
+SystemMatch.setup({
+    gameId:   "backgammon",
+    roomPath: "bg_rooms",
+    autoShow: false,
+    buildSeats: () => [
+        { type: "human", name: SystemUI.getPlayerName() },
+        { type: "ai",    name: "AI (" + aiDifficulty + ")" }
+    ],
+    extraRoomFields: () => {
         setupBoardState();
-        window.dbSet(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), {
-            status: "waiting",
-            players: 1,
-            board: board,
-            bar: bar,
-            off: off,
+        return {
+            players:     1,
+            board:       board,
+            bar:         bar,
+            off:         off,
             currentTurn: 'white',
-            activeDice: [],
-            seats: seats
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+            activeDice:  []
+        };
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db), `bg_rooms/${code}`)).then((snapshot) => {
-            if (snapshot.exists()) {
-                let data = snapshot.val();
-                if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myId = 2; myColor = 'black'; chatStarted = false;
-                    
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-
-                    window.dbUpdate(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), { 
-                        seats: updatedSeats,
-                        status: "playing" 
-                    });
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM FULL");
-                }
-            } else {
-                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
-            }
-        });
+    onHost: (roomId) => {
+        currentRoomId = roomId;
+        isHost = true; myId = 1; myColor = 'white'; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
+    },
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2; myColor = 'black'; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        // Backgammon auto-starts on join.
+        if (window.db && window.dbUpdate) {
+            window.dbUpdate(window.dbRef(window.db, 'bg_rooms/' + roomId), { status: "playing" });
+        }
+        listenToRoom();
     },
     onLeave: () => {
         gameMode = "ai";
         document.getElementById("sys-bg-mode").value = "ai";
         localStorage.setItem("bg_mode", "ai");
         myId = 1; isHost = true;
-        SystemUI.stopChat(); chatStarted = false;
+        chatStarted = false;
         resetGame();
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), { status: "playing" });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), { status: "playing" });
+        }
     }
 });
 

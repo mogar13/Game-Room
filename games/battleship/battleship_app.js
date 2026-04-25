@@ -200,40 +200,44 @@ function placeOrDelete(index) {
 // ==========================================
 // 3. V2 LOBBY & ONLINE SYNC
 // ==========================================
-SystemUI.v2Lobby.setup({
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2,6).toUpperCase();
+SystemMatch.setup({
+    gameId:   "battleship",
+    roomPath: "bs_rooms",
+    autoShow: false,
+    buildSeats: () => [
+        { type: "human", name: SystemUI.getPlayerName() },
+        { type: "ai",    name: "AI (" + aiDifficulty + ")" }
+    ],
+    extraRoomFields: () => ({
+        player1Board: playerBoard,
+        player2Board: Array(100).fill(0),
+        player1Ships: shipCoords,
+        player2Ships: {},
+        turn:   1,
+        ready1: false,
+        ready2: false
+    }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
-        seats = [{ type: "human", name: SystemUI.getPlayerName() }, { type: "ai", name: "AI (" + aiDifficulty + ")" }];
-        
-        window.dbSet(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), {
-            player1Board: playerBoard,
-            player2Board: Array(100).fill(0),
-            player1Ships: shipCoords,
-            player2Ships: {},
-            turn: 1, status: "waiting", ready1: false, ready2: false, seats: seats
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db), `bs_rooms/${code}`)).then((snapshot) => {
-            if (snapshot.exists()) {
-                let data = snapshot.val();
-                if (data.seats && data.seats[1].type === "ai") {
-                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-                    let updatedSeats = data.seats;
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-                    window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), { seats: updatedSeats, status: "playing" });
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                }
-            }
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2; chatStarted = false;
+        seats = SystemMatch.getSeats();
+        if (window.db && window.dbUpdate) {
+            window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + roomId), { status: "playing" });
+        }
+        listenToRoom();
     },
     onLeave: () => { gameMode = "ai"; resetGame(); },
-    onStart: () => { window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), { status: "playing" }); }
+    onStart: () => {
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), { status: "playing" });
+        }
+    }
 });
 
 function listenToRoom() {

@@ -1369,7 +1369,10 @@ function showMsg(text, dur) {
 }
 
 // ── ONLINE MULTIPLAYER ────────────────────────
-SystemUI.v2Lobby.setup({
+SystemMatch.setup({
+    gameId:   "bowman",
+    roomPath: "bowman_rooms",
+    autoShow: false,
     settingsConfig: [
         {
             id: 'wind', label: 'WIND',
@@ -1401,55 +1404,43 @@ SystemUI.v2Lobby.setup({
     ],
     onSettingChange: (key, val) => {
         onlineSettings[key] = val;
-        // Push settings to Firebase so joiner can preview
-        if (currentRoomId) {
+        if (currentRoomId && window.db && window.dbUpdate) {
             window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), {
                 lobbySettings: JSON.stringify(onlineSettings), ts: Date.now()
             });
         }
     },
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substr(2, 4).toUpperCase();
+    extraRoomFields: () => ({ ts: Date.now() }),
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1;
         players[0].name = SystemUI.getPlayerName();
         players[1].name = 'Opponent';
-        window.dbSet(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), {
-            status: 'waiting',
-            seats: [{ type: 'human', name: players[0].name }, { type: 'open', name: '' }],
-            createdAt: Date.now(), ts: Date.now()
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        listenToRoom();
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db), `bowman_rooms/${code}`)).then(snap => {
-            if (!snap.exists()) { SystemUI.v2Lobby.showError('ROOM NOT FOUND'); return; }
-            const data = snap.val();
-            if (data.status !== 'waiting') { SystemUI.v2Lobby.showError('GAME IN PROGRESS'); return; }
-            currentRoomId = code; isHost = false; myId = 2;
-            players[0].name = data.seats[0].name || 'Player 1';
-            players[1].name = SystemUI.getPlayerName();
-            const updated = [...data.seats];
-            updated[1] = { type: 'human', name: players[1].name };
-            window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + code), { seats: updated, ts: Date.now() });
-            SystemUI.v2Lobby.showRoomPhase(code, false);
-            listenToRoom();
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; myId = 2;
+        const seats = SystemMatch.getSeats();
+        players[0].name = (seats[0] && seats[0].name) || 'Player 1';
+        players[1].name = SystemUI.getPlayerName();
+        listenToRoom();
     },
     onLeave: () => {
         if (roomListener) { roomListener(); roomListener = null; }
-        SystemUI.stopChat(); chatStarted = false;
+        chatStarted = false;
         myId = 1; isHost = true;
         document.getElementById('action-zone').classList.remove('hidden');
         resetGame();
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), {
-            status: 'playing',
-            lobbySettings: JSON.stringify(onlineSettings),
-            ts: Date.now()
-        });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), {
+                status: 'playing',
+                lobbySettings: JSON.stringify(onlineSettings),
+                ts: Date.now()
+            });
+        }
     }
 });
 
