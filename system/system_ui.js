@@ -864,12 +864,13 @@ window.SystemUI = {
         });
     },
 
-    stopChat: function() {
+    stopChat: function(opts) {
+        const clearRemote = !!(opts && opts.clearRemote);
         if (this._chatListener) {
             this._chatListener();
             this._chatListener = null;
         }
-        if (this._chatRoomId && window.db) {
+        if (clearRemote && this._chatRoomId && window.db) {
             window.dbSet(window.dbRef(window.db, 'chat/' + this._chatRoomId + '/messages'), null);
         }
         this._chatRoomId = null;
@@ -1012,79 +1013,10 @@ window.SystemUI = {
     }
 };
 
-// =========================================
-// LEGACY HTML INJECTIONS (Do Not Remove)
-// =========================================
-if (!document.getElementById("multiplayer-lobby")) {
-    const lobbyHTML = `
-    <div id="multiplayer-lobby" class="hidden">
-      <div class="lobby-box">
-        <button id="lobby-close-btn" style="position:absolute; top:10px; right:10px; background:none; border:none; color:#f1c40f; font-size:1.5rem; cursor:pointer; font-family: inherit;">&times;</button>
-        <h2 style="font-family: inherit;">MULTIPLAYER ARENA</h2>
-        <div class="lobby-section">
-          <h3 style="font-family: inherit;">HOST A GAME</h3>
-          <button id="btn-create-room" class="lobby-btn primary" style="font-family: inherit; margin-bottom: 14px;">CREATE NEW ROOM</button>
-          <div id="room-code-display" class="hidden">
-            <span style="font-family: inherit;">Room Code: </span><span id="host-room-id" class="highlight" style="font-family: inherit;"></span>
-            <button id="btn-copy-code" style="background:#f1c40f;color:#000;border:none;border-radius:6px;padding:4px 12px;font-weight:bold;cursor:pointer;font-size:0.8rem;font-family:inherit;margin-bottom:6px;">📋 COPY</button>
-            <p class="waiting-text" style="font-family: inherit;">Waiting for opponent...</p>
-          </div>
-        </div>
-        <div class="lobby-divider" style="font-family: inherit;">OR</div>
-        <div class="lobby-section">
-          <h3 style="font-family: inherit;">JOIN A GAME</h3>
-          <input type="text" id="join-room-input" placeholder="Enter 4-Digit Code" maxlength="4" style="font-family: inherit;">
-          <button id="btn-join-room" class="lobby-btn secondary" style="font-family: inherit;">JOIN ROOM</button>
-        </div>
-        <p id="lobby-error-msg" class="error-text" style="font-family: inherit;"></p>
-        <button id="btn-cancel-lobby" class="lobby-btn" style="background:#444; margin-top:10px; font-family: inherit;">BACK TO LOCAL PLAY</button>
-      </div>
-    </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', lobbyHTML);
-
-    document.getElementById('btn-copy-code').addEventListener('click', function() {
-        const code = document.getElementById('host-room-id').textContent.trim();
-        if (!code) return;
-        navigator.clipboard.writeText(code).catch(() => {});
-        this.textContent = '✓ COPIED!';
-        setTimeout(() => { this.textContent = '📋 COPY'; }, 2000);
-    });
-
-    document.getElementById('btn-create-room').addEventListener('click', function() {
-        this.disabled = true;
-        this.textContent = '⏳ CREATING...';
-        setTimeout(() => {
-            this.disabled = false;
-            this.textContent = 'CREATE NEW ROOM';
-        }, 4000);
-    }, true); 
-}
-
-if (!document.getElementById("sys-chat-panel")) {
-    const chatHTML = `
-    <div id="sys-chat-backdrop"></div>
-    <div id="sys-chat-panel">
-        <div id="sys-chat-header">
-            <span id="sys-chat-header-title">💬 ROOM CHAT</span>
-            <button id="sys-chat-close">&times;</button>
-        </div>
-        <div id="sys-chat-messages"></div>
-        <div id="sys-chat-input-row">
-            <input id="sys-chat-input" type="text" maxlength="80" placeholder="Say something..." autocomplete="off">
-            <button id="sys-chat-send">&#9658;</button>
-        </div>
-    </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', chatHTML);
-
-    document.getElementById('sys-chat-close').addEventListener('click', () => SystemUI.closeChat());
-    document.getElementById('sys-chat-backdrop').addEventListener('click', () => SystemUI.closeChat());
-    document.getElementById('sys-chat-send').addEventListener('click', () => SystemUI._sendMessage());
-    document.getElementById('sys-chat-input').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); SystemUI._sendMessage(); }
-    });
-}
+// Note: legacy V1 lobby HTML and the chat panel HTML were previously injected
+// here as well. They are now owned by system_lobby.js and system_chat.js
+// respectively — keeping a copy here was a race-conditioned duplicate that
+// could win the load order and ship inconsistent markup/styling.
 
 const isMobileDevice = window.innerWidth <= 800 || /Mobi|Android/i.test(navigator.userAgent);
 if (isMobileDevice) {
@@ -1128,7 +1060,7 @@ if (isMobileDevice) {
     // -- Chat module --
     if (window.SystemChat) {
         window.SystemUI.startChat   = function(roomId, name) { window.SystemChat.startChat(roomId, name); };
-        window.SystemUI.stopChat    = function()             { window.SystemChat.stopChat(); };
+        window.SystemUI.stopChat    = function(opts)         { window.SystemChat.stopChat(opts); };
         window.SystemUI.openChat    = function()             { window.SystemChat.openChat(); };
         window.SystemUI.closeChat   = function()             { window.SystemChat.closeChat(); };
         window.SystemUI._sendMessage = function()            { window.SystemChat.sendMessage(); };

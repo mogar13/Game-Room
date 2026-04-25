@@ -949,8 +949,11 @@ document.getElementById('toast-modal').addEventListener('click', () => {
 });
 
 document.getElementById('sys-reset-game-btn').addEventListener('click', () => {
-    SystemUI.money = 5000;
-    localStorage.removeItem('blackjack_money');
+    if (window.SystemProfile && typeof window.SystemProfile.setMoney === 'function') {
+        window.SystemProfile.setMoney(5000);
+    } else {
+        SystemUI.money = 5000;
+    }
     SystemUI.updateMoneyDisplay();
     resetGame();
     document.getElementById('sys-modal').classList.add('sys-hidden');

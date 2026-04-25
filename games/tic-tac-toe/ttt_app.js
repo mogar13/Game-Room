@@ -107,7 +107,7 @@ SystemUI.v2Lobby.setup({
             { type: "ai", name: "AI (" + aiDifficulty + ")" }
         ];
 
-        window.dbSet(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+        window.dbSet(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), {
             board: ["", "", "", "", "", "", "", "", ""],
             turn: "X",
             status: "waiting",
@@ -119,7 +119,7 @@ SystemUI.v2Lobby.setup({
     },
     onJoin: (code) => {
         if(!window.db) { alert("Server connection error."); return; }
-        window.dbGet(window.dbChild(window.dbRef(window.db), `rooms/${code}`)).then((snapshot) => {
+        window.dbGet(window.dbChild(window.dbRef(window.db), `ttt_rooms/${code}`)).then((snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.val();
                 if (data.seats && data.seats[1] && data.seats[1].type === "ai") {
@@ -131,7 +131,7 @@ SystemUI.v2Lobby.setup({
                     let updatedSeats = data.seats;
                     updatedSeats[1] = { type: "human", name: (typeof SystemUI.getPlayerName === 'function' ? SystemUI.getPlayerName() : "Player") };
 
-                    window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+                    window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), {
                         seats: updatedSeats,
                         status: "playing"
                     });
@@ -155,7 +155,7 @@ SystemUI.v2Lobby.setup({
         restartGame();
     },
     onStart: () => {
-        if(window.db) window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), { status: "playing" });
+        if(window.db) window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), { status: "playing" });
     }
 });
 
@@ -163,7 +163,7 @@ function listenToRoom() {
     let onlineGameStarted = false;
     if (roomListener) roomListener();
 
-    roomListener = window.dbOnValue(window.dbRef(window.db, 'rooms/' + currentRoomId), (snapshot) => {
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
         if(!data) return;
 
@@ -235,7 +235,7 @@ function handleCellClick(clickedCellEvent) {
         let nextTurn = mySymbol === "X" ? "O" : "X";
         
         if(window.db) {
-            window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+            window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), {
                 board: newBoard,
                 turn: nextTurn
             });
@@ -309,7 +309,7 @@ function computerMove() {
         newBoard[moveIndex] = currentPlayer;
         let nextTurn = currentPlayer === "X" ? "O" : "X";
         if(window.db) {
-            window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+            window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), {
                 board: newBoard,
                 turn: nextTurn
             });
@@ -454,7 +454,7 @@ function restartGame() {
 
     if (gameMode === "online") {
         if (isHost && window.db) {
-            window.dbUpdate(window.dbRef(window.db, 'rooms/' + currentRoomId), {
+            window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), {
                 board: ["", "", "", "", "", "", "", "", ""],
                 turn: "X"
             });

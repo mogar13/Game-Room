@@ -44,16 +44,19 @@ window.SystemRewards = {
         return localDate.toISOString().split('T')[0];
     },
 
-    // Get a Date object set to midnight for easy day math
+    // Return a UTC midnight timestamp for a YYYY-MM-DD string, so that
+    // day-difference math is immune to local timezone shifts (DST in
+    // particular would otherwise turn a 0-day diff into 1 and falsely
+    // advance the streak).
     getMidnightDate: function(dateString) {
-        if (!dateString) return new Date(0);
-        const [year, month, day] = dateString.split('-');
-        return new Date(year, month - 1, day);
+        if (!dateString) return 0;
+        const [year, month, day] = dateString.split('-').map(Number);
+        return Date.UTC(year, month - 1, day);
     },
 
     checkDailyLogin: function() {
         const todayStr = this.getTodayString();
-        
+
         // If never claimed, or no data
         if (!this.data.lastClaim) {
             this.data.streak = 0; // Day 1
@@ -67,11 +70,10 @@ window.SystemRewards = {
             return;
         }
 
-        // Calculate days between last claim and today
-        const todayDate = this.getMidnightDate(todayStr);
-        const lastClaimDate = this.getMidnightDate(this.data.lastClaim);
-        const diffTime = Math.abs(todayDate - lastClaimDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        // Calculate days between last claim and today using UTC midnights
+        const todayMs = this.getMidnightDate(todayStr);
+        const lastClaimMs = this.getMidnightDate(this.data.lastClaim);
+        const diffDays = Math.round((todayMs - lastClaimMs) / (1000 * 60 * 60 * 24));
 
         if (diffDays === 1) {
             // Perfect streak, increment day

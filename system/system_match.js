@@ -36,25 +36,43 @@ window.SystemMatch = {
     // Call this when the game switches to online mode.
     // Wires v2Lobby and exposes room infrastructure to the game.
     setup: function(config) {
+        // Reset any stale state from a prior setup() (e.g. host left, then
+        // re-opened the lobby in the same session) so the previous listener
+        // and seat data don't leak forward.
+        this.cleanup();
+
         this._gameId   = config.gameId   || null;
         this._roomPath = config.roomPath || null;
 
         const self = this;
 
+        const fbReady = function() {
+            return !!(window.db && window.dbRef && window.dbUpdate && window.dbGet);
+        };
+
         SystemUI.v2Lobby.setup({
             onHost: function() {
+                if (!fbReady()) {
+                    SystemUI.v2Lobby.showError('CONNECTING — TRY AGAIN');
+                    return;
+                }
                 const id = Math.random().toString(36).substr(2, 4).toUpperCase();
                 self._roomId  = id;
                 self._myId    = 1;
                 self._isHost  = true;
 
-                window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + id), {
+                Promise.resolve(window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + id), {
                     status:    'waiting',
                     createdAt: Date.now(),
                     seats: [
                         { type: 'human', name: SystemUI.getPlayerName() },
                         { type: 'open',  name: '' }
                     ]
+                })).catch(function(e) {
+                    console.warn('Casino OS: host write failed', e);
+                    SystemUI.v2Lobby.showError('NETWORK ERROR');
+                    self._roomId = null;
+                    self._isHost = false;
                 });
 
                 SystemUI.v2Lobby.showRoomPhase(id, true);
@@ -62,20 +80,46 @@ window.SystemMatch = {
             },
 
             onJoin: function(code) {
+                if (!fbReady()) {
+                    SystemUI.v2Lobby.showError('CONNECTING — TRY AGAIN');
+                    return;
+                }
+                const myName = SystemUI.getPlayerName();
                 window.dbGet(window.dbRef(window.db, self._roomPath + '/' + code)).then(function(snap) {
                     const data = snap.val();
                     if (!data) { SystemUI.v2Lobby.showError('ROOM NOT FOUND'); return; }
                     if (data.status !== 'waiting') { SystemUI.v2Lobby.showError('GAME ALREADY STARTED'); return; }
 
-                    self._roomId = code;
-                    self._myId   = 2;
-                    self._isHost = false;
-                    self._seats  = [...(data.seats || [])];
-                    self._seats[1] = { type: 'human', name: SystemUI.getPlayerName() };
+                    const seats = [...(data.seats || [])];
+                    if (!seats[1] || seats[1].type !== 'open') {
+                        SystemUI.v2Lobby.showError('SEAT TAKEN');
+                        return;
+                    }
+                    seats[1] = { type: 'human', name: myName };
 
-                    window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + code), { seats: self._seats });
-                    SystemUI.v2Lobby.showRoomPhase(code, false);
-                    if (config.onJoin) config.onJoin(code);
+                    return window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + code), { seats: seats })
+                        .then(function() {
+                            // Verify our claim after the write — if a concurrent joiner
+                            // overwrote us, bail out instead of pretending to be seated.
+                            return window.dbGet(window.dbRef(window.db, self._roomPath + '/' + code));
+                        })
+                        .then(function(verifySnap) {
+                            const verified = verifySnap.val();
+                            const seat2 = verified && verified.seats && verified.seats[1];
+                            if (!seat2 || seat2.name !== myName) {
+                                SystemUI.v2Lobby.showError('SEAT TAKEN');
+                                return;
+                            }
+                            self._roomId = code;
+                            self._myId   = 2;
+                            self._isHost = false;
+                            self._seats  = verified.seats;
+                            SystemUI.v2Lobby.showRoomPhase(code, false);
+                            if (config.onJoin) config.onJoin(code);
+                        });
+                }).catch(function(e) {
+                    console.warn('Casino OS: join failed', e);
+                    SystemUI.v2Lobby.showError('NETWORK ERROR');
                 });
             },
 
@@ -86,8 +130,9 @@ window.SystemMatch = {
 
             onStart: function() {
                 // Host marks room as started — triggers onValue for both players
-                if (self._isHost && self._roomId) {
-                    window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + self._roomId), { status: 'playing' });
+                if (self._isHost && self._roomId && fbReady()) {
+                    Promise.resolve(window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + self._roomId), { status: 'playing' }))
+                        .catch(function(e) { console.warn('Casino OS: start failed', e); });
                 }
                 if (config.onStart) config.onStart();
             },
@@ -107,14 +152,19 @@ window.SystemMatch = {
             this._roomListener();
             this._roomListener = null;
         }
-        if (this._isHost && this._roomId && window.db) {
+        const wasHost = this._isHost;
+        if (wasHost && this._roomId && window.db && window.dbRemove) {
             window.dbRemove(window.dbRef(window.db, this._roomPath + '/' + this._roomId));
         }
         this._roomId  = null;
         this._myId    = 1;
         this._isHost  = false;
         this._seats   = [];
-        SystemUI.stopChat();
+        // Only the host should clear the chat node — otherwise a joiner
+        // leaving early would wipe the host's still-active chat history.
+        if (window.SystemUI && typeof window.SystemUI.stopChat === 'function') {
+            window.SystemUI.stopChat({ clearRemote: wasHost });
+        }
     },
 
     // ── PUBLIC API ────────────────────────────────

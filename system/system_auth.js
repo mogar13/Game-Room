@@ -199,17 +199,25 @@ window.SystemAuth = {
         let user = this._users[username];
 
         // Cloud Sync Check
+        let cloudPlaintextRehashNeeded = false;
         if (navigator.onLine && window.dbGet && window.dbRef && window.db) {
             try {
                 const snap = await window.dbGet(window.dbRef(window.db, `users/${username}`));
                 if (snap.exists()) {
                     const cloudUser = snap.val();
-                    if (cloudUser.password !== encodedPassword && cloudUser.password !== password) {
+                    if (cloudUser.password === encodedPassword) {
+                        // ok
+                    } else if (cloudUser.password === password) {
+                        // Legacy plaintext password — accept once, then re-encode
+                        // immediately so the next compare runs against the salted hash.
+                        cloudUser.password = encodedPassword;
+                        cloudPlaintextRehashNeeded = true;
+                    } else {
                         return { ok: false, error: "Incorrect password." };
                     }
                     const localTime = user && user.lastUpdated ? user.lastUpdated : 0;
                     const cloudTime = cloudUser.lastUpdated || 0;
-                    
+
                     if (cloudTime > localTime) {
                         this._users[username] = cloudUser;
                         user = cloudUser;
@@ -227,7 +235,13 @@ window.SystemAuth = {
         user = this._users[username];
 
         if (!user)               return { ok: false, error: "User not found." };
-        if (user.password !== encodedPassword && user.password !== password) return { ok: false, error: "Incorrect password." };
+        if (user.password === password && user.password !== encodedPassword) {
+            // Legacy local plaintext — re-encode in place
+            user.password = encodedPassword;
+            this._saveUsers();
+        } else if (user.password !== encodedPassword) {
+            return { ok: false, error: "Incorrect password." };
+        }
 
         // isDev: strictly forerunner + exact password only
         user.profile.isDev = (username === "forerunner" && password === "luna&abi");
@@ -235,6 +249,12 @@ window.SystemAuth = {
         this._activeUser = username;
         localStorage.setItem(this.SESSION_KEY, username);
         this._loadIntoProfile(username);
+
+        // Persist any rehash performed during this login (cloud or local).
+        if (cloudPlaintextRehashNeeded) {
+            this._saveUsers();
+            this._pushToCloud(username);
+        }
 
         console.log(`Casino OS: ${username} logged in.${user.profile.isDev ? " [DEV]" : ""}`);
         return { ok: true };
@@ -381,11 +401,15 @@ window.SystemAuth = {
         if (!user.profile.equippedCardBack) user.profile.equippedCardBack = "cardBack_blue1.png";
         if (!user.profile.equippedDice)     user.profile.equippedDice     = "default";
 
-        // Load the specific user's data into the active session, with fallback defaults for older accounts
+        // Load the specific user's data into the active session.
+        // Hard-replace from defaults + this user's saved profile — never merge
+        // in the previous session's SystemProfile.data, since the previous
+        // user (or guest) may have left stale loadout/inventory/bankroll
+        // fields that would bleed into this user's record on next save.
         if (window.SystemProfile) {
-            window.SystemProfile.data = { ...window.SystemProfile.data, ...(user.profile || this._defaultProfile(username)) };
+            window.SystemProfile.data = { ...this._defaultProfile(username), ...(user.profile || {}) };
             if (username !== "forerunner") window.SystemProfile.data.isDev = false;
-            window.SystemProfile.saveProfile(); 
+            window.SystemProfile.saveProfile();
         }
 
         if (window.SystemStats) {

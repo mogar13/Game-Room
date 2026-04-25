@@ -9,7 +9,24 @@ window.SystemChat = {
     listener: null,
     isOpen: false,
     hasUnread: false,
-    lastKey: null,
+    seenKeys: null,
+    msgCounter: 0,
+
+    // Whitelist a chat color: pure hex always allowed; otherwise require
+    // exact match against a SystemStore catalog "color" item (the catalog
+    // is the only legitimate source of compound CSS values like glows).
+    _isSafeChatColor: function(color) {
+        if (typeof color !== 'string') return false;
+        if (color.length > 200) return false;
+        if (/^#[0-9a-fA-F]{3,8}$/.test(color)) return true;
+        if (window.SystemStore && window.SystemStore.CATALOG) {
+            for (const id in window.SystemStore.CATALOG) {
+                const item = window.SystemStore.CATALOG[id];
+                if (item && item.type === 'color' && item.value === color) return true;
+            }
+        }
+        return false;
+    },
 
     init: function() {
         if (!document.getElementById("sys-chat-panel")) {
@@ -54,7 +71,7 @@ window.SystemChat = {
         this.playerName = playerName || (window.SystemProfile ? window.SystemProfile.getPlayerName() : "Player");
 
         document.getElementById('sys-chat-messages').innerHTML = '';
-        this.lastKey = null;
+        this.seenKeys = new Set();
         this.hasUnread = false;
 
         const btn = document.getElementById('sys-btn-chat');
@@ -76,11 +93,11 @@ window.SystemChat = {
 
             const keys = Object.keys(data).sort();
             keys.forEach(k => {
-                if (this.lastKey && k <= this.lastKey) return;
+                if (this.seenKeys && this.seenKeys.has(k)) return;
+                if (this.seenKeys) this.seenKeys.add(k);
                 const msg = data[k];
                 const isMine = msg.from === this.playerName;
                 this.renderBubble(msg.text, msg.from, isMine, msg.color);
-                this.lastKey = k;
 
                 if (!this.isOpen && !isMine) {
                     this.updateBadge(true);
@@ -91,17 +108,22 @@ window.SystemChat = {
         });
     },
 
-    stopChat: function() {
+    // Tear down the local listener. Pass {clearRemote:true} only when the
+    // caller owns the room (host on cleanup) — otherwise a joiner leaving
+    // would wipe the host's chat history mid-session.
+    stopChat: function(opts) {
+        const clearRemote = !!(opts && opts.clearRemote);
+
         if (this.listener) {
             this.listener();
             this.listener = null;
         }
-        if (this.roomId && window.db && typeof window.dbSet !== 'undefined') {
+        if (clearRemote && this.roomId && window.db && typeof window.dbSet !== 'undefined') {
             window.dbSet(window.dbRef(window.db, 'chat/' + this.roomId + '/messages'), null);
         }
         this.roomId = null;
         this.playerName = null;
-        this.lastKey = null;
+        this.seenKeys = null;
         this.hasUnread = false;
 
         document.getElementById('sys-chat-messages').innerHTML = '';
@@ -143,8 +165,14 @@ window.SystemChat = {
         }
 
         if (typeof window.dbSet !== 'undefined' && window.db) {
-            const key = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-            
+            // Padded timestamp + monotonic per-session counter — guarantees
+            // ASCII-sorted ordering matches send order even when two messages
+            // land in the same millisecond.
+            this.msgCounter = (this.msgCounter || 0) + 1;
+            const key = String(Date.now()).padStart(15, '0') + '_' +
+                        String(this.msgCounter).padStart(6, '0') + '_' +
+                        Math.random().toString(36).slice(2, 6);
+
             let chatColor = "#ffffff";
             if (window.SystemProfile) {
                 const profile = window.SystemProfile.getProfile();
@@ -167,7 +195,15 @@ window.SystemChat = {
         sender.className = 'chat-sender';
         sender.innerText = from;
         if (color) {
-            sender.style.cssText = `color: ${color};`;
+            // Catalog "color" items intentionally ship compound CSS (e.g. glow
+            // text-shadows), so cssText is allowed only for whitelisted values.
+            // Anything unrecognized falls back to a single-property assignment,
+            // which the browser silently drops if it's not a valid color.
+            if (this._isSafeChatColor(color)) {
+                sender.style.cssText = `color: ${color};`;
+            } else {
+                sender.style.color = color;
+            }
         }
 
         const bubble = document.createElement('div');

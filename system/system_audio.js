@@ -4,13 +4,33 @@
  */
 
 window.SystemAudio = {
-    isMuted: localStorage.getItem("casino_muted") === "true",
-    tracks: {}, 
+    tracks: {},
     unlocked: false,
+
+    // Read mute state lazily on every access. Each game runs in its own
+    // iframe, and the cached boolean never updates if mute is toggled in
+    // another tab — so we always defer to localStorage at read time and
+    // listen for cross-tab storage events.
+    get isMuted() {
+        return localStorage.getItem("casino_muted") === "true";
+    },
+    set isMuted(val) {
+        localStorage.setItem("casino_muted", val ? "true" : "false");
+    },
 
     init: function() {
         this.preload();
         this.bindUnlockEvents();
+        this.bindStorageSync();
+    },
+
+    bindStorageSync: function() {
+        window.addEventListener("storage", (e) => {
+            if (e.key !== "casino_muted") return;
+            if (window.SystemUI && typeof window.SystemUI.emit === 'function') {
+                window.SystemUI.emit("audio_muted_changed", this.isMuted);
+            }
+        });
     },
 
     preload: function() {

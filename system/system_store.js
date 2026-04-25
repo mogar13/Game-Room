@@ -85,42 +85,43 @@ window.SystemStore = {
         "dice_gold":  { id: "dice_gold", name: "Gold Dice", type: "dice", value: "dieYellow_border", price: 25000, desc: "Solid gold rollers." }
     },
 
+    _buyInFlight: false,
+
     // ── STORE API ──────────────────────────────────
     buyItem: async function(itemId) {
+        if (this._buyInFlight) return { ok: false, error: "Purchase in progress…" };
+
         const item = this.CATALOG[itemId];
         if (!item) return { ok: false, error: "Item not found." };
-        
+
         if (!window.SystemAuth || !window.SystemAuth.isLoggedIn()) {
             return { ok: false, error: "Must be logged in to purchase items." };
         }
 
-        // Safety check to ensure inventory array exists
-        if (!window.SystemProfile.data.inventory) {
-            window.SystemProfile.data.inventory = [];
+        this._buyInFlight = true;
+        try {
+            if (!window.SystemProfile.data.inventory) {
+                window.SystemProfile.data.inventory = [];
+            }
+
+            if (window.SystemProfile.data.inventory.includes(itemId)) {
+                return { ok: false, error: "You already own this item." };
+            }
+
+            if (window.SystemProfile.getMoney() < item.price) {
+                return { ok: false, error: "Insufficient funds. Keep grinding." };
+            }
+
+            // Deduct via SystemProfile (clamps at 0, saves, and emits money_changed)
+            window.SystemProfile.removeMoney(item.price);
+            window.SystemProfile.data.inventory.push(itemId);
+            window.SystemProfile.saveProfile();
+            window.SystemAuth.saveCurrentUserData();
+
+            return { ok: true, item: item };
+        } finally {
+            this._buyInFlight = false;
         }
-
-        if (window.SystemProfile.data.inventory.includes(itemId)) {
-            return { ok: false, error: "You already own this item." };
-        }
-
-        if (window.SystemProfile.data.bankroll < item.price) {
-            return { ok: false, error: "Insufficient funds. Keep grinding." };
-        }
-
-        // Deduct Cash & Add to Inventory
-        window.SystemProfile.data.bankroll -= item.price;
-        window.SystemProfile.data.inventory.push(itemId);
-        
-        // Save locally and push to cloud instantly
-        window.SystemProfile.saveProfile();
-        window.SystemAuth.saveCurrentUserData();
-
-        // Broadcast to update the Hub UI
-        if (window.SystemUI && typeof window.SystemUI.trigger === 'function') {
-            window.SystemUI.trigger("money_changed");
-        }
-
-        return { ok: true, item: item };
     },
 
     getInventory: function() {
