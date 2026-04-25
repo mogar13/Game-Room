@@ -68,11 +68,20 @@ body {
     align-items: center;
 }
 
+.scores-side {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+}
+#scores-left  { justify-content: flex-end;   }
+#scores-right { justify-content: flex-start; }
+.scores-side .score-block { flex: 1 1 0; min-width: 0; }
+
 .score-block {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 10px 12px;
+    padding: 10px 8px;
     display: flex;
     flex-direction: column;
     align-items: center;

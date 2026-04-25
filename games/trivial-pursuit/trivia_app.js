@@ -8,22 +8,26 @@
 // ── 1. OS INIT ────────────────────────────────
 let gameMode    = localStorage.getItem("trivia_mode")   || "ai";
 let totalQs     = parseInt(localStorage.getItem("trivia_qs") || "10");
-let chatStarted = false;
+let playerCount = parseInt(localStorage.getItem("trivia_players") || "2");
+if (isNaN(playerCount) || playerCount < 2) playerCount = 2;
+if (playerCount > 4) playerCount = 4;
+
+let chatStarted   = false;
 let currentRoomId = null;
-let myId    = 1;
-let isHost  = false;
-let seats   = [];
+let myId          = 1;
+let isHost        = false;
+let seats         = [];
 
 // Settings that live on the start screen
 let selectedCategory = localStorage.getItem("trivia_category") || "";   // "" = any
 let aiDifficulty     = localStorage.getItem("trivia_ai_diff")  || "medium";
 
-let p1Name = SystemUI.getPlayerName();
-let p2Name = "AI";
+let p1Name      = SystemUI.getPlayerName();
+let playerNames = [p1Name, "AI 2", "AI 3", "AI 4"];
 
 SystemUI.init({
     gameName: "TRIVIA PURSUIT",
-    rules: "Answer questions correctly to score points. Harder questions are worth more. Fastest correct answer wins the round in online play!",
+    rules: "Answer questions correctly to score points. Harder questions are worth more. Fastest correct answer wins the round in vs-AI and online modes; in hotseat each player answers the same question in turn.",
     hudDropdowns: [
         {
             id: "sys-trivia-mode",
@@ -49,7 +53,8 @@ setTimeout(() => {
     gameMode = document.getElementById("sys-trivia-mode").value;
     totalQs  = parseInt(document.getElementById("sys-trivia-qs").value);
     updateNames();
-    buildStartSettings(); // wire up the category / question count / AI-level pills
+    buildStartSettings();
+    renderScoreboard();
 }, 10);
 
 document.getElementById("sys-trivia-mode").addEventListener("change", e => {
@@ -66,7 +71,6 @@ document.getElementById("sys-trivia-mode").addEventListener("change", e => {
         updateNames();
     }
 
-    // Show / hide the AI-level row depending on whether there's an AI to configure
     const aiRow = document.getElementById("ss-ai-row");
     if (aiRow) aiRow.style.display = (gameMode === "ai") ? "" : "none";
 });
@@ -77,42 +81,8 @@ document.getElementById("sys-trivia-qs").addEventListener("change", e => {
 });
 
 // ── 2. OPENTDB API ───────────────────────────
-/*
- * HOW OPENTDB WORKS:
- *
- * Step 1 — Request a session token:
- * GET https://opentdb.com/api_token.php?command=request
- * → Returns { token: "abc123..." }
- * The token tracks which questions you've seen so you never get a repeat.
- *
- * Step 2 — Fetch questions using that token:
- * GET https://opentdb.com/api.php?amount=10&token=TOKEN
- * → Returns { response_code: 0, results: [...] }
- *
- * Response codes:
- * 0 = Success
- * 1 = Not enough questions for query
- * 2 = Invalid parameter
- * 3 = Token not found (reset and retry)
- * 4 = Token exhausted (all questions seen — reset token)
- *
- * Each question object:
- * {
- * category:          "Science & Nature",
- * type:              "multiple" | "boolean",
- * difficulty:        "easy" | "medium" | "hard",
- * question:          "HTML-encoded question string",
- * correct_answer:    "HTML-encoded correct answer",
- * incorrect_answers: ["HTML-encoded wrong", ...]
- * }
- *
- * IMPORTANT: All strings are HTML-encoded (e.g. &amp; &#039; &quot;)
- * so we run every string through decodeHTML() before displaying it.
- */
-
 let sessionToken = localStorage.getItem("trivia_token") || null;
 
-// Decodes HTML entities: &amp; → &, &#039; → ', &quot; → "  etc.
 function decodeHTML(str) {
     const txt = document.createElement("textarea");
     txt.innerHTML = str;
@@ -129,7 +99,6 @@ async function getSessionToken() {
         }
     } catch (e) {
         console.warn("Could not get OpenTDB token:", e);
-        // Non-fatal — we'll fetch without a token
         sessionToken = null;
     }
 }
@@ -144,42 +113,62 @@ async function resetToken() {
     }
 }
 
-async function fetchQuestions(amount) {
-    // Build URL — apply category filter if the player chose one on the start screen
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Resilient fetch — handles OpenTDB's newer rate limits (HTTP 429 / response_code 5),
+// token exhaustion (4), missing token (3), and "not enough questions in category" (1).
+async function fetchQuestions(amount, attempt = 0) {
     let url = `https://opentdb.com/api.php?amount=${amount}`;
     if (sessionToken)     url += `&token=${sessionToken}`;
     if (selectedCategory) url += `&category=${selectedCategory}`;
-    // We intentionally omit a difficulty filter so each game stays mixed —
-    // the AI difficulty setting controls the AI opponent, not the questions.
 
-    const res  = await fetch(url);
-    const data = await res.json();
-
-    if (data.response_code === 4) {
-        // Token exhausted — reset and retry once
-        await resetToken();
-        await getSessionToken();
-        return fetchQuestions(amount);
+    let res, data;
+    try {
+        res = await fetch(url);
+        if (res.status === 429) {
+            if (attempt >= 3) throw new Error("OpenTDB rate-limited (429)");
+            await sleep(5500);
+            return fetchQuestions(amount, attempt + 1);
+        }
+        data = await res.json();
+    } catch (err) {
+        if (attempt >= 3) throw err;
+        await sleep(2000);
+        return fetchQuestions(amount, attempt + 1);
     }
 
-    if (data.response_code === 3) {
-        // Token not found — get a new one and retry
-        sessionToken = null;
-        localStorage.removeItem("trivia_token");
+    // 5 = OpenTDB throttle (added 2024) — wait 5s and retry
+    if (data.response_code === 5) {
+        if (attempt >= 3) throw new Error("OpenTDB throttled (code 5)");
+        await sleep(5500);
+        return fetchQuestions(amount, attempt + 1);
+    }
+
+    // 4 = token exhausted, 3 = token not found — refresh and retry
+    if (data.response_code === 4 || data.response_code === 3) {
+        if (data.response_code === 4) await resetToken();
+        else { sessionToken = null; localStorage.removeItem("trivia_token"); }
         await getSessionToken();
-        return fetchQuestions(amount);
+        if (attempt >= 3) throw new Error("OpenTDB token retry exhausted");
+        return fetchQuestions(amount, attempt + 1);
+    }
+
+    // 1 = not enough questions in chosen category — drop the filter once and retry
+    if (data.response_code === 1 && selectedCategory) {
+        const previous = selectedCategory;
+        selectedCategory = "";
+        const out = await fetchQuestions(amount, attempt + 1);
+        selectedCategory = previous;
+        return out;
     }
 
     if (data.response_code !== 0) {
         throw new Error(`OpenTDB error code: ${data.response_code}`);
     }
 
-    // Decode all HTML entities and shuffle incorrect answers in with correct
     return data.results.map(q => {
         const correct   = decodeHTML(q.correct_answer);
         const incorrect = q.incorrect_answers.map(decodeHTML);
-
-        // Build shuffled answer array
         let answers;
         if (q.type === "boolean") {
             answers = ["True", "False"];
@@ -187,11 +176,10 @@ async function fetchQuestions(amount) {
             answers = [...incorrect, correct];
             shuffleArray(answers);
         }
-
         return {
             category:   decodeHTML(q.category),
-            type:       q.type,           // "multiple" | "boolean"
-            difficulty: q.difficulty,     // "easy" | "medium" | "hard"
+            type:       q.type,
+            difficulty: q.difficulty,
             question:   decodeHTML(q.question),
             correct,
             answers
@@ -200,21 +188,8 @@ async function fetchQuestions(amount) {
 }
 
 // ── 3. SCORING ───────────────────────────────
-/*
- * Points by difficulty:
- * easy   = 100 pts
- * medium = 200 pts
- * hard   = 300 pts
- *
- * Time bonus: up to +100 pts based on how quickly you answered.
- * timeBonus = Math.floor((timeLeft / TIME_LIMIT) * 100)
- *
- * In online mode, only the FIRST correct answer scores.
- * In hotseat mode, each player answers independently.
- * In AI mode, player vs AI takes turns answering the same question.
- */
-const POINTS = { easy: 100, medium: 200, hard: 300 };
-const TIME_LIMIT = 20; // seconds per question (was 15 — bumped so players have time to read)
+const POINTS    = { easy: 100, medium: 200, hard: 300 };
+const TIME_LIMIT = 20;
 
 function calcPoints(difficulty, timeLeft) {
     const base  = POINTS[difficulty] || 100;
@@ -223,19 +198,25 @@ function calcPoints(difficulty, timeLeft) {
 }
 
 // ── 4. GAME STATE ────────────────────────────
-let questions     = [];   // full question bank for this game
-let currentQIndex = 0;    // which question we're on
-let scores        = { p1: 0, p2: 0 };
-let streaks       = { p1: 0, p2: 0 };
-let activePlayer  = 1;    // whose turn it is (hotseat only)
-let answered      = false; // has current question been answered?
+let questions     = [];
+let currentQIndex = 0;
+let scores        = new Array(playerCount).fill(0);
+let streaks       = new Array(playerCount).fill(0);
+let activePlayer  = 1;
+let answered      = false;
 let timeLeft      = TIME_LIMIT;
 let timerInterval = null;
-let aiTimer       = null;
-let gamePhase     = "idle"; // idle | loading | playing | between | gameover
+let aiTimers      = [];
+let gamePhase     = "idle";
 
-// Online sync helpers
-let onlineAnswerLocked = false; // prevent double-submit online
+let onlineAnswerLocked = false;
+let hotseatAnswerCount = 0;
+
+// Online: guardian timer that force-resolves a stuck round (dead/disconnected guest).
+let guardianTimer = null;
+
+// Online: timestamp of the current game; guest uses it to detect rematches.
+let lastGameStartedAt = 0;
 
 // ── 5. HELPERS ───────────────────────────────
 function shuffleArray(arr) {
@@ -246,19 +227,32 @@ function shuffleArray(arr) {
 }
 
 function isMyTurn() {
-    if (gameMode === "online")  return activePlayer === myId;
-    if (gameMode === "hotseat") return true; // both players use same screen
+    if (gameMode === "online")  return true; // every online player can answer concurrently
+    if (gameMode === "hotseat") return true;
     return activePlayer === 1;
 }
 
 function updateNames() {
-    if (gameMode === "ai")      p2Name = "AI";
-    if (gameMode === "hotseat") p2Name = "PLAYER 2";
-    document.getElementById("s-name-1").textContent = p1Name.toUpperCase();
-    document.getElementById("s-name-2").textContent = p2Name.toUpperCase();
+    if (gameMode === "ai") {
+        playerNames[0] = p1Name;
+        for (let i = 1; i < 4; i++) playerNames[i] = "AI " + (i + 1);
+    } else if (gameMode === "hotseat") {
+        playerNames[0] = p1Name;
+        for (let i = 1; i < 4; i++) playerNames[i] = "PLAYER " + (i + 1);
+    } else if (gameMode === "online") {
+        if (Array.isArray(seats) && seats.length > 0) {
+            seats.forEach((s, i) => {
+                if (i < 4) playerNames[i] = (s && s.name) ? s.name : ("Player " + (i + 1));
+            });
+        } else {
+            playerNames[0] = p1Name;
+            for (let i = 1; i < 4; i++) playerNames[i] = "Player " + (i + 1);
+        }
+    }
+    renderScoreboard();
 }
 
-function getPlayerName(id) { return id === 1 ? p1Name : p2Name; }
+function getPlayerName(id) { return playerNames[id - 1] || ("Player " + id); }
 
 // ── 6. TIMER ─────────────────────────────────
 function startTimer() {
@@ -296,55 +290,95 @@ function updateTimerUI() {
 
 function handleTimeout() {
     if (answered) return;
-    answered = true;
 
-    // Reveal correct answer in red (nobody got it)
+    if (gameMode === "online") {
+        // Submit a no-answer sentinel so the host can resolve and advance
+        if (!onlineAnswerLocked) {
+            onlineAnswerLocked = true;
+            disableAllAnswers();
+            submitOnlineAnswer("__timeout__", 0);
+        }
+        return;
+    }
+
+    answered = true;
     revealAnswers(null);
     SystemUI.playSound('lose');
 
     const q = questions[currentQIndex];
-    showNextOverlay(false, q.correct, 0, null);
-    if (gameMode === "online") {
-        window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-            answeredBy: 0, answeredCorrect: false, timeoutAt: Date.now()
-        });
+
+    if (gameMode === "hotseat") {
+        // Treat a timeout as wrong for the active player and rotate
+        streaks[activePlayer - 1] = 0;
+        renderScores();
+        hotseatAnswerCount++;
+        if (hotseatAnswerCount < playerCount) {
+            disableAllAnswers();
+            activePlayer = (activePlayer % playerCount) + 1;
+            setTimeout(() => {
+                resetAnswerButtons();
+                renderScores();
+                startTimer();
+                answered = false;
+            }, 1200);
+            return;
+        }
+        activePlayer = 1;
+        hotseatAnswerCount = 0;
     }
+
+    showNextOverlay(false, q.correct, 0, null);
 }
 
 // ── 7. RENDER ────────────────────────────────
+function renderScoreboard() {
+    const left  = document.getElementById("scores-left");
+    const right = document.getElementById("scores-right");
+    if (!left || !right) return;
+    left.innerHTML  = "";
+    right.innerHTML = "";
+
+    const half = Math.ceil(playerCount / 2);
+    for (let i = 0; i < playerCount; i++) {
+        const block = document.createElement("div");
+        block.className = "score-block";
+        block.id        = "s-block-" + (i + 1);
+        block.innerHTML =
+            `<div class="s-name"   id="s-name-${i + 1}">${(playerNames[i] || ("P" + (i + 1))).toUpperCase()}</div>` +
+            `<div class="s-score"  id="s-score-${i + 1}">${scores[i] || 0}</div>` +
+            `<div class="s-streak" id="s-streak-${i + 1}"></div>`;
+        if (i < half) left.appendChild(block);
+        else          right.appendChild(block);
+    }
+    renderScores();
+}
+
 function renderScores() {
-    document.getElementById("s-score-1").textContent = scores.p1;
-    document.getElementById("s-score-2").textContent = scores.p2;
-
-    // Streak display
-    const streak1 = streaks.p1 >= 2 ? `🔥 ${streaks.p1}x STREAK` : "";
-    const streak2 = streaks.p2 >= 2 ? `🔥 ${streaks.p2}x STREAK` : "";
-    document.getElementById("s-streak-1").textContent = streak1;
-    document.getElementById("s-streak-2").textContent = streak2;
-
-    // Active player highlight (hotseat)
-    document.getElementById("s-block-1").classList.toggle("active", gameMode === "hotseat" && activePlayer === 1);
-    document.getElementById("s-block-2").classList.toggle("active", gameMode === "hotseat" && activePlayer === 2);
+    for (let i = 0; i < playerCount; i++) {
+        const sEl  = document.getElementById("s-score-"  + (i + 1));
+        const stEl = document.getElementById("s-streak-" + (i + 1));
+        const nEl  = document.getElementById("s-name-"   + (i + 1));
+        const bk   = document.getElementById("s-block-"  + (i + 1));
+        if (sEl)  sEl.textContent  = scores[i] || 0;
+        if (stEl) stEl.textContent = ((streaks[i] || 0) >= 2) ? `🔥 ${streaks[i]}x` : "";
+        if (nEl)  nEl.textContent  = (playerNames[i] || ("P" + (i + 1))).toUpperCase();
+        if (bk)   bk.classList.toggle("active", gameMode === "hotseat" && activePlayer === (i + 1));
+    }
 }
 
 function renderQuestion(q) {
-    // Question counter
     document.getElementById("q-counter").textContent = `${currentQIndex + 1}/${questions.length}`;
 
-    // Category + difficulty
     document.getElementById("category-badge").textContent = q.category.toUpperCase();
     const diffBadge = document.getElementById("diff-badge");
     diffBadge.textContent = q.difficulty.toUpperCase();
     diffBadge.className   = `diff-${q.difficulty}`;
 
-    // Type tag
     document.getElementById("question-type-tag").textContent =
         q.type === "boolean" ? "TRUE / FALSE" : "MULTIPLE CHOICE";
 
-    // Question text
     document.getElementById("question-text").textContent = q.question;
 
-    // Build answer buttons
     const grid = document.getElementById("answer-grid");
     grid.innerHTML = "";
 
@@ -363,13 +397,12 @@ function renderQuestion(q) {
         });
     }
 
-    // Hide result banner
     document.getElementById("result-banner").classList.add("hidden");
 }
 
 function makeAnswerBtn(answer, correct, letter, isTF) {
     const btn = document.createElement("button");
-    btn.className  = "ans-btn" + (isTF ? " tf-btn" : "");
+    btn.className     = "ans-btn" + (isTF ? " tf-btn" : "");
     btn.dataset.answer = answer;
 
     if (!isTF && letter) {
@@ -446,50 +479,55 @@ function showNextOverlay(correct, correctAnswer, pts, scoringPlayer) {
         deltaEl.textContent = "";
     }
 
-    // In AI mode auto-advance; in hotseat/online wait for button
-    if (gameMode === "ai") {
-        document.getElementById("next-btn").classList.remove("hidden");
-    } else if (gameMode === "hotseat") {
-        // Show whose turn is next
-        const nextPlayer = otherPlayer(activePlayer);
-        document.getElementById("next-btn").textContent =
-            `${getPlayerName(nextPlayer).toUpperCase()}'S TURN →`;
-        document.getElementById("next-btn").classList.remove("hidden");
+    const nextBtn = document.getElementById("next-btn");
+    if (gameMode === "ai" || gameMode === "hotseat") {
+        nextBtn.classList.remove("hidden");
+        nextBtn.textContent = "NEXT QUESTION →";
+        nextBtn.disabled    = false;
+        nextBtn.style.opacity = "";
     } else {
         // Online: host drives advancement
-        document.getElementById("next-btn").classList.toggle("hidden", !isHost);
-        if (!isHost) {
-            document.getElementById("next-btn").textContent = "Waiting for host...";
-            document.getElementById("next-btn").classList.remove("hidden");
-            document.getElementById("next-btn").disabled = true;
-            document.getElementById("next-btn").style.opacity = "0.4";
+        if (isHost) {
+            nextBtn.classList.remove("hidden");
+            nextBtn.textContent = "NEXT QUESTION →";
+            nextBtn.disabled    = false;
+            nextBtn.style.opacity = "";
+        } else {
+            nextBtn.classList.remove("hidden");
+            nextBtn.textContent = "Waiting for host...";
+            nextBtn.disabled    = true;
+            nextBtn.style.opacity = "0.4";
         }
     }
 }
 
 // ── 8. GAME FLOW ─────────────────────────────
 async function startGame() {
-    // AUDIT: Tracking game start
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("trivia");
 
-    // Hide start screen, show loader
     document.getElementById("start-screen").classList.add("hidden");
     document.getElementById("loading-screen").classList.remove("hidden");
+    document.getElementById("loading-text").textContent = "FETCHING QUESTIONS...";
+    document.getElementById("loading-sub").textContent  = "Connecting to OpenTDB";
 
-    scores    = { p1: 0, p2: 0 };
-    streaks   = { p1: 0, p2: 0 };
-    currentQIndex  = 0;
-    activePlayer   = 1;
-    gamePhase      = "loading";
+    scores  = new Array(playerCount).fill(0);
+    streaks = new Array(playerCount).fill(0);
+    currentQIndex      = 0;
+    activePlayer       = 1;
+    gamePhase          = "loading";
     onlineAnswerLocked = false;
+    hotseatAnswerCount = 0;
 
-    renderScores();
+    renderScoreboard();
     updateNames();
 
+    // Online host pre-fetches in onStart, so questions are usually already populated.
+    // Local modes (and any host fallback) fetch here.
     try {
-        // Ensure we have a session token before fetching
-        if (!sessionToken) await getSessionToken();
-        questions = await fetchQuestions(totalQs);
+        if (gameMode !== "online" || (isHost && questions.length === 0)) {
+            if (!sessionToken) await getSessionToken();
+            questions = await fetchQuestions(totalQs);
+        }
     } catch (err) {
         console.error("Failed to fetch questions:", err);
         document.getElementById("loading-text").textContent = "CONNECTION ERROR";
@@ -504,7 +542,7 @@ async function startGame() {
     document.getElementById("loading-screen").classList.add("hidden");
     gamePhase = "playing";
 
-    if (gameMode === "online") pushGameState();
+    if (gameMode === "online" && isHost) pushGameState();
     showQuestion(0);
 }
 
@@ -515,6 +553,7 @@ function showQuestion(index) {
     answered           = false;
     onlineAnswerLocked = false;
     gamePhase          = "playing";
+    if (gameMode === "hotseat") hotseatAnswerCount = 0;
 
     const q = questions[index];
     renderQuestion(q);
@@ -523,26 +562,13 @@ function showQuestion(index) {
     stopTimer();
     startTimer();
 
-    // AI mode: schedule AI's answer
     if (gameMode === "ai") {
-        scheduleAiAnswer(q);
+        scheduleAiAnswers(q);
     }
 
-    // Hotseat: set active player label
-    if (gameMode === "hotseat") {
-        const name = getPlayerName(activePlayer).toUpperCase();
-        document.getElementById("s-name-1").style.color = activePlayer === 1 ? "var(--teal)" : "";
-        document.getElementById("s-name-2").style.color = activePlayer === 2 ? "var(--teal)" : "";
-    }
-
-    // Disable inputs for non-active players in hotseat
-    if (gameMode === "hotseat") {
-        // Both players use same buttons — always enabled
-    }
-
-    // Online: disable if not my turn to answer
-    if (gameMode === "online" && !isMyTurn()) {
-        disableAllAnswers();
+    if (gameMode === "online" && isHost) {
+        scheduleOnlineAiAnswers(q);
+        scheduleGuardian();
     }
 }
 
@@ -551,15 +577,17 @@ function handleAnswerClick(answer, btn) {
     if (answered) return;
     if (gameMode === "online" && onlineAnswerLocked) return;
 
-    answered = true;
-    stopTimer();
-
     if (gameMode === "online") {
+        // Don't set `answered` yet — host's resolution needs to fire and it gates on !answered
         onlineAnswerLocked = true;
+        stopTimer();
+        disableAllAnswers();
         submitOnlineAnswer(answer, timeLeft);
         return;
     }
 
+    answered = true;
+    stopTimer();
     processAnswer(answer, activePlayer, timeLeft);
 }
 
@@ -568,14 +596,12 @@ function processAnswer(answer, player, tLeft) {
     const correct = answer === q.correct;
     const pts     = correct ? calcPoints(q.difficulty, tLeft) : 0;
 
-    // Update score + streak
     if (correct) {
-        if (player === 1) { scores.p1 += pts; streaks.p1++; streaks.p2 = 0; }
-        else              { scores.p2 += pts; streaks.p2++; streaks.p1 = 0; }
+        scores[player - 1]  += pts;
+        streaks[player - 1] += 1;
         SystemUI.playSound('win');
     } else {
-        if (player === 1) streaks.p1 = 0;
-        else              streaks.p2 = 0;
+        streaks[player - 1] = 0;
         SystemUI.playSound('lose');
     }
 
@@ -584,26 +610,20 @@ function processAnswer(answer, player, tLeft) {
     showResultBanner(correct, pts);
 
     if (gameMode === "hotseat") {
-        // In hotseat, BOTH players answer the same question independently
-        // P1 answers first, then P2, then we move on
-        if (player === 1) {
-            // Disable so P1 can't change their answer, then set up for P2
+        hotseatAnswerCount++;
+        if (hotseatAnswerCount < playerCount) {
             disableAllAnswers();
-            activePlayer = 2;
+            activePlayer = (activePlayer % playerCount) + 1;
             setTimeout(() => {
-                // Re-enable for P2
                 resetAnswerButtons();
                 renderScores();
-                document.getElementById("s-name-1").style.color = "";
-                document.getElementById("s-name-2").style.color = "var(--teal)";
                 startTimer();
                 answered = false;
-                // Re-schedule listening for P2
             }, 1200);
             return;
         }
-        // P2 just answered — show next overlay
         activePlayer = 1;
+        hotseatAnswerCount = 0;
     }
 
     setTimeout(() => {
@@ -612,112 +632,149 @@ function processAnswer(answer, player, tLeft) {
 }
 
 function resetAnswerButtons() {
-    const q    = questions[currentQIndex];
-    const btns = document.querySelectorAll(".ans-btn");
-    btns.forEach(btn => {
+    document.querySelectorAll(".ans-btn").forEach(btn => {
         btn.disabled = false;
         btn.classList.remove("correct", "wrong");
     });
 }
 
 // ── 10. AI BRAIN ──────────────────────────────
-/*
- * Two independent axes control the AI opponent:
- *
- * AI DIFFICULTY (set by the player on the start screen):
- * Controls how fast the AI buzzes in AND how often it gets things right.
- * "Easy"   → slow (10–18 s) and poor accuracy — you have time to think
- * "Medium" → moderate (6–13 s) and reasonable accuracy — competitive
- * "Hard"   → fast (3–7 s) and sharp accuracy — you must read quickly
- *
- * QUESTION DIFFICULTY (easy / medium / hard from OpenTDB):
- * Applies an additional accuracy penalty so the AI struggles more on
- * hard questions regardless of its difficulty setting — this keeps
- * hard questions feeling genuinely harder.
- *
- * Crucially, the AI delay is always LESS than TIME_LIMIT (20 s) so the
- * AI fires before the timeout.  On Easy AI the window is 2–10 s after
- * the AI answers — on Hard it's only 13–17 s after the question appears.
- *
- * If the player answers before the AI timer fires, the AI never runs at
- * all (the `answered` guard stops it), so answering fast rewards you.
- */
-
-// Outer key = AI difficulty setting; inner key = question difficulty
 const AI_ACCURACY = {
     easy:   { easy: 0.40, medium: 0.28, hard: 0.18 },
     medium: { easy: 0.72, medium: 0.55, hard: 0.38 },
     hard:   { easy: 0.90, medium: 0.75, hard: 0.55 }
 };
 
-// [minDelay ms, maxDelay ms] — always kept under TIME_LIMIT (20 000 ms)
 const AI_DELAY = {
-    easy:   [10000, 18000],   // 10–18 s: slow, you'll almost always answer first
-    medium: [ 6000, 13000],   //  6–13 s: competitive, you need to be reasonably quick
-    hard:   [ 3000,  7000]    //  3–7 s:  fast, you need to read the question quickly
+    easy:   [10000, 18000],
+    medium: [ 6000, 13000],
+    hard:   [ 3000,  7000]
 };
 
-function scheduleAiAnswer(q) {
-    if (aiTimer) clearTimeout(aiTimer);
+function clearAiTimers() {
+    aiTimers.forEach(t => clearTimeout(t));
+    aiTimers = [];
+}
+
+// ── ONLINE GUARDIAN ───────────────────────────
+// If a player disconnects mid-round their __timeout__ never arrives and the
+// host's resolution waits forever. After TIME_LIMIT + grace, force a timeout
+// for any missing seat so the round can resolve.
+function clearGuardian() {
+    if (guardianTimer) { clearTimeout(guardianTimer); guardianTimer = null; }
+}
+
+function scheduleGuardian() {
+    clearGuardian();
+    if (!isHost || gameMode !== "online" || !currentRoomId) return;
+    guardianTimer = setTimeout(() => {
+        if (answered || !currentRoomId) return;
+        forceMissingTimeouts();
+    }, (TIME_LIMIT * 1000) + 4000);
+}
+
+function forceMissingTimeouts() {
+    if (!isHost || !currentRoomId || !window.db) return;
+    window.dbGet(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId)).then(snap => {
+        const data = snap && snap.val();
+        if (!data) return;
+        const submitted = data.answers ? Object.keys(data.answers) : [];
+        const ansUpdate = {};
+        const timeUpdate = {};
+        let missing = 0;
+        for (let id = 1; id <= playerCount; id++) {
+            if (!submitted.includes("p" + id)) {
+                ansUpdate["p" + id]  = "__timeout__";
+                timeUpdate["p" + id] = 0;
+                missing++;
+            }
+        }
+        if (missing > 0) {
+            window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/answers'),     ansUpdate);
+            window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/answerTimes'), timeUpdate);
+        }
+    }).catch(()=>{});
+}
+
+function scheduleAiAnswers(q) {
+    clearAiTimers();
+    if (playerCount < 2) return;
 
     const [minMs, maxMs] = AI_DELAY[aiDifficulty] || AI_DELAY.medium;
-    const delay    = minMs + Math.random() * (maxMs - minMs);
-    const accuracy = (AI_ACCURACY[aiDifficulty] || AI_ACCURACY.medium)[q.difficulty] || 0.55;
+    const accuracy       = (AI_ACCURACY[aiDifficulty] || AI_ACCURACY.medium)[q.difficulty] || 0.55;
 
-    aiTimer = setTimeout(() => {
-        // Player might have already answered — bail out if so
-        if (answered || gamePhase !== "playing") return;
+    // AI players in vs-AI mode are ids 2..playerCount
+    for (let id = 2; id <= playerCount; id++) {
+        const delay = minMs + Math.random() * (maxMs - minMs);
+        const aiId  = id;
+        const t = setTimeout(() => {
+            if (answered || gamePhase !== "playing") return;
+            aiAnswerNow(aiId, q, accuracy);
+        }, delay);
+        aiTimers.push(t);
+    }
+}
 
-        const aiCorrect = Math.random() < accuracy;
-        const aiAnswer  = aiCorrect
-            ? q.correct
-            : q.answers.filter(a => a !== q.correct)[
-                Math.floor(Math.random() * (q.answers.length - 1))
-              ];
+function aiAnswerNow(aiId, q, accuracy) {
+    if (answered) return;
+    const aiCorrect = Math.random() < accuracy;
+    const aiAnswer  = aiCorrect
+        ? q.correct
+        : q.answers.filter(a => a !== q.correct)[
+            Math.floor(Math.random() * (q.answers.length - 1))
+          ];
 
-        const aiTimeLeft = timeLeft; // snapshot of remaining time when AI fires
+    const aiTimeLeft = timeLeft;
+    answered = true;
+    stopTimer();
+    clearAiTimers();
 
-        answered = true;
-        stopTimer();
+    const pts = aiCorrect ? calcPoints(q.difficulty, aiTimeLeft) : 0;
+    if (aiCorrect) {
+        scores[aiId - 1]  += pts;
+        streaks[aiId - 1] += 1;
+        SystemUI.playSound('lose');
+    } else {
+        streaks[aiId - 1] = 0;
+        SystemUI.playSound('win');
+    }
 
-        const pts = aiCorrect ? calcPoints(q.difficulty, aiTimeLeft) : 0;
-        if (aiCorrect) {
-            scores.p2 += pts; streaks.p2++; streaks.p1 = 0;
-            SystemUI.playSound('lose');
-        } else {
-            streaks.p2 = 0;
-            SystemUI.playSound('win');
-        }
+    renderScores();
+    revealAnswers(aiAnswer);
+    showResultBanner(!aiCorrect, 0);
 
-        renderScores();
-        revealAnswers(aiAnswer);
-        showResultBanner(!aiCorrect, 0); // from P1's perspective: !aiCorrect = "you survived"
-
-        setTimeout(() => {
-            showNextOverlay(aiCorrect, q.correct, pts, aiCorrect ? 2 : null);
-        }, 1000);
-
-    }, delay);
+    setTimeout(() => {
+        showNextOverlay(aiCorrect, q.correct, pts, aiCorrect ? aiId : null);
+    }, 1000);
 }
 
 // ── 11. NEXT QUESTION LOGIC ──────────────────
 document.getElementById("next-btn").addEventListener("click", () => {
     advanceToNextQuestion();
-    if (gameMode === "online") {
+    if (gameMode === "online" && isHost && currentRoomId) {
+        const newIdx = currentQIndex; // already advanced locally
         window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-            questionIndex: currentQIndex + 1,
-            advancedAt: Date.now()
+            questionIndex:   newIdx,
+            phase:           "playing",
+            advancedAt:      Date.now(),
+            answers:         null,
+            answerTimes:     null,
+            resolvedScorer:  null,
+            resolvedPts:     null,
+            resolvedAnswer:  null,
+            resolvedCorrect: null
         });
     }
 });
 
 function advanceToNextQuestion() {
     document.getElementById("next-overlay").classList.add("hidden");
-    document.getElementById("next-btn").disabled    = false;
-    document.getElementById("next-btn").style.opacity = "";
-    document.getElementById("next-btn").textContent = "NEXT QUESTION →";
+    const nextBtn = document.getElementById("next-btn");
+    nextBtn.disabled    = false;
+    nextBtn.style.opacity = "";
+    nextBtn.textContent = "NEXT QUESTION →";
 
-    if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
+    clearAiTimers();
 
     const nextIndex = currentQIndex + 1;
     if (nextIndex >= questions.length) {
@@ -731,63 +788,76 @@ function advanceToNextQuestion() {
 function endGame() {
     gamePhase = "gameover";
     stopTimer();
-    if (aiTimer) clearTimeout(aiTimer);
+    clearAiTimers();
+    clearGuardian();
 
-    const winner = scores.p1 > scores.p2 ? 1 : scores.p2 > scores.p1 ? 2 : 0;
-    const wName  = winner === 0 ? "TIE GAME" : `${getPlayerName(winner).toUpperCase()} WINS!`;
+    // Determine winner = highest score; tie if more than one player at top
+    let topScore = -1;
+    let winnerId = 0;
+    let topCount = 0;
+    for (let i = 0; i < playerCount; i++) {
+        if (scores[i] > topScore) { topScore = scores[i]; winnerId = i + 1; topCount = 1; }
+        else if (scores[i] === topScore) { topCount++; }
+    }
+    const tied = topCount > 1;
+    if (tied) winnerId = 0;
 
-    document.getElementById("game-over-emoji").textContent   = winner === 0 ? "🤝" : "🏆";
-    document.getElementById("game-over-title").textContent   = wName;
-    document.getElementById("game-over-msg").textContent     =
-        `${p1Name}: ${scores.p1} pts  —  ${p2Name}: ${scores.p2} pts`;
+    const wName = winnerId === 0 ? "TIE GAME" : `${getPlayerName(winnerId).toUpperCase()} WINS!`;
 
-    // Accuracy breakdown
-    document.getElementById("game-over-breakdown").innerHTML =
-        `${questions.length} questions answered<br>` +
-        `Best streak: 🔥 P1 ×${streaks.p1} | P2 ×${streaks.p2}`;
+    document.getElementById("game-over-emoji").textContent = winnerId === 0 ? "🤝" : "🏆";
+    document.getElementById("game-over-title").textContent = wName;
+    document.getElementById("game-over-msg").textContent   =
+        scores.slice(0, playerCount)
+              .map((s, i) => `${getPlayerName(i + 1)}: ${s}`)
+              .join("  —  ");
+
+    const breakdownLines = [];
+    breakdownLines.push(`${questions.length} questions answered`);
+    const streakLine = streaks.slice(0, playerCount)
+        .map((s, i) => `${getPlayerName(i + 1)}: 🔥${s}`)
+        .join(" | ");
+    breakdownLines.push(`Best streak — ${streakLine}`);
+    document.getElementById("game-over-breakdown").innerHTML = breakdownLines.join("<br>");
 
     document.getElementById("game-over-modal").classList.remove("hidden");
-    SystemUI.playSound(winner === 1 ? 'win' : 'lose');
+    SystemUI.playSound(winnerId === 1 ? 'win' : 'lose');
 
-    // AUDIT: Tracking win/loss
     if (typeof SystemStats !== 'undefined' && gameMode !== "hotseat") {
-        if (winner !== 0) {
-            if ((gameMode === "ai" && winner === 1) || (gameMode === "online" && winner === myId)) {
-                SystemStats.recordWin("trivia", 0);
-            } else {
-                SystemStats.recordLoss("trivia");
-            }
+        if (winnerId !== 0) {
+            const youWon = (gameMode === "ai" && winnerId === 1)
+                || (gameMode === "online" && winnerId === myId);
+            if (youWon) SystemStats.recordWin("trivia", 0);
+            else        SystemStats.recordLoss("trivia");
         }
     }
 
-    if (gameMode === "online") {
+    if (gameMode === "online" && isHost && currentRoomId) {
         window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
             status: "finished", winner: wName
         });
     }
 }
 
-// ── 13. HELPER ───────────────────────────────
-function otherPlayer(id) { return id === 1 ? 2 : 1; }
-
 // ── 14. BUTTON LISTENERS ─────────────────────
 document.getElementById("start-btn").addEventListener("click", () => {
-    if (gameMode === "online" && !isHost) return;
+    if (gameMode === "online") return; // online uses the v2 lobby's START GAME button
     startGame();
 });
 
 document.getElementById("btn-play-again").addEventListener("click", () => {
     document.getElementById("game-over-modal").classList.add("hidden");
     document.getElementById("next-overlay").classList.add("hidden");
-    scores  = { p1: 0, p2: 0 };
-    streaks = { p1: 0, p2: 0 };
+    scores  = new Array(playerCount).fill(0);
+    streaks = new Array(playerCount).fill(0);
     renderScores();
 
     if (gameMode === "ai" || gameMode === "hotseat") {
+        questions = [];
         startGame();
     } else {
-        // Online: host restarts
         if (isHost) {
+            // Force a fresh fetch + re-stamp gameStartedAt so the guest detects the rematch
+            questions = [];
             startGame();
         } else {
             document.getElementById("start-screen").classList.remove("hidden");
@@ -798,10 +868,6 @@ document.getElementById("btn-play-again").addEventListener("click", () => {
 });
 
 // ── 15. START-SCREEN SETTINGS PANEL ──────────
-/*
- * OPENTDB category IDs. We offer the most popular categories as chips
- * on the start screen. Blank string = no filter (any category).
- */
 const OPENTDB_CATEGORIES = [
     { id: "",   label: "🌐 Any"         },
     { id: "9",  label: "📚 General"     },
@@ -818,12 +884,11 @@ const OPENTDB_CATEGORIES = [
 ];
 
 function buildStartSettings() {
-    // Build the category chips dynamically (so we only maintain the data array)
     const catWrap = document.getElementById("ss-category-pills");
     if (catWrap) {
         OPENTDB_CATEGORIES.forEach(cat => {
             const btn = document.createElement("button");
-            btn.className    = "ss-chip" + (cat.id === selectedCategory ? " active" : "");
+            btn.className     = "ss-chip" + (cat.id === selectedCategory ? " active" : "");
             btn.dataset.group = "category";
             btn.dataset.val   = cat.id;
             btn.textContent   = cat.label;
@@ -831,15 +896,13 @@ function buildStartSettings() {
         });
     }
 
-    // Restore the saved question-count and AI-difficulty selections
+    syncPillGroup("players", String(playerCount));
     syncPillGroup("qs",      String(totalQs));
     syncPillGroup("ai-diff", aiDifficulty);
 
-    // Hide the AI-level row when not playing against the AI
     const aiRow = document.getElementById("ss-ai-row");
     if (aiRow) aiRow.style.display = (gameMode === "ai") ? "" : "none";
 
-    // Single delegated listener handles all three pill groups
     const panel = document.getElementById("start-settings");
     if (!panel) return;
     panel.addEventListener("click", e => {
@@ -848,7 +911,6 @@ function buildStartSettings() {
         const group = chip.dataset.group;
         const val   = chip.dataset.val;
 
-        // Deselect every chip in the same group, then activate the clicked one
         panel.querySelectorAll(`.ss-chip[data-group="${group}"]`)
              .forEach(c => c.classList.remove("active"));
         chip.classList.add("active");
@@ -856,47 +918,184 @@ function buildStartSettings() {
         if (group === "category") {
             selectedCategory = val;
             localStorage.setItem("trivia_category", val);
-            // Switching categories should get fresh questions, so clear the token
             sessionToken = null;
             localStorage.removeItem("trivia_token");
+            syncLobbyChip("trivia-cat", val);
 
         } else if (group === "qs") {
             totalQs = parseInt(val);
             localStorage.setItem("trivia_qs", val);
-            // Keep the HUD dropdown in sync so they always agree
             const drop = document.getElementById("sys-trivia-qs");
             if (drop) drop.value = val;
+            syncLobbyChip("trivia-qs", val);
 
         } else if (group === "ai-diff") {
             aiDifficulty = val;
             localStorage.setItem("trivia_ai_diff", val);
+
+        } else if (group === "players") {
+            playerCount = parseInt(val);
+            localStorage.setItem("trivia_players", val);
+            scores  = new Array(playerCount).fill(0);
+            streaks = new Array(playerCount).fill(0);
+            updateNames();
+            syncLobbyChip("trivia-players", val);
         }
     });
 }
 
-// Mark the correct chip active without rebuilding the whole panel
 function syncPillGroup(group, val) {
     document.querySelectorAll(`.ss-chip[data-group="${group}"]`).forEach(c => {
         c.classList.toggle("active", c.dataset.val === val);
     });
 }
 
+function syncLobbyChip(key, val) {
+    const wrap = document.getElementById("v2-host-settings-wrapper");
+    if (!wrap) return;
+    wrap.querySelectorAll(`.v2-setting-btn[data-key="${key}"]`).forEach(c => {
+        c.classList.toggle("active", String(c.dataset.val) === String(val));
+    });
+}
+
 // ── 16. ONLINE MULTIPLAYER (v2 Lobby drop-in) ─
+function updateLobbyPreview() {
+    const slots = [
+        { type: "host", name: SystemUI.getPlayerName(), color: "#e74c3c" }
+    ];
+    for (let i = 1; i < playerCount; i++) {
+        slots.push({ type: "ai", name: "Slot " + (i + 1), color: "#3498db" });
+    }
+    SystemUI.v2Lobby.updatePreview(slots);
+}
+
+function cleanupRoom() {
+    if (isHost && currentRoomId && window.db && window.dbRemove) {
+        try { window.dbRemove(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId)).catch(()=>{}); }
+        catch (e) {}
+    } else if (!isHost && currentRoomId && window.db && myId > 0) {
+        // Guest leaving — submit a timeout sentinel so the host doesn't wait
+        // forever, and free the seat so the lobby preview is accurate.
+        try {
+            window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/answers'),
+                { ['p' + myId]: "__timeout__" });
+            window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/answerTimes'),
+                { ['p' + myId]: 0 });
+        } catch (e) {}
+        if (Array.isArray(seats) && seats[myId - 1]) {
+            const updatedSeats = [...seats];
+            updatedSeats[myId - 1] = { type: "open", name: "Open" };
+            try {
+                window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId),
+                    { seats: updatedSeats });
+            } catch (e) {}
+        }
+    }
+    clearGuardian();
+    currentRoomId = null;
+    isHost = false;
+    myId = 1;
+    seats = [];
+    chatStarted = false;
+}
+
+// Set up Firebase auto-cleanup when this client disconnects unexpectedly.
+function armOnDisconnect() {
+    if (!window.dbOnDisconnect || !currentRoomId || !window.db) return;
+    try {
+        if (isHost) {
+            // Host crash → remove the whole room
+            window.dbOnDisconnect(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId)).remove();
+        } else {
+            // Guest crash → free their seat (RTDB stores arrays under numeric keys)
+            window.dbOnDisconnect(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/seats/' + (myId - 1)))
+                .set({ type: "open", name: "Open" });
+        }
+    } catch (e) {}
+}
+
 SystemUI.v2Lobby.setup({
+    settingsConfig: [
+        {
+            id: "trivia-players",
+            label: "PLAYERS",
+            type: "select",
+            default: playerCount,
+            options: [
+                { value: 2, label: "2" },
+                { value: 3, label: "3" },
+                { value: 4, label: "4" }
+            ]
+        },
+        {
+            id: "trivia-cat",
+            label: "CATEGORY",
+            type: "select",
+            default: selectedCategory,
+            options: OPENTDB_CATEGORIES.map(c => ({ value: c.id, label: c.label }))
+        },
+        {
+            id: "trivia-qs",
+            label: "QUESTIONS",
+            type: "select",
+            default: String(totalQs),
+            options: [
+                { value: "5",  label: "5"  },
+                { value: "10", label: "10" },
+                { value: "15", label: "15" },
+                { value: "20", label: "20" }
+            ]
+        }
+    ],
+
+    onSettingsRendered: () => updateLobbyPreview(),
+
+    onSettingChange: (key, val) => {
+        if (key === "trivia-players") {
+            playerCount = parseInt(val);
+            localStorage.setItem("trivia_players", String(playerCount));
+            scores  = new Array(playerCount).fill(0);
+            streaks = new Array(playerCount).fill(0);
+            syncPillGroup("players", String(playerCount));
+            updateNames();
+        } else if (key === "trivia-cat") {
+            selectedCategory = val;
+            localStorage.setItem("trivia_category", val);
+            sessionToken = null;
+            localStorage.removeItem("trivia_token");
+            syncPillGroup("category", val);
+        } else if (key === "trivia-qs") {
+            totalQs = parseInt(val);
+            localStorage.setItem("trivia_qs", val);
+            const drop = document.getElementById("sys-trivia-qs");
+            if (drop) drop.value = val;
+            syncPillGroup("qs", val);
+        }
+        updateLobbyPreview();
+    },
+
     onHost: () => {
         currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
         isHost = true; myId = 1; chatStarted = false;
 
-        seats = [
-            { type: "human", name: SystemUI.getPlayerName() },
-            { type: "ai",    name: "Waiting for player…"    }
-        ];
+        seats = [{ type: "human", name: SystemUI.getPlayerName() }];
+        for (let i = 1; i < playerCount; i++) {
+            seats.push({ type: "open", name: "Open" });
+        }
 
         window.dbSet(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-            status: "waiting", p1Name: p1Name,
-            phase: "idle", questionIndex: 0, seats
+            status:           "waiting",
+            p1Name:           p1Name,
+            phase:            "idle",
+            questionIndex:    0,
+            seats,
+            playerCount:      playerCount,
+            selectedCategory: selectedCategory,
+            totalQs:          totalQs,
+            createdAt:        Date.now()
         }).then(() => {
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+            armOnDisconnect();
             listenToRoom();
         });
     },
@@ -904,47 +1103,95 @@ SystemUI.v2Lobby.setup({
     onJoin: (code) => {
         window.dbGet(window.dbChild(window.dbRef(window.db), `trivia_rooms/${code}`))
             .then(snap => {
-                if (snap.exists() && snap.val().status === "waiting") {
-                    currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
-
-                    const data = snap.val();
-                    // Overwrite the placeholder seat-2 with the joining player
-                    const updatedSeats = data.seats
-                        ? [...data.seats]
-                        : [{ type: "human", name: data.p1Name || "Player 1" },
-                           { type: "ai",    name: "Slot 2" }];
-                    updatedSeats[1] = { type: "human", name: SystemUI.getPlayerName() };
-
-                    window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-                        p2Name: p1Name, seats: updatedSeats
-                        // NOTE: status stays "waiting" until the host clicks Start
-                    });
-                    SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
-                    listenToRoom();
-                } else {
+                if (!snap.exists() || snap.val().status !== "waiting") {
                     SystemUI.v2Lobby.showError("ROOM NOT FOUND OR ALREADY STARTED");
+                    return;
                 }
+                const data = snap.val();
+                const incomingSeats = data.seats || [];
+                const openIdx = incomingSeats.findIndex(s => s && s.type === "open");
+                if (openIdx === -1) {
+                    SystemUI.v2Lobby.showError("ROOM FULL");
+                    return;
+                }
+
+                currentRoomId = code; isHost = false; myId = openIdx + 1; chatStarted = false;
+
+                if (data.playerCount)        playerCount      = parseInt(data.playerCount) || 2;
+                if (data.selectedCategory !== undefined) selectedCategory = data.selectedCategory;
+                if (data.totalQs)            totalQs          = parseInt(data.totalQs);
+                scores  = new Array(playerCount).fill(0);
+                streaks = new Array(playerCount).fill(0);
+
+                const updatedSeats = [...incomingSeats];
+                updatedSeats[openIdx] = { type: "human", name: SystemUI.getPlayerName() };
+
+                window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
+                    seats: updatedSeats
+                });
+                SystemUI.v2Lobby.showRoomPhase(currentRoomId, false);
+                armOnDisconnect();
+                listenToRoom();
             });
     },
 
     onLeave: () => {
-        gameMode = "ai"; p2Name = "AI";
+        cleanupRoom();
+        gameMode = "ai";
         document.getElementById("sys-trivia-mode").value = "ai";
         localStorage.setItem("trivia_mode", "ai");
-        SystemUI.stopChat(); chatStarted = false;
+        SystemUI.stopChat();
         updateNames();
     },
 
-    onStart: () => {
-        // Host pressed Start — both players will see status become "playing"
+    onStart: async () => {
+        if (!isHost || !currentRoomId) return;
+
+        // Pre-fetch questions BEFORE flipping status to "playing" so a CONNECTION ERROR
+        // doesn't strand the guest in a half-started room.
+        const startBtn = document.getElementById("v2-btn-start");
+        const oldText  = startBtn ? startBtn.textContent : "";
+        if (startBtn) { startBtn.disabled = true; startBtn.textContent = "FETCHING…"; }
+        try {
+            if (!sessionToken) await getSessionToken();
+            questions = await fetchQuestions(totalQs);
+        } catch (err) {
+            console.error("Failed to fetch questions:", err);
+            SystemUI.v2Lobby.showError("CONNECTION ERROR — TRY AGAIN");
+            if (startBtn) { startBtn.disabled = false; startBtn.textContent = oldText || "START GAME"; }
+            return;
+        }
+        if (startBtn) { startBtn.disabled = false; startBtn.textContent = oldText || "START GAME"; }
+
+        // Re-read seats from Firebase so a guest who joined while we were
+        // fetching questions doesn't get overwritten as 'ai'.
+        let liveSeats = (seats && seats.length) ? [...seats] : [];
+        try {
+            const snap = await window.dbGet(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId));
+            const data = snap && snap.val();
+            if (data && Array.isArray(data.seats)) liveSeats = [...data.seats];
+        } catch (e) {}
+
+        // Lock seats: any still-'open' seat becomes an AI played by the host
+        const lockedSeats = liveSeats;
+        for (let i = 0; i < lockedSeats.length; i++) {
+            if (!lockedSeats[i] || lockedSeats[i].type === "open") {
+                lockedSeats[i] = { type: "ai", name: "AI " + (i + 1) };
+            }
+        }
+        seats = lockedSeats;
+
         window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-            status: "playing"
+            status:    "playing",
+            seats:     lockedSeats,
+            questions: JSON.stringify(questions)
         });
     },
 
     onClose: () => {
         if (gameMode === "online" && gamePhase !== "playing") {
-            gameMode = "ai"; p2Name = "AI";
+            cleanupRoom();
+            gameMode = "ai";
             document.getElementById("sys-trivia-mode").value = "ai";
             localStorage.setItem("trivia_mode", "ai");
             updateNames();
@@ -958,10 +1205,16 @@ function listenToRoom() {
         const data = snapshot.val();
         if (!data) return;
 
-        // Keep the lobby seat list current while waiting
         if (data.seats) {
             seats = data.seats;
             SystemUI.v2Lobby.renderSeats(seats);
+        }
+
+        // Guest mirrors host-controlled config
+        if (!isHost) {
+            if (data.playerCount)                    playerCount      = parseInt(data.playerCount) || playerCount;
+            if (data.selectedCategory !== undefined) selectedCategory = data.selectedCategory;
+            if (data.totalQs)                        totalQs          = parseInt(data.totalQs);
         }
 
         if (data.status === "playing" && !onlineGameStarted) {
@@ -972,13 +1225,17 @@ function listenToRoom() {
                 SystemUI.playSound('win');
                 SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
             }
-            p2Name = myId === 1 ? (data.p2Name || "Opponent") : (data.p1Name || "Opponent");
+
+            if (Array.isArray(seats)) {
+                seats.forEach((s, i) => {
+                    if (i < 4 && s && s.name) playerNames[i] = s.name;
+                });
+            }
             updateNames();
 
             if (isHost) {
                 startGame();
             } else {
-                // Guest waits while host fetches questions and pushes them
                 document.getElementById("start-screen").classList.add("hidden");
                 document.getElementById("loading-screen").classList.remove("hidden");
                 document.getElementById("loading-text").textContent = "WAITING FOR HOST…";
@@ -1004,38 +1261,100 @@ function pushGameState() {
 
     if (isHost && questions.length > 0) {
         payload.questions = JSON.stringify(questions);
+        // First push of a fresh game — clear stale resolution fields so they
+        // don't echo onto question 0 of a rematch, and stamp the game so the
+        // guest can detect the rematch and re-parse the new question bank.
+        if (currentQIndex === 0 && gamePhase === "playing") {
+            payload.gameStartedAt   = Date.now();
+            payload.answers         = null;
+            payload.answerTimes     = null;
+            payload.resolvedScorer  = null;
+            payload.resolvedPts     = null;
+            payload.resolvedAnswer  = null;
+            payload.resolvedCorrect = null;
+            payload.winner          = null;
+            lastGameStartedAt       = payload.gameStartedAt;
+        }
     }
 
     window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), payload);
 }
 
 function submitOnlineAnswer(answer, tLeft) {
-    const field = myId === 1 ? "p1Answer" : "p2Answer";
-    window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-        [field]: answer,
-        [`${field}Time`]: tLeft
+    if (!currentRoomId) return;
+    window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/answers'),     { ['p' + myId]: answer });
+    window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/answerTimes'), { ['p' + myId]: tLeft  });
+}
+
+function submitAiOnlineAnswer(aiId, q, accuracy) {
+    if (!currentRoomId) return;
+    const correct = Math.random() < accuracy;
+    const ans = correct
+        ? q.correct
+        : q.answers.filter(a => a !== q.correct)[
+            Math.floor(Math.random() * (q.answers.length - 1))
+          ];
+    window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/answers'),     { ['p' + aiId]: ans      });
+    window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId + '/answerTimes'), { ['p' + aiId]: timeLeft  });
+}
+
+// Host-side: schedule answers for every AI seat in online mode
+function scheduleOnlineAiAnswers(q) {
+    if (!isHost || !Array.isArray(seats)) return;
+    const [minMs, maxMs] = AI_DELAY[aiDifficulty] || AI_DELAY.medium;
+    const accuracy       = (AI_ACCURACY[aiDifficulty] || AI_ACCURACY.medium)[q.difficulty] || 0.55;
+
+    seats.forEach((seat, idx) => {
+        if (!seat || seat.type !== "ai") return;
+        const aiId  = idx + 1;
+        const delay = minMs + Math.random() * (maxMs - minMs);
+        const t = setTimeout(() => {
+            if (gamePhase !== "playing") return;
+            submitAiOnlineAnswer(aiId, q, accuracy);
+        }, delay);
+        aiTimers.push(t);
     });
 }
 
 function syncFromFirebase(data) {
     if (!data) return;
 
-    // Receive question bank from host
+    // Detect a rematch: when the host stamps a new gameStartedAt, the guest
+    // must drop the previous game's questions and modal state so the new
+    // question bank gets re-parsed.
+    if (!isHost && data.gameStartedAt && data.gameStartedAt !== lastGameStartedAt) {
+        lastGameStartedAt = data.gameStartedAt;
+        if (questions.length > 0 || gamePhase === "gameover") {
+            questions = [];
+            currentQIndex = 0;
+            answered = false;
+            onlineAnswerLocked = false;
+            gamePhase = "loading";
+            scores  = new Array(playerCount).fill(0);
+            streaks = new Array(playerCount).fill(0);
+            document.getElementById("game-over-modal").classList.add("hidden");
+            document.getElementById("next-overlay").classList.add("hidden");
+            renderScores();
+        }
+    }
+
+    // Receive question bank from host on first sync after status="playing"
     if (data.questions && questions.length === 0) {
         try {
             questions = JSON.parse(data.questions);
             document.getElementById("loading-screen").classList.add("hidden");
             gamePhase = "playing";
-        } catch(e) { console.error("Failed to parse questions:", e); return; }
+            const idx = (typeof data.questionIndex === "number") ? data.questionIndex : 0;
+            showQuestion(idx);
+        } catch (e) { console.error("Failed to parse questions:", e); return; }
     }
 
-    if (data.scores) {
-        scores = data.scores;
-        renderScores();
-    }
+    if (Array.isArray(data.scores))  scores  = data.scores;
+    if (Array.isArray(data.streaks)) streaks = data.streaks;
+    renderScores();
 
     // Host advanced to a new question
-    if (data.questionIndex !== undefined &&
+    if (typeof data.questionIndex === "number" &&
         data.questionIndex !== currentQIndex &&
         data.phase === "playing" &&
         questions.length > 0) {
@@ -1047,50 +1366,71 @@ function syncFromFirebase(data) {
         return;
     }
 
-    // Host resolves both answers when both are in
-    if (isHost && data.p1Answer && data.p2Answer && !answered) {
-        answered = true;
-        stopTimer();
+    // Host resolves once every seat has submitted an answer
+    if (isHost && data.answers && !answered) {
+        const answerKeys = Object.keys(data.answers).filter(k => /^p\d+$/.test(k));
+        if (answerKeys.length >= playerCount) {
+            answered = true;
+            stopTimer();
+            clearAiTimers();
+            clearGuardian();
 
-        const q     = questions[currentQIndex];
-        const p1Cor = data.p1Answer === q.correct;
-        const p2Cor = data.p2Answer === q.correct;
+            const q     = questions[currentQIndex];
+            const times = data.answerTimes || {};
+            let bestScorer = 0;
+            let bestTime   = -1;
+            let bestAns    = "";
+            for (let id = 1; id <= playerCount; id++) {
+                const ans = data.answers["p" + id];
+                if (!ans || ans === "__timeout__") continue;
+                if (ans === q.correct) {
+                    const t = times["p" + id] || 0;
+                    if (t > bestTime) {
+                        bestTime   = t;
+                        bestScorer = id;
+                        bestAns    = ans;
+                    }
+                }
+            }
 
-        let scorer = null;
-        if (p1Cor && p2Cor) {
-            scorer = (data.p1AnswerTime || 0) >= (data.p2AnswerTime || 0) ? 1 : 2;
-        } else if (p1Cor) { scorer = 1; }
-        else if (p2Cor)   { scorer = 2; }
+            const pts = bestScorer ? calcPoints(q.difficulty, bestTime) : 0;
+            for (let id = 1; id <= playerCount; id++) {
+                if (id === bestScorer) {
+                    scores[id - 1]  += pts;
+                    streaks[id - 1] += 1;
+                } else {
+                    streaks[id - 1] = 0;
+                }
+            }
 
-        const pts = scorer ? calcPoints(q.difficulty, data[`p${scorer}AnswerTime`] || 0) : 0;
-        if (scorer === 1)      { scores.p1 += pts; streaks.p1++; streaks.p2 = 0; }
-        else if (scorer === 2) { scores.p2 += pts; streaks.p2++; streaks.p1 = 0; }
-        else                   { streaks.p1 = 0; streaks.p2 = 0; }
+            // NOTE: answers/answerTimes are cleared on the next-question advance,
+            // not here, so the guest's resolution can still read its own answer
+            // out of data.answers in order to highlight it correctly on reveal.
+            window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
+                resolvedCorrect: !!bestScorer,
+                resolvedScorer:  bestScorer || 0,
+                resolvedPts:     pts,
+                resolvedAnswer:  bestAns,
+                scores, streaks
+            });
 
-        window.dbUpdate(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), {
-            resolvedCorrect: !!(scorer),
-            resolvedScorer:  scorer || 0,
-            resolvedPts:     pts,
-            resolvedAnswer:  data[scorer === 1 ? "p1Answer" : "p2Answer"] || "",
-            scores, streaks,
-            p1Answer: null, p2Answer: null,
-        });
-
-        revealAnswers(myId === 1 ? data.p1Answer : data.p2Answer);
-        showResultBanner(myId === scorer, pts);
-        renderScores();
-        setTimeout(() => showNextOverlay(!!(scorer), q.correct, pts, scorer), 1000);
+            const myAns = data.answers["p" + myId];
+            revealAnswers(myAns || null);
+            showResultBanner(myId === bestScorer, pts);
+            renderScores();
+            setTimeout(() => showNextOverlay(!!bestScorer, q.correct, pts, bestScorer || null), 1000);
+        }
     }
 
-    // Guest: wait for the host's resolved state
-    if (!isHost && data.resolvedScorer !== undefined && data.resolvedScorer !== null && !answered) {
+    // Guest applies the host's resolution
+    if (!isHost && typeof data.resolvedScorer === "number" && !answered && questions.length > 0) {
         answered = true;
         stopTimer();
 
         const q     = questions[currentQIndex];
-        const myAns = myId === 1 ? data.p1Answer : data.p2Answer;
-        scores  = data.scores  || scores;
-        streaks = data.streaks || streaks;
+        const myAns = data.answers ? data.answers["p" + myId] : null;
+        if (Array.isArray(data.scores))  scores  = data.scores;
+        if (Array.isArray(data.streaks)) streaks = data.streaks;
         renderScores();
         revealAnswers(myAns || null);
         showResultBanner(data.resolvedScorer === myId, data.resolvedPts || 0);
@@ -1107,5 +1447,13 @@ function syncFromFirebase(data) {
     if (data.status === "finished") endGame();
 }
 
+// ── BEFORE UNLOAD: clean up host's room so it doesn't linger ──
+window.addEventListener("beforeunload", () => {
+    if (isHost && currentRoomId && window.db && window.dbRemove) {
+        try { window.dbRemove(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId)); } catch (e) {}
+    }
+});
+
 // ── BOOT ─────────────────────────────────────
+renderScoreboard();
 updateNames();

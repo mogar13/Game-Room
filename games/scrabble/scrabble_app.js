@@ -12,6 +12,7 @@ let chatStarted = false;
 let currentRoomId = null;
 let myId    = 1;
 let isHost  = true;
+let seats   = [];
 
 SystemUI.init({
     gameName: "SCRABBLE",
@@ -29,35 +30,47 @@ SystemUI.init({
     ]
 });
 
-setTimeout(() => { 
-    const modeEl = document.getElementById("sys-scrabble-mode");
-    if (modeEl) {
-        gameMode = modeEl.value; 
-        
-        if (gameMode === "online") {
-            document.getElementById("setup-panel").style.display = "none";
-            document.getElementById("start-btn").style.display = "none";
-        }
-
-        modeEl.addEventListener("change", e => {
-            gameMode = e.target.value;
-            localStorage.setItem("scrabble_mode", gameMode);
-            document.getElementById("sys-modal")?.classList.add("sys-hidden");
-            
-            if (gameMode === "online") {
-                document.getElementById("setup-panel").style.display = "none";
-                document.getElementById("start-btn").style.display = "none";
-                SystemUI.v2Lobby.show();
-            } else {
-                document.getElementById("setup-panel").style.display = "";
-                document.getElementById("start-btn").style.display = "";
-                SystemUI.v2Lobby.hide();
-                SystemUI.stopChat();
-                chatStarted = false;
-                myId = 1; isHost = true;
-            }
-        });
+function applyModeUI() {
+    const setupPanel = document.getElementById("setup-panel");
+    const startBtn   = document.getElementById("start-btn");
+    const diffRow    = document.getElementById("difficulty-row");
+    if (gameMode === "online") {
+        if (setupPanel) setupPanel.style.display = "none";
+        if (startBtn)   startBtn.style.display   = "none";
+        SystemUI.v2Lobby?.show();
+    } else {
+        if (setupPanel) setupPanel.style.display = "";
+        if (startBtn)   startBtn.style.display   = "";
+        if (diffRow)    diffRow.style.display    = (gameMode === "ai") ? "" : "none";
+        SystemUI.v2Lobby?.hide();
+        SystemUI.stopChat?.();
+        chatStarted = false;
+        myId = 1; isHost = true;
     }
+}
+
+function buildStartScreen() {
+    document.querySelectorAll("#opponent-row .opp-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            new Audio('../../system/audio/click1.mp3').play().catch(()=>{});
+            document.querySelectorAll("#opponent-row .opp-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            gameMode = btn.dataset.mode;
+            localStorage.setItem("scrabble_mode", gameMode);
+            const modeEl = document.getElementById("sys-scrabble-mode");
+            if (modeEl) modeEl.value = gameMode;
+            applyModeUI();
+        });
+    });
+
+    document.querySelectorAll("#difficulty-btns .diff-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            new Audio('../../system/audio/click1.mp3').play().catch(()=>{});
+            document.querySelectorAll("#difficulty-btns .diff-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            aiDifficulty = btn.dataset.diff;
+        });
+    });
 
     const setupPanel = document.getElementById("setup-panel");
     if (setupPanel && !document.getElementById("count-row-wrapper")) {
@@ -66,31 +79,48 @@ setTimeout(() => {
         countRow.className = "setup-row";
         countRow.innerHTML = `
             <span class="setup-label">PLAYERS</span>
-            <div id="local-count-btns" style="display:flex; gap:6px;">
-                <button class="count-btn ${lobbyPlayerCount === 2 ? 'active' : ''}" data-count="2" style="padding:9px 14px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); color:var(--muted); font-family:'Libre Baskerville', serif; font-size:0.68rem; cursor:pointer;">2</button>
-                <button class="count-btn ${lobbyPlayerCount === 3 ? 'active' : ''}" data-count="3" style="padding:9px 14px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); color:var(--muted); font-family:'Libre Baskerville', serif; font-size:0.68rem; cursor:pointer;">3</button>
-                <button class="count-btn ${lobbyPlayerCount === 4 ? 'active' : ''}" data-count="4" style="padding:9px 14px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); color:var(--muted); font-family:'Libre Baskerville', serif; font-size:0.68rem; cursor:pointer;">4</button>
+            <div id="local-count-btns">
+                ${[2,3,4].map(n => `<button class="opp-btn count-btn${lobbyPlayerCount===n?' active':''}" data-count="${n}">${n}</button>`).join("")}
             </div>
         `;
         setupPanel.appendChild(countRow);
-
         document.querySelectorAll(".count-btn").forEach(btn => {
             btn.addEventListener("click", () => {
-                new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
-                document.querySelectorAll(".count-btn").forEach(b => {
-                    b.classList.remove("active");
-                    b.style.background = "var(--panel)";
-                    b.style.borderColor = "var(--border)";
-                });
+                new Audio('../../system/audio/click1.mp3').play().catch(()=>{});
+                document.querySelectorAll(".count-btn").forEach(b => b.classList.remove("active"));
                 btn.classList.add("active");
-                btn.style.background = "rgba(212,168,64,0.18)";
-                btn.style.borderColor = "var(--gold-lt)";
                 lobbyPlayerCount = parseInt(btn.dataset.count);
                 localStorage.setItem("scrabble_pcount", lobbyPlayerCount);
             });
         });
     }
-}, 10);
+}
+
+setTimeout(() => {
+    const savedMode = localStorage.getItem("scrabble_mode");
+    if (savedMode) gameMode = savedMode;
+
+    const modeEl = document.getElementById("sys-scrabble-mode");
+    if (modeEl) {
+        modeEl.value = gameMode;
+        modeEl.addEventListener("change", e => {
+            gameMode = e.target.value;
+            localStorage.setItem("scrabble_mode", gameMode);
+            document.getElementById("sys-modal")?.classList.add("sys-hidden");
+            document.querySelectorAll("#opponent-row .opp-btn").forEach(b => {
+                b.classList.toggle("active", b.dataset.mode === gameMode);
+            });
+            applyModeUI();
+        });
+    }
+
+    document.querySelectorAll("#opponent-row .opp-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.mode === gameMode);
+    });
+
+    buildStartScreen();
+    applyModeUI();
+}, 50);
 
 // ── 2. TILE DATA ─────────────────────────────
 const TILE_VALUES = {
@@ -274,11 +304,21 @@ function makeTileEl(letter, value, isBlank, rackIdx) {
 }
 
 // ── 7. RACK RENDERING ────────────────────────
+function getDisplayPlayerIdx() {
+    // Whose rack to show. Hotseat passes the screen between players, AI never reveals
+    // its rack, online never reveals opponents' racks.
+    if (gameMode === "hotseat") return currentTurn;
+    if (gameMode === "online")  return Math.max(0, myId - 1);
+    return 0; // ai mode: always the human
+}
+
 function renderRack() {
     const rack  = document.getElementById("rack");
     if (!rack) return;
     rack.innerHTML = "";
-    const hand = players[currentTurn]?.rack || [];
+    const displayIdx = getDisplayPlayerIdx();
+    const hand = players[displayIdx]?.rack || [];
+    const showPending = displayIdx === currentTurn;
 
     hand.forEach((tile, i) => {
         if (!tile) {
@@ -288,7 +328,7 @@ function renderRack() {
             return;
         }
         const el = makeTileEl(tile.letter, tile.value, tile.isBlank, i);
-        if (pendingTiles.some(p => p.rackIdx === i)) {
+        if (showPending && pendingTiles.some(p => p.rackIdx === i)) {
             el.classList.add("dragging-source");
         }
         rack.appendChild(el);
@@ -398,7 +438,8 @@ function getCellFromPoint(x, y) {
 // ── 9. TILE PLACEMENT ────────────────────────
 function placeTileOnBoard(tileData, row, col) {
     if (board[row][col] || pendingTiles.find(p => p.row === row && p.col === col)) {
-        recallTile(tileData);
+        // Drop landed on an occupied cell — leave any source tile where it was.
+        if (tileData && tileData.fromBoard) renderCell(tileData.boardRow, tileData.boardCol);
         return;
     }
 
@@ -473,7 +514,10 @@ function onCellClick(row, col) {
 
 function recallTile(tileData) {
     if (tileData && tileData.fromBoard) {
+        pendingTiles = pendingTiles.filter(p => !(p.row === tileData.boardRow && p.col === tileData.boardCol));
         renderCell(tileData.boardRow, tileData.boardCol);
+        renderRack();
+        updateWordPreview();
     }
 }
 
@@ -703,18 +747,15 @@ function isConnected() {
 const COMMON_WORDS = new Set("aa ab ad ae ag ah ai al am an ar as at aw ax ay ba be bi bo by da de do ea ed ef eh el em en er es et ex fa fe fi gi go ha he hi hm ho id if in is it ja jo ka ki la li lo ma me mi mm mo mu my na ne no nu ob od oe of oh oi ok om on op or os ow ox oy pa pe pi po qi re sh si so ta te ti to ug uh um un up ur us ut wo xi xu ya ye yo za abs ace act add age ago aid aim air ale all alp alt amp and ant any ape apt arc are ark arm art ash ask ass ate auk awe awl awn axe aye bad bag ban bar bat bay bed beg bet bid big bin bit boa bog boo bop bow box boy bud bug bun bus but buy bye cab can cap car cat caw cob cod cog cop cow cry cub cup cut dab dam day deb den dew did die dig dim dip doe dog don dot dry dub dud dug duo ear eat ego elk elm emu end era eve ewe eye fab fad fan far fat fax fay fed few fez fib fig fin fir fit fix fly fob foe fog fop for fox fry fub fun fur gab gag gap gar gas gel gem get gig gin gnu god goo got gum gun gut guy gym had ham has hat hay hem her hew hex hey hid hip his hit hob hoe hog hop hot how hub hug hum hut ice icy ill imp ink inn ion ire irk jab jag jam jar jaw jay jet jig job jog jot joy jug jut keg kid kin kit lab lag lam lap law lax lay lea led leg let lid lip lit lob log lot low lug mad man map mar mat maw may men met mew mid mix mob mod mom mop mow mud mug mum nun oak oat odd ode off old opt orb ore our out owe owl own pal pan pap par pat paw pay pea peg pet pew pie pig pin pit ply pod pop pot pow pro pry pub pug pun pup pus put rag ram ran rap rat raw ray red ref rep rid rig rim rip rob rod rot row rub rug rum rut rye sad sag sap sat saw say sea set sew she sir ski sky sly sob sod son sop sot sow spa spy sty sub sue sum sun tab tan tap tar tat tax tee ten the thy tic tie tin tip toe ton too top tow toy try tub tug tun two ugh urn use van vat vow wad wag war was wax way web wed wig win wit woe wok won woo wow yak yam yap yew zig zip zoo".split(" "));
 
 async function checkWord(word) {
-    if (word.length < 2) return false;
-    if (dictCache[word] !== undefined) return dictCache[word];
-    if (COMMON_WORDS.has(word)) { dictCache[word] = true; return true; }
-    try {
-        const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
-        const valid = res.ok;
-        dictCache[word] = valid;
-        return valid;
-    } catch {
-        dictCache[word] = true;
-        return true;
-    }
+    const w = (word || "").toLowerCase();
+    if (w.length < 2) return false;
+    if (dictCache[w] !== undefined) return dictCache[w];
+    if (window.SCRABBLE_DICT && window.SCRABBLE_DICT.has(w)) { dictCache[w] = true; return true; }
+    if (COMMON_WORDS.has(w)) { dictCache[w] = true; return true; }
+    // Local TWL is the authoritative source; treat misses as invalid even if the
+    // online API would accept (keeps human plays consistent with what AI sees).
+    dictCache[w] = false;
+    return false;
 }
 
 // ── 13. GAME INIT ─────────────────────────────
@@ -815,8 +856,18 @@ function nextTurn() {
 
     if (players[currentTurn]?.isAI) {
         showTurnMsg(`${players[currentTurn].name} is thinking...`);
-        aiTimeout = setTimeout(aiPlayTurn, 2200);
+        // In online mode only the host drives AI turns to avoid double plays.
+        if (gameMode !== "online" || isHost) {
+            scheduleAiTurn(2200);
+        }
     }
+}
+
+// Schedules an AI move if one isn't already pending. aiTimeout is used as the
+// "AI is committed" flag and cleared when the move finishes so we can re-arm.
+function scheduleAiTurn(delay) {
+    if (aiTimeout) return;
+    aiTimeout = setTimeout(() => { aiTimeout = null; aiPlayTurn(); }, delay);
 }
 
 function updateTurnDisplay() {
@@ -965,7 +1016,26 @@ function checkGameOver() {
 }
 
 // ── 18. AI PLAYER ─────────────────────────────
-const AI_WORDS = ("aa ab ad ae ag ah ai al am an ar as at aw ax ay ba be bi bo by da de do ea ed ef eh el em en er es et ex fa fe fi gi go ha he hi ho id if in is it jo ka ki la li lo ma me mi mo mu my na ne no nu ob od oe of oh oi ok om on op or os ow ox oy pa pe pi po qi re sh si so ta te ti to ug uh um un up ur us ut wo xi xu ya ye yo za ace act add age ago aid aim air ale all alp alt amp and ant any ape apt arc are ark arm art ash ask ate awe awl awn axe aye bad bag ban bar bat bay bed beg bet bid big bin bit boa bog bow box boy bud bug bun bus but buy bye cab can cap car cat cob cod cog cop cow cry cub cup cut dam day den dew die dig dim dip doe dog don dot dry dub dug duo ear eat ego elk elm emu end era eve ewe eye fad fan far fat fax fed few fez fib fig fin fir fit fix fly foe fog fop for fox fry fun fur gab gap gas gel gem get gig gin gnu god got gum gun gut guy gym had ham has hat hay hem her hew hex hey hid hip hit hob hoe hog hop hot how hub hug hum hut ice ill imp ink inn ion ire irk jab jam jar jaw jet jig job jog jot joy jug jut keg kid kin kit lab lag lap law lay lea led leg let lid lip lit lob log lot low lug mad man map mar mat maw may men met mew mid mix mob mod mom mop mow mud mug mum nun oak oat odd ode off old opt orb ore our out owe owl own pal pan par pat paw pay pea peg pet pie pig pin pit ply pod pop pot row rub rug rum rut rye sad sag sap sat saw say sea set sew she sir ski sky sob sod son sow spa spy sub sue sum sun tab tan tap tar tax tee ten tie tin tip toe ton too top tow toy try tub tug tun two ugh urn use van vat vow wad wag war was wax way web wed win wit woe won woo yak yam yap yew zip zoo abs acre aged aims airs ales ally also alto aloe alms amps bale ball band bane bang bank bare bark barn base bath bead beam bean bear beat beef been beer bell belt best bill bind bite blob blow blue blur boar boat bold bolt bond bone book boom boot bore born boss both bout bowl brag bran brew brim brow buck bull bump burn bust cafe cage cake call calm came camp cane cape card care cart case cash cast cave cell cent chap char chat chef chew chin chip chop cite clad clam clap claw clay clip clog clot club clue coal coat coil coin cold colt come cone cook cool cope core cork corn cost cove crab cram crew crop crow cube cure curl curt cute damp dare dark darn dart dash data date dawn dead deaf deal dean dear deck deed deep deer deft deli dent deny desk dial dice dike dill dime dine dire disk dive dock dome done doom door dose dote dove down drab drag dram drip drop drug drum dual dumb dump dune dusk dust each earl earn ease east edge emit epic even ever evil exam exit face fact fade fail fair fake fall fame fare farm fast fate fawn feat feed feel feet fell felt fend fern fest feud file fill film find fine fire firm fish fist flag flap flat flaw flea fled flew flip flit floe flow foam foil fold fond font food fool fore fork fort foul four fowl free fret fuel full fume fund fuse fuzz gale gall game gang gape gash gate gawk gaze gear gent gild gilt gist give glad glee glen glib glob glow glum glut goad goat gold golf gone good gore gown grab grad gram gray grew grid grim grin grip grit grow grub gulf gull gulp gust hack hail hair hale hall halt hand hang hard hare hark harm harp hart hate haul have hawk heal heap hear heat heel held helm help here hero hewn hide high hike hill hint hire hive hoax hock hold hole home hone honk hood hoop hoot hope horn hose host hour hull hump hung hunk hunt hurl hymn icon idea idle inch into iron isle item jade jail jeer jerk jest join joke jolt junk jury just keen keep kelp kept kern kick kind king kite knee knob knot know lack lame lamp land lane lard lark lash last late laud lawn laze lazy lead leaf leak lean leap leer left lend lens less lest levy lime limp line link lion list live load loaf loan loft loom loon loop lore loss lost loud love lull lump lung lure lurk lust lute lynx mace made mail main make male mall malt mane mare mark mart mash mask mast mate maze mead meal mean meet melt memo mend menu mere mesh mild mile milk mill mime mind mine mint mire mist moan moat mock mode mold mole molt monk mood moon moor moot more morn most mote muse musk must mute myth nail name nape nave neat neck need nest next nice nick node norm note noun nude null numb oath oboe okra once only onto open oral orca oval oven over oxen pace pack pact page paid pail pain pair pale palm pane park part pass past path pave peak peal pear peat peek peel peer pelt pest pick pike pile pill pine ping pipe pith plan plod plot plow plug plum plus poem poet pole poll polo pond pore pork port pose post pour pray prey prod prop prow pull pulp pump pure push putt quit race rack rage raid rail rain ramp rang rank rant rape rash rate rave read real reap reed reef reel rely rend rent rest rice rich rick ride rife rift ring riot rise risk roam roar robe rock rode role roll romp rook room root rope rose rosy rout rove rude ruin rule rump rune ruse rush rust safe sage sail sale salt same sand sane sang sank sash save scam scan scar seal seam seep seer self sell semi send sent sewn shed shin ship shoe shod shop shot show shut side sigh silk sill sing sink sire site size skid skim skin skip slab slap slat sled slew slid slim slip slit slob slop slot slow slug slum slur smog smug snag snap snip snob snow snub soak soap sock soft soil sold sole some song soon sort soul soup sour span spar spit spot spun spur stab stag star stay stem step stew stir stop stub stud stun such suit sulk sung sunk sure surf swam swan swap swat sway swim swum tack tail tale talk tall tame tang tart task taut teal team tear teed tell tend tent term text than that them then thin this tide till tilt time tire toad toil told toll tomb tome tone tong took tore torn tort toss tour town trek trim trio trip trod trot true tuft tune turf tusk twig twin type ugly upon urge vain vale vast veal veil vein vend vent very vest view vile vine void vole volt vote wade wail wake wale walk wall wand wane ward ware warm warn warp wart wash wasp weal wean wear weep weld well wend went were west wide wile will wilt wily wind wine wing wink wire wise wish wisp with woke wolf womb wool word wore work worm worn wove wren writ yawl year yell yelp yore your zeal zest zinc zone zoom").split(" ").filter(Boolean);
+// Word buckets (cached). Built lazily from window.SCRABBLE_WORDS (TWL ~84k words)
+// loaded by scrabble_dict.js. Falls back to COMMON_WORDS if the dict didn't load.
+let _aiWordBuckets = null;
+function getAiWordBuckets() {
+    if (_aiWordBuckets) return _aiWordBuckets;
+    const source = (window.SCRABBLE_WORDS && window.SCRABBLE_WORDS.length)
+        ? window.SCRABBLE_WORDS
+        : Array.from(COMMON_WORDS);
+    const buckets = {};
+    for (const w of source) {
+        const len = w.length;
+        if (len < 2 || len > 8) continue;
+        (buckets[len] = buckets[len] || []).push(w);
+    }
+    _aiWordBuckets = buckets;
+    return buckets;
+}
+
+// (Legacy inline AI word list removed; SCRABBLE_WORDS / SCRABBLE_DICT in
+// scrabble_dict.js is now the single source of truth.)
 
 function aiPlayTurn() {
     if (gamePhase !== "playing" || !players[currentTurn]?.isAI) return;
@@ -980,6 +1050,7 @@ function aiPlayTurn() {
     let i = 0;
     const placeNext = () => {
         if (i >= bestMove.placement.length) {
+            aiTimeout = null;
             const words = getCurrentWords();
             if (!words || words.length === 0) { recallAllTiles(); passAction(); return; }
             const score = calcTotalScore(words);
@@ -1015,22 +1086,72 @@ function aiPlayTurn() {
 function findBestAIMove(rack, isFirst) {
     const rackLetters = rack.map(t => t.isBlank ? "*" : t.letter.toLowerCase());
     const anchors = getAnchors(isFirst);
+    const buckets = getAiWordBuckets();
+
+    const maxLen = aiDifficulty === "easy" ? 5 : aiDifficulty === "medium" ? 7 : 8;
+    const minLen = 2;
+
+    // Quick rack-feasibility filter — discard words the rack can't plausibly help build.
+    // The remaining shortfall (up to maxBoardSupply letters) must be covered by board tiles.
+    const rackCounts = {}; let blanks = 0;
+    for (const l of rackLetters) {
+        if (l === "*") blanks++;
+        else rackCounts[l] = (rackCounts[l] || 0) + 1;
+    }
+    const maxBoardSupply = isFirst ? 0 : 5;
+    const canSupplyEnough = (w) => {
+        const need = Math.max(1, w.length - maxBoardSupply);
+        const wc = {};
+        for (const c of w) wc[c] = (wc[c] || 0) + 1;
+        let supplied = 0; let bl = blanks;
+        for (const c in wc) {
+            const have = rackCounts[c] || 0;
+            const use = Math.min(have, wc[c]); supplied += use;
+            const short = wc[c] - use;
+            if (short > 0) {
+                const ub = Math.min(bl, short);
+                bl -= ub; supplied += ub;
+            }
+        }
+        return supplied >= need;
+    };
+
+    // Candidate words longest-first (big plays score more, often a bingo).
+    const candidates = [];
+    for (let len = maxLen; len >= minLen; len--) {
+        const bucket = buckets[len] || [];
+        for (const w of bucket) if (canSupplyEnough(w)) candidates.push(w);
+    }
+
     const moves = [];
-    for (const word of AI_WORDS) {
-        if (word.length < 2) continue;
-        if (aiDifficulty === "easy" && word.length > 4) continue;
-        if (aiDifficulty === "medium" && word.length > 6) continue;
+    let work = aiDifficulty === "hard" ? 350000 : aiDifficulty === "medium" ? 120000 : 40000;
+
+    outer: for (const word of candidates) {
         for (const [ar, ac] of anchors) {
             for (const dir of ["horizontal", "vertical"]) {
+                if (--work <= 0) break outer;
                 const found = tryWordAtAnchor(word, rack, rackLetters, ar, ac, dir, isFirst);
                 if (found) moves.push(...found);
             }
         }
     }
+
     if (moves.length === 0) return null;
     moves.sort((a, b) => b.score - a.score);
-    if (aiDifficulty === "easy") return moves[Math.floor(Math.random() * Math.min(8, moves.length))];
-    return moves[0];
+
+    if (aiDifficulty === "easy") {
+        // Pick a deliberately mediocre move — prefer scores ≤ 18, fall back to lowest 10.
+        const weak = moves.filter(m => m.score <= 18);
+        const pool = weak.length > 0 ? weak : moves.slice(-Math.min(moves.length, 10));
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+    if (aiDifficulty === "medium") {
+        // Top 5, biased toward best.
+        const pool = moves.slice(0, Math.min(5, moves.length));
+        const idx = Math.floor(Math.pow(Math.random(), 1.7) * pool.length);
+        return pool[idx];
+    }
+    return moves[0]; // hard: optimal among what we found
 }
 
 function getAnchors(isFirst) {
@@ -1079,10 +1200,22 @@ function tryWordAtAnchor(word, rackObjs, rackLetters, ar, ac, dir, isFirst) {
             }
         }
         if (!valid || !usesRackTile || placement.length === 0) continue;
-        const saved = pendingTiles; pendingTiles = placement; const words = getCurrentWords();
+        const saved = pendingTiles; pendingTiles = placement;
+        const words = getCurrentWords();
         const connected = isFirst ? placement.some(p => p.row === 7 && p.col === 7) || (words && words[0]?.cells.some(c => c.row === 7 && c.col === 7)) : isConnected();
-        const score = (words && connected) ? calcTotalScore(words) : 0; pendingTiles = saved;
-        if (!words || !connected || score <= 0) continue;
+        // Validate every formed word (main + every cross-word). Without this the
+        // AI happily plays "REAL" horizontally while creating "ZQ" vertically.
+        let allValid = !!(words && connected);
+        if (allValid) {
+            const dict = window.SCRABBLE_DICT;
+            for (const fw of words) {
+                const key = fw.word.toLowerCase();
+                if (dict ? !dict.has(key) : !COMMON_WORDS.has(key)) { allValid = false; break; }
+            }
+        }
+        const score = allValid ? calcTotalScore(words) : 0;
+        pendingTiles = saved;
+        if (!allValid || score <= 0) continue;
         results.push({ placement, score, word });
     }
     return results.length > 0 ? results : null;
@@ -1196,28 +1329,63 @@ SystemUI.v2Lobby.setup({
         });
     },
     onLeave: () => {
-        if (isHost && currentRoomId) window.dbSet(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), null);
+        leaveCurrentRoom();
         gameMode = "ai";
-        document.getElementById("sys-scrabble-mode").value = "ai";
-        SystemUI.stopChat(); chatStarted = false;
+        localStorage.setItem("scrabble_mode", gameMode);
+        const modeEl = document.getElementById("sys-scrabble-mode");
+        if (modeEl) modeEl.value = "ai";
+        document.querySelectorAll("#opponent-row .opp-btn").forEach(b => {
+            b.classList.toggle("active", b.dataset.mode === "ai");
+        });
+        applyModeUI();
     },
     onStart: () => { window.dbUpdate(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), { status: "playing" }); },
     onClose: () => {
         if (gameMode === "online" && gamePhase === "idle") {
-            if (isHost && currentRoomId) window.dbSet(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), null);
+            leaveCurrentRoom();
             gameMode = "ai"; document.getElementById("sys-scrabble-mode").value = "ai";
         }
     }
 });
 
+// Tear down the active room: unsubscribe the listener, free the seat (joiner) or
+// delete the room (host), and clear local room state. Safe to call when not in a room.
+function leaveCurrentRoom() {
+    if (roomUnsub) { try { roomUnsub(); } catch (e) {} roomUnsub = null; }
+    if (currentRoomId) {
+        if (isHost) {
+            window.dbSet(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), null);
+        } else if (myId > 1 && seats[myId - 1]) {
+            // Hand the seat back to AI so the host can keep going or fill it.
+            const updated = [...seats];
+            updated[myId - 1] = { type: "ai", name: "AI " + (myId - 1) };
+            window.dbUpdate(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), { seats: updated })
+                .catch(() => {});
+        }
+    }
+    currentRoomId = null;
+    isHost = true;
+    myId = 1;
+    seats = [];
+    chatStarted = false;
+    SystemUI.stopChat?.();
+}
+
+let roomUnsub = null;
 function listenToRoom() {
+    if (roomUnsub) { try { roomUnsub(); } catch (e) {} roomUnsub = null; }
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), (snapshot) => {
+    const roomId = currentRoomId;
+    roomUnsub = window.dbOnValue(window.dbRef(window.db, `scrabble_rooms/${roomId}`), (snapshot) => {
         const data = snapshot.val();
-        if (!data) return;
-        if (data.seats) { 
-            seats = data.seats; 
-            SystemUI.v2Lobby.renderSeats(seats); 
+        if (!data) {
+            // Room was deleted — host left or kicked us. Bounce back to start.
+            if (currentRoomId === roomId) handleRoomClosed();
+            return;
+        }
+        if (data.seats) {
+            seats = data.seats;
+            SystemUI.v2Lobby.renderSeats(seats);
             if (players && players.length > 0) {
                 seats.forEach((seat, idx) => {
                     if (players[idx]) {
@@ -1226,6 +1394,11 @@ function listenToRoom() {
                     }
                 });
                 updateTurnDisplay();
+                // If a human seat just flipped to AI (player disconnected) and it's
+                // currently their turn, the host needs to take over so the game doesn't stall.
+                if (isHost && gamePhase === "playing" && players[currentTurn]?.isAI) {
+                    scheduleAiTurn(1500);
+                }
             }
         }
         if (data.status === "playing" && !onlineGameStarted) {
@@ -1245,6 +1418,32 @@ function listenToRoom() {
         }
         if (onlineGameStarted && data.gameState) syncOnlineState(data.gameState);
     });
+}
+
+function handleRoomClosed() {
+    const wasPlaying = gamePhase === "playing";
+    if (roomUnsub) { try { roomUnsub(); } catch (e) {} roomUnsub = null; }
+    currentRoomId = null;
+    seats = [];
+    chatStarted = false;
+    SystemUI.stopChat?.();
+    if (wasPlaying) {
+        // Host disconnected mid-game — show a soft notice and bail to start screen.
+        gamePhase = "idle";
+        document.getElementById("game-over-emoji").textContent = "🔌";
+        document.getElementById("game-over-title").textContent = "ROOM CLOSED";
+        document.getElementById("game-over-msg").textContent = "Host left the game.";
+        document.getElementById("game-over-modal").classList.remove("hidden");
+    }
+    gameMode = "ai";
+    localStorage.setItem("scrabble_mode", gameMode);
+    const modeEl = document.getElementById("sys-scrabble-mode");
+    if (modeEl) modeEl.value = "ai";
+    document.querySelectorAll("#opponent-row .opp-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.mode === "ai");
+    });
+    document.getElementById("start-screen").classList.remove("hidden");
+    applyModeUI();
 }
 
 let lastPushTime = 0;
@@ -1295,7 +1494,7 @@ function syncOnlineState(stateJson) {
         renderBoard(); renderRack(); updateScoreDisplay(); updateTurnDisplay();
 
         if (isHost && players[currentTurn].isAI && gamePhase === "playing") {
-            setTimeout(aiPlayTurn, 2000);
+            scheduleAiTurn(2000);
         }
 
         if (gamePhase === "playing" && checkGameOver()) return;
@@ -1321,17 +1520,20 @@ document.getElementById("btn-exchange-cancel").addEventListener("click", cancelE
 
 document.getElementById("start-btn").addEventListener("click", () => {
     new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
-    const modeBtn = document.querySelector(".opp-btn.active");
-    const mode = modeBtn ? modeBtn.dataset.mode : "ai";
-    if (mode === "online") return;
-    
-    const diffBtn = document.querySelector(".diff-btn.active");
-    const diff = diffBtn ? diffBtn.dataset.diff : "medium";
-    
-    initGame(mode, diff, lobbyPlayerCount);
+    if (gameMode === "online") return;
+    initGame(gameMode, aiDifficulty, lobbyPlayerCount);
 });
 
 window.addEventListener("resize", () => { if (gamePhase === "playing") buildBoard(); });
 window.addEventListener("beforeunload", () => {
-    if (isHost && currentRoomId && gameMode === "online") window.dbSet(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), null);
+    if (!currentRoomId || gameMode !== "online") return;
+    if (isHost) {
+        // Host leaves → kill the room so any joiners get bounced.
+        window.dbSet(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), null);
+    } else if (myId > 1 && seats[myId - 1]) {
+        // Joiner leaves → free their seat so the host can keep the game going (AI takes over).
+        const updated = [...seats];
+        updated[myId - 1] = { type: "ai", name: "AI " + (myId - 1) };
+        window.dbUpdate(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), { seats: updated });
+    }
 });

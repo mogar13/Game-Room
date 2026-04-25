@@ -1,28 +1,26 @@
 // =============================================
 // 8-BALL POOL — pool_app.js
-// The Game Shack | Casino OS (V2 Engine)
+// The Game Shack | Casino OS
 // =============================================
 'use strict';
 
-// ── CONSTANTS ────────────────────────────────
+// ── CONSTANTS ─────────────────────────────────
 const BALL_R     = PoolPhysics.BALL_R;
-const MAX_PULL   = 110;    // px — max drag distance
-const MAX_POWER  = 45;     // px/frame at full pull
-const MIN_POWER  = 2;
+const MAX_PULL   = 130;     // px — drag distance for full power
+const MAX_POWER  = 38;      // px/frame initial cue speed at full pull
+const MIN_POWER  = 2.5;
+const RAIL_W     = 30;
+const POCKET_R_CORNER = 19;
+const POCKET_R_SIDE   = 16;
 
-const RAIL_W     = 38;
-const POCKET_R_CORNER = 21;
-const POCKET_R_SIDE   = 18;
-
-// Ball visual data  id: [fill, stripe/solid]
 const BALL_CFG = {
-    0:  { fill: '#f0f0f0', type: 'cue'    },
+    0:  { fill: '#f6f6f6', type: 'cue'    },
     1:  { fill: '#f5c518', type: 'solid'  },
     2:  { fill: '#1a5fb4', type: 'solid'  },
     3:  { fill: '#e74c3c', type: 'solid'  },
     4:  { fill: '#7c3fbd', type: 'solid'  },
     5:  { fill: '#e67e22', type: 'solid'  },
-    6:  { fill: '#2ecc71', type: 'solid'  },
+    6:  { fill: '#1a8a3a', type: 'solid'  },
     7:  { fill: '#8b1a1a', type: 'solid'  },
     8:  { fill: '#1a1a1a', type: 'eight'  },
     9:  { fill: '#f5c518', type: 'stripe' },
@@ -30,7 +28,7 @@ const BALL_CFG = {
     11: { fill: '#e74c3c', type: 'stripe' },
     12: { fill: '#7c3fbd', type: 'stripe' },
     13: { fill: '#e67e22', type: 'stripe' },
-    14: { fill: '#2ecc71', type: 'stripe' },
+    14: { fill: '#1a8a3a', type: 'stripe' },
     15: { fill: '#8b1a1a', type: 'stripe' }
 };
 
@@ -44,41 +42,51 @@ let roomListener   = null;
 let chatStarted    = false;
 let lastActionTs   = 0;
 let lastSyncTime   = 0;
+let lastRematchTs  = 0;
+let pendingGameState = null;
 let sessionScore   = [0, 0];
-let playerNames    = ['', ''];  // [host name, joiner name] — slot 0=host, 1=joiner
+let playerNames    = ['', ''];
 
-// table / canvas geometry (set in resize)
 let canvas, ctx, spinCanvas, spinCtx;
 let W = 0, H = 0;
 let table = { x: 0, y: 0, w: 0, h: 0 };
 let pockets = [];
+let headStringX = 0;   // x-coord of the kitchen line
 
-// balls array — index = id (0 = cue ball)
 let balls = [];
-let gamePhase   = 'idle';   // idle | break | playing | ball_in_hand | ai_thinking | ended
-let activeTurn  = 0;        // 0 or 1
-let assignment  = [null, null]; // null | 'solids' | 'stripes'
-let firstContact = null;    // ball id of first ball cue touched this shot
+let gamePhase   = 'idle';   // idle | break | playing | shooting | ball_in_hand | ai_thinking | ended | awaiting_host
+let activeTurn  = 0;
+let assignment  = [null, null];
+let firstContact = null;
 let foulThisTurn = false;
+let railHitThisTurn = false;     // for break: requires 4 balls hit rail OR a pot
 let pottedThisTurn = [];
 let cueBallPottedThisTurn = false;
-let ballInHandPos = null;   // { x, y } during ball-in-hand placement
+let kitchenRestricted = false;   // true = ball-in-hand only behind head string (post-break scratch)
+let isBreakShot = true;          // true on the very first shot of a new rack
+let ballInHandPos = null;
 let lastTime = 0;
-let spinApplied = false;    // has spin effect been applied this shot
+let spinApplied = false;
+let lastFoulMsg = '';
+let lastFoulMsgUntil = 0;
 
-// ── AIMING STATE ─────────────────────────────
+// ── AIM / SHOT STATE ──────────────────────────
 let aimAngle   = 0;
 let isDragging = false;
 let dragStart  = null;
+let dragLast   = null;
 let shotPower  = 0;
 let spinTop    = 0;
 let spinSide   = 0;
 let spinDragging = false;
 
-// ── SYSTEM UI ────────────────────────────────
+// Track AI cue motion for drawing during the "thinking" phase
+let aiAimPullback = 0;
+
+// ── SYSTEM UI ─────────────────────────────────
 SystemUI.init({
     gameName: '8-BALL POOL',
-    rules: 'Drag the cue back to set power. Spin control sets ball contact point. Pot all your balls (solids 1–7 or stripes 9–15) then legally pot the 8-ball to win. Fouls give ball-in-hand to your opponent.',
+    rules: 'Drag the cue back to set power, release to shoot. Use the spin pad to add english (top/back/side spin). Pot all your balls (solids 1–7 or stripes 9–15) then legally pot the 8-ball to win. Scratching, hitting the wrong ball, or potting the 8 early gives ball-in-hand to your opponent.',
     hudDropdowns: [
         { id: 'pool-mode', options: [{ value: 'ai', label: '🤖 vs AI' }, { value: 'online', label: '🌐 Online' }] },
         { id: 'pool-diff', label: 'AI', options: [{ value: 'easy', label: 'Easy' }, { value: 'normal', label: 'Normal' }, { value: 'hard', label: 'Hard' }] }
@@ -89,7 +97,7 @@ const checkDB = setInterval(() => {
     if (window.poolFirebaseReady || window.db) { clearInterval(checkDB); initPool(); }
 }, 50);
 
-// ── INIT ─────────────────────────────────────
+// ── INIT ──────────────────────────────────────
 function initPool() {
     canvas    = document.getElementById('pool-canvas');
     ctx       = canvas.getContext('2d');
@@ -99,7 +107,6 @@ function initPool() {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    // Mode dropdown
     const modeEl = document.getElementById('pool-mode');
     if (modeEl) {
         modeEl.value = gameMode;
@@ -115,11 +122,11 @@ function initPool() {
                 SystemUI.stopChat(); chatStarted = false;
                 myId = 1; isHost = true;
                 resetGame();
+                setPhase('break');
             }
         });
     }
 
-    // Difficulty dropdown
     const diffEl = document.getElementById('pool-diff');
     if (diffEl) {
         diffEl.value = aiDifficulty;
@@ -129,34 +136,43 @@ function initPool() {
         });
     }
 
-    // Canvas mouse/touch
     canvas.addEventListener('mousedown',  onCanvasDown);
     canvas.addEventListener('mousemove',  onCanvasMove);
     canvas.addEventListener('mouseup',    onCanvasUp);
-    canvas.addEventListener('mouseleave', () => { isDragging = false; });
+    canvas.addEventListener('mouseleave', () => { isDragging = false; shotPower = 0; updatePowerBar(0); });
     canvas.addEventListener('touchstart', e => { e.preventDefault(); onCanvasDown(e); }, { passive: false });
     canvas.addEventListener('touchmove',  e => { e.preventDefault(); onCanvasMove(e); }, { passive: false });
-    canvas.addEventListener('touchend',   e => { e.preventDefault(); onTouchEnd(e); }, { passive: false });
+    canvas.addEventListener('touchend',   e => { e.preventDefault(); onTouchEnd(e); },   { passive: false });
 
-    // Spin canvas
     spinCanvas.addEventListener('mousedown',  onSpinDown);
     spinCanvas.addEventListener('mousemove',  onSpinMove);
     spinCanvas.addEventListener('mouseup',    () => { spinDragging = false; });
+    spinCanvas.addEventListener('mouseleave', () => { spinDragging = false; });
     spinCanvas.addEventListener('touchstart', e => { e.preventDefault(); onSpinDown(e); }, { passive: false });
     spinCanvas.addEventListener('touchmove',  e => { e.preventDefault(); onSpinMove(e); }, { passive: false });
     spinCanvas.addEventListener('touchend',   () => { spinDragging = false; });
 
-    // Play again
+    // Double-click spin = reset to center
+    spinCanvas.addEventListener('dblclick', () => {
+        spinTop = 0; spinSide = 0; drawSpinControl();
+    });
+
     document.getElementById('play-again-btn').addEventListener('click', () => {
         document.getElementById('result-modal').classList.add('hidden');
-        if (gameMode === 'online' && isHost && currentRoomId) {
-            window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
-                status: 'playing', ts: Date.now()
-            });
+        if (gameMode === 'online') {
+            if (isHost && currentRoomId) {
+                startNewRack();
+            } else {
+                // Joiner: ask host for a rematch
+                window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
+                    rematchRequest: Date.now()
+                });
+                setTurnMsg('Waiting for opponent…');
+            }
+        } else {
+            resetGame();
+            setPhase('break');
         }
-        resetGame();
-        if (gameMode !== 'online') setPhase('break');
-        else if (isHost) setTimeout(() => setPhase('break'), 300);
     });
 
     resetGame();
@@ -164,100 +180,84 @@ function initPool() {
     requestAnimationFrame(gameLoop);
 }
 
-// ── RESIZE ───────────────────────────────────
+// ── RESIZE / LAYOUT ───────────────────────────
 function resizeCanvas() {
     const outer = document.getElementById('game-outer');
+    const action = document.getElementById('action-zone');
     W = outer.clientWidth;
-    H = outer.clientHeight - document.getElementById('action-zone').offsetHeight;
+    H = outer.clientHeight - (action ? action.offsetHeight : 0);
     canvas.width  = W;
     canvas.height = H;
 
-    // Maintain ~2.1:1 table aspect ratio
-    const maxW = W  - 20;
-    const maxH = H  - 16;
+    // Fit a 2:1 table inside the available area
+    const maxW = W - 16;
+    const maxH = H - 12;
     let tw = maxW - RAIL_W * 2;
-    let th = tw / 2.1;
-    if (th > maxH - RAIL_W * 2) { th = maxH - RAIL_W * 2; tw = th * 2.1; }
+    let th = tw / 2;
+    if (th > maxH - RAIL_W * 2) { th = maxH - RAIL_W * 2; tw = th * 2; }
     tw = Math.floor(tw); th = Math.floor(th);
     const tx = Math.floor((W - tw - RAIL_W * 2) / 2) + RAIL_W;
     const ty = Math.floor((H - th - RAIL_W * 2) / 2) + RAIL_W;
 
     table = { x: tx, y: ty, w: tw, h: th };
+    headStringX = tx + tw * 0.25;
 
-    // Corner pockets inset 15px from the geometric corner so balls
-    // rolling along rails don't false-pocket near the corners
-    const CI = 15;
+    // Pockets — corners use slightly inset capture point so a ball must enter the throat
+    const CI = 8;
     pockets = [
-        { x: tx + CI,        y: ty + CI,        r: POCKET_R_CORNER },
-        { x: tx + tw - CI,   y: ty + CI,        r: POCKET_R_CORNER },
-        { x: tx + CI,        y: ty + th - CI,   r: POCKET_R_CORNER },
-        { x: tx + tw - CI,   y: ty + th - CI,   r: POCKET_R_CORNER },
-        { x: tx + tw/2,      y: ty,             r: POCKET_R_SIDE   },
-        { x: tx + tw/2,      y: ty + th,        r: POCKET_R_SIDE   }
+        { x: tx + CI,        y: ty + CI,        r: POCKET_R_CORNER, kind: 'TL' },
+        { x: tx + tw - CI,   y: ty + CI,        r: POCKET_R_CORNER, kind: 'TR' },
+        { x: tx + CI,        y: ty + th - CI,   r: POCKET_R_CORNER, kind: 'BL' },
+        { x: tx + tw - CI,   y: ty + th - CI,   r: POCKET_R_CORNER, kind: 'BR' },
+        { x: tx + tw / 2,    y: ty,             r: POCKET_R_SIDE,   kind: 'TM' },
+        { x: tx + tw / 2,    y: ty + th,        r: POCKET_R_SIDE,   kind: 'BM' }
     ];
 
-    // Reposition balls proportionally if already placed
-    // (balls are repositioned on resetGame, so just rebuild rack)
-    if (gamePhase === 'idle' || gamePhase === 'break') {
-        buildRack();
-    }
+    if (gamePhase === 'idle' || gamePhase === 'break') buildRack();
 }
 
-// ── COLOR HELPER ─────────────────────────────
-function adjustColorLightness(hex, percent) {
-    let num = parseInt(hex.replace('#', ''), 16);
-    let r = (num >> 16) + Math.round(2.55 * percent);
-    let g = ((num >> 8) & 0x00FF) + Math.round(2.55 * percent);
-    let b = (num & 0x0000FF) + Math.round(2.55 * percent);
-    r = Math.min(255, Math.max(0, r));
-    g = Math.min(255, Math.max(0, g));
-    b = Math.min(255, Math.max(0, b));
-    return '#' + (g | (b << 8) | (r << 16)).toString(16).padStart(6, '0');
-}
-
-// ── BALL SETUP ───────────────────────────────
+// ── BALL SETUP ────────────────────────────────
 function buildRack() {
     balls = [];
     for (let i = 0; i <= 15; i++) balls.push(PoolPhysics.makeBall(i, 0, 0));
 
-    // Cue ball — left quarter
-    const cueBall = balls[0];
-    cueBall.x = table.x + table.w * 0.24;
-    cueBall.y = table.y + table.h / 2;
+    // Cue ball on the head spot
+    balls[0].x = table.x + table.w * 0.20;
+    balls[0].y = table.y + table.h / 2;
 
-    // Rack apex — right 3/4 mark
-    const rx = table.x + table.w * 0.74;
+    // Standard 8-ball rack: 8 in center (row 2 col 1), corners must be one solid + one stripe.
+    // Tightly-packed triangle apex on the foot spot (right ¾).
+    const rx = table.x + table.w * 0.72;
     const ry = table.y + table.h / 2;
-    const sp = BALL_R * 2 + 0.5;
+    const sp = BALL_R * 2 + 0.4;
 
-    // Standard 8-ball rack layout (id order)
-    // Row 0: 1
-    // Row 1: 2,  3
-    // Row 2: 4,  8,  5
-    // Row 3: 6,  9,  10, 7
-    // Row 4: 11, 12, 13, 14, 15
-    // with 8 at center (row2, pos1)
-    const rackIds = [1, 9, 2, 3, 8, 10, 4, 14, 7, 11, 12, 6, 15, 13, 5];
+    const rackIds = [
+        1,                  // apex
+        9,  2,              // row 2
+        3,  8, 10,          // row 3 (8 in center)
+        4, 14,  7, 11,      // row 4
+        12,  6, 15, 13,  5  // row 5 (back row)
+    ];
     let ri = 0;
     for (let row = 0; row < 5; row++) {
         for (let col = 0; col <= row; col++) {
-            const bx = rx + row * sp;
-            const by = ry + (col - row / 2) * sp;
-            balls[rackIds[ri]].x = bx;
-            balls[rackIds[ri]].y = by;
+            balls[rackIds[ri]].x = rx + row * sp * 0.866;
+            balls[rackIds[ri]].y = ry + (col - row / 2) * sp;
             ri++;
         }
     }
 }
 
 function resetGame() {
-    gamePhase   = 'idle';
     activeTurn  = 0;
     assignment  = [null, null];
     firstContact = null;
     foulThisTurn = false;
+    railHitThisTurn = false;
     pottedThisTurn = [];
     cueBallPottedThisTurn = false;
+    kitchenRestricted = false;
+    isBreakShot = true;
     ballInHandPos = null;
     spinApplied = false;
     isDragging = false;
@@ -265,7 +265,6 @@ function resetGame() {
     spinTop    = 0;
     spinSide   = 0;
     lastTime   = 0;
-    spinApplied = false;
 
     buildRack();
     updateUI();
@@ -273,18 +272,33 @@ function resetGame() {
     updatePowerBar(0);
 }
 
-// ── PHASE MANAGEMENT ─────────────────────────
+// ── PHASE MANAGEMENT ──────────────────────────
 function setPhase(phase) {
     gamePhase = phase;
     updateUI();
-    if (phase === 'break') setTurnMsg(activeTurn === myId - 1 ? '🎱 BREAK SHOT — Click & drag to shoot' : `${balls[0] ? getPlayerName(activeTurn) : '...'} is breaking...`);
-    if (phase === 'playing') setTurnMsg(isMyTurn() ? '🏹 YOUR TURN' : `${getPlayerName(activeTurn)}'s turn...`);
-    if (phase === 'ball_in_hand') setTurnMsg(isMyTurn() ? '✋ BALL IN HAND — Click to place cue ball' : `${getPlayerName(activeTurn)}'s ball in hand...`);
-    if (phase === 'ai_thinking') setTurnMsg('🤖 AI is thinking...');
+    refreshTurnMsg();
+}
+
+function refreshTurnMsg() {
+    if (lastFoulMsgUntil > performance.now()) return;     // hold foul message briefly
+    if (gamePhase === 'break') {
+        setTurnMsg(isMyTurn() ? '🎱 BREAK SHOT — drag cue to shoot' : `${getPlayerName(activeTurn)} is breaking…`);
+    } else if (gamePhase === 'playing') {
+        setTurnMsg(isMyTurn() ? '🏹 YOUR TURN' : `${getPlayerName(activeTurn)}'s turn…`);
+    } else if (gamePhase === 'ball_in_hand') {
+        const where = kitchenRestricted ? ' (behind head string)' : '';
+        setTurnMsg(isMyTurn() ? `✋ BALL IN HAND${where} — click to place` : `${getPlayerName(activeTurn)}'s ball in hand…`);
+    } else if (gamePhase === 'ai_thinking') {
+        setTurnMsg('🤖 AI is thinking…');
+    } else if (gamePhase === 'shooting') {
+        setTurnMsg('');
+    } else if (gamePhase === 'awaiting_host') {
+        setTurnMsg('Syncing…');
+    }
 }
 
 function isMyTurn() {
-    if (gameMode === 'ai')     return activeTurn === 0;
+    if (gameMode === 'ai') return activeTurn === 0;
     return activeTurn === myId - 1;
 }
 
@@ -296,13 +310,13 @@ function canAim() {
 }
 
 function getPlayerName(idx) {
-    if (idx === 0) return document.getElementById('pname-0').innerText || 'P1';
-    return document.getElementById('pname-1').innerText || 'P2';
+    if (gameMode === 'ai') return idx === 0 ? (SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'You') : '🤖 AI';
+    return playerNames[idx] || (idx === 0 ? 'P1' : 'P2');
 }
 
 function getCueBall() { return balls[0]; }
 
-// ── CANVAS INTERACTION ───────────────────────
+// ── INPUT ─────────────────────────────────────
 function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
     const sx   = canvas.width  / rect.width;
@@ -311,41 +325,15 @@ function getCanvasPos(e) {
     return { x: (src.clientX - rect.left) * sx, y: (src.clientY - rect.top) * sy };
 }
 
-function onTouchEnd(e) {
-    // touchend has empty e.touches — must use e.changedTouches
-    if (e.changedTouches && e.changedTouches.length > 0) {
-        const rect = canvas.getBoundingClientRect();
-        const sx   = canvas.width  / rect.width;
-        const sy   = canvas.height / rect.height;
-        const t    = e.changedTouches[0];
-        const fakeE = { clientX: t.clientX, clientY: t.clientY };
-        const rect2 = canvas.getBoundingClientRect();
-        const pos = { x: (t.clientX - rect2.left) * sx, y: (t.clientY - rect2.top) * sy };
-        if (!isDragging) return;
-        isDragging = false;
-        const power = shotPower;
-        shotPower = 0;
-        updatePowerBar(0);
-        if (!canAim() || power < MIN_POWER) return;
-        if (gameMode === 'online') {
-            executeShot(aimAngle, power, spinTop, spinSide);
-            sendShot(aimAngle, power, spinTop, spinSide);
-        } else {
-            executeShot(aimAngle, power, spinTop, spinSide);
-        }
-    }
-}
-
 function onCanvasDown(e) {
     const pos = getCanvasPos(e);
     const cb  = getCueBall();
 
-    // Ball-in-hand placement
     if (gamePhase === 'ball_in_hand' && isMyTurn()) {
         if (isValidCueBallPos(pos.x, pos.y)) {
             cb.x = pos.x; cb.y = pos.y;
-            cb.pocketed = false;
-            cb.scale = 1;
+            cb.pocketed = false; cb.scale = 1;
+            kitchenRestricted = false;
             setPhase('playing');
             if (gameMode === 'online') sendBallInHand(pos.x, pos.y);
         }
@@ -354,10 +342,12 @@ function onCanvasDown(e) {
 
     if (!canAim()) return;
 
-    isDragging  = true;
-    dragStart   = pos;
-    aimAngle    = Math.atan2(pos.y - cb.y, pos.x - cb.x);
-    shotPower   = 0;
+    // Aim toward press point
+    aimAngle   = Math.atan2(pos.y - cb.y, pos.x - cb.x);
+    isDragging = true;
+    dragStart  = pos;
+    dragLast   = pos;
+    shotPower  = 0;
     updatePowerBar(0);
 }
 
@@ -371,17 +361,18 @@ function onCanvasMove(e) {
     }
 
     if (cb && (gamePhase === 'playing' || gamePhase === 'break') && !isDragging && isMyTurn()) {
-        // Hover: update aim angle only on my turn
+        // Hover aim
         aimAngle = Math.atan2(pos.y - cb.y, pos.x - cb.x);
         return;
     }
 
     if (!isDragging) return;
 
-    // Calculate pullback power
+    dragLast = pos;
+    // Power = drag projected onto the OPPOSITE of the aim direction.
+    // Pulling back charges; pushing forward (past the cue ball) does nothing.
     const dx = pos.x - dragStart.x;
     const dy = pos.y - dragStart.y;
-    // Project onto the PULL direction (opposite of aim)
     const pullDirX = -Math.cos(aimAngle);
     const pullDirY = -Math.sin(aimAngle);
     const pull = Math.max(0, dx * pullDirX + dy * pullDirY);
@@ -389,7 +380,7 @@ function onCanvasMove(e) {
     updatePowerBar(shotPower / MAX_POWER);
 }
 
-function onCanvasUp(e) {
+function onCanvasUp() {
     if (!isDragging) return;
     isDragging = false;
     const power = shotPower;
@@ -399,8 +390,6 @@ function onCanvasUp(e) {
     if (!canAim() || power < MIN_POWER) return;
 
     if (gameMode === 'online') {
-        // Execute locally immediately for instant response,
-        // then broadcast so the other player can simulate the same shot
         executeShot(aimAngle, power, spinTop, spinSide);
         sendShot(aimAngle, power, spinTop, spinSide);
     } else {
@@ -408,32 +397,37 @@ function onCanvasUp(e) {
     }
 }
 
+function onTouchEnd(e) {
+    if (!isDragging) { shotPower = 0; updatePowerBar(0); return; }
+    onCanvasUp();
+}
+
 function isValidCueBallPos(x, y) {
     if (x - BALL_R < table.x || x + BALL_R > table.x + table.w) return false;
     if (y - BALL_R < table.y || y + BALL_R > table.y + table.h) return false;
-    // Must not overlap any ball
+    if (kitchenRestricted && x > headStringX) return false;
     for (const b of balls) {
         if (b.id === 0 || b.pocketed) continue;
-        if (Math.hypot(x - b.x, y - b.y) < BALL_R * 2 + 2) return false;
+        if (Math.hypot(x - b.x, y - b.y) < BALL_R * 2 + 1.5) return false;
+    }
+    // Don't drop inside a pocket throat
+    for (const p of pockets) {
+        if (Math.hypot(x - p.x, y - p.y) < p.r + BALL_R) return false;
     }
     return true;
 }
 
-// ── SPIN CONTROL ─────────────────────────────
-function onSpinDown(e) {
-    spinDragging = true;
-    setSpinFromEvent(e);
-}
-function onSpinMove(e) {
-    if (spinDragging) setSpinFromEvent(e);
-}
+// ── SPIN CONTROL ──────────────────────────────
+function onSpinDown(e) { spinDragging = true; setSpinFromEvent(e); }
+function onSpinMove(e) { if (spinDragging) setSpinFromEvent(e); }
+
 function setSpinFromEvent(e) {
     const rect = spinCanvas.getBoundingClientRect();
     const src  = e.touches ? e.touches[0] : e;
     const cx   = spinCanvas.width  / 2;
     const cy   = spinCanvas.height / 2;
     const r    = cx - 4;
-    let dx = (src.clientX - rect.left) * (spinCanvas.width / rect.width) - cx;
+    let dx = (src.clientX - rect.left) * (spinCanvas.width / rect.width)  - cx;
     let dy = (src.clientY - rect.top)  * (spinCanvas.height / rect.height) - cy;
     const dist = Math.hypot(dx, dy);
     if (dist > r) { dx = dx / dist * r; dy = dy / dist * r; }
@@ -452,57 +446,49 @@ function drawSpinControl() {
 
     c.clearRect(0, 0, cw, ch);
 
-    // Ball face
-    const g = c.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r);
-    g.addColorStop(0, '#e8e8e8');
-    g.addColorStop(0.6, '#c8c8c8');
-    g.addColorStop(1, '#888');
-    c.beginPath();
-    c.arc(cx, cy, r, 0, Math.PI * 2);
-    c.fillStyle = g;
-    c.fill();
+    const g = c.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.55, '#d2d2d2');
+    g.addColorStop(1, '#666');
+    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2);
+    c.fillStyle = g; c.fill();
 
-    // Guide cross
-    c.strokeStyle = 'rgba(0,0,0,0.2)';
-    c.lineWidth = 1;
-    c.setLineDash([2, 3]);
+    c.strokeStyle = 'rgba(0,0,0,0.18)';
+    c.lineWidth = 1; c.setLineDash([2, 3]);
     c.beginPath();
     c.moveTo(cx, cy - r + 2); c.lineTo(cx, cy + r - 2);
     c.moveTo(cx - r + 2, cy); c.lineTo(cx + r - 2, cy);
-    c.stroke();
-    c.setLineDash([]);
+    c.stroke(); c.setLineDash([]);
 
-    // Spin dot
     const dx = spinSide * (r - 5);
     const dy = -spinTop * (r - 5);
-    const dotX = cx + dx;
-    const dotY = cy + dy;
-
-    c.beginPath();
-    c.arc(dotX, dotY, 5, 0, Math.PI * 2);
-    c.fillStyle = (spinTop !== 0 || spinSide !== 0) ? '#e74c3c' : 'rgba(0,0,0,0.4)';
+    c.beginPath(); c.arc(cx + dx, cy + dy, 5, 0, Math.PI * 2);
+    c.fillStyle = (spinTop !== 0 || spinSide !== 0) ? '#e74c3c' : 'rgba(0,0,0,0.45)';
     c.fill();
-    c.strokeStyle = '#fff';
-    c.lineWidth = 1.5;
-    c.stroke();
+    c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.stroke();
 }
 
-// ── SHOT EXECUTION ───────────────────────────
+// ── SHOT EXECUTION ────────────────────────────
 function executeShot(angle, power, sTop, sSide) {
-    if (gamePhase !== 'playing' && gamePhase !== 'break') return;
+    if (gamePhase !== 'playing' && gamePhase !== 'break' && gamePhase !== 'ai_thinking') return;
     const cb = getCueBall();
     if (cb.pocketed) return;
 
     firstContact = null;
     foulThisTurn = false;
+    railHitThisTurn = false;
     pottedThisTurn = [];
     cueBallPottedThisTurn = false;
     spinApplied = false;
 
+    aimAngle = angle;
     PoolPhysics.fireCueBall(cb, angle, power, sTop, sSide);
     gamePhase = 'shooting';
+    setTurnMsg('');
 
-    // Reset spin after firing
+    if (window.SystemAudio?.play) window.SystemAudio.play('click');
+
+    // Reset spin pad after firing
     spinTop = 0; spinSide = 0;
     drawSpinControl();
 }
@@ -511,41 +497,42 @@ function executeShot(angle, power, sTop, sSide) {
 function gameLoop(ts) {
     const dt = lastTime ? Math.min((ts - lastTime) / 1000, 0.05) : 1 / 60;
     lastTime = ts;
-
     update(dt);
     render();
     requestAnimationFrame(gameLoop);
 }
 
 function update(dt) {
-    // Shrink pocketed balls for the falling animation
+    // Pocket-fall scale animation
     for (const b of balls) {
         if (b.pocketed && b.scale > 0) {
-            b.scale -= dt * 4; // shrinks to 0 in 0.25 seconds
+            b.scale -= dt * 4;
             if (b.scale < 0) b.scale = 0;
         }
     }
 
     if (gamePhase !== 'shooting') return;
 
+    // Track rail hits (for break legality + safety detection)
+    const speeds = balls.map(b => b.pocketed ? 0 : Math.hypot(b.vx, b.vy));
     const newSunk = PoolPhysics.step(balls, table, pockets);
 
-    // Detect first contact: was cue ball the first collision trigger?
-    // We check by seeing if the cue ball is moving and any non-cue ball has velocity
+    // Detect first contact: a non-cue ball acquired velocity since last frame
     if (firstContact === null) {
         const cb = getCueBall();
         if (!cb.pocketed) {
             for (const b of balls) {
                 if (b.id === 0 || b.pocketed) continue;
-                if (Math.hypot(b.vx, b.vy) > 2) {
+                if (Math.hypot(b.vx, b.vy) > 0.6 && speeds[b.id] < 0.6) {
                     firstContact = b.id;
+                    if (window.SystemAudio?.play) window.SystemAudio.play('click');
                     break;
                 }
             }
         }
     }
 
-    // Apply spin effect once at first contact
+    // Apply spin push at first contact
     if (firstContact !== null && !spinApplied) {
         spinApplied = true;
         const cb = getCueBall();
@@ -553,116 +540,153 @@ function update(dt) {
         if (ob) PoolPhysics.applySpinEffect(cb, ob);
     }
 
-    // Track pocketed balls this shot
+    // Detect any ball touching a rail (rough — used only for break legality)
+    if (!railHitThisTurn) {
+        for (const b of balls) {
+            if (b.pocketed) continue;
+            if (b.x - b.r <= table.x + 0.5 || b.x + b.r >= table.x + table.w - 0.5 ||
+                b.y - b.r <= table.y + 0.5 || b.y + b.r >= table.y + table.h - 0.5) {
+                railHitThisTurn = true;
+                break;
+            }
+        }
+    }
+
+    // Track pots
     for (const id of newSunk) {
         if (id === 0) cueBallPottedThisTurn = true;
         else if (!pottedThisTurn.includes(id)) pottedThisTurn.push(id);
+        if (window.SystemAudio?.play) window.SystemAudio.play('chipTable');
     }
 
     if (PoolPhysics.isSettled(balls)) {
-        // Only host runs resolveTurn authoritatively.
-        // Joiner just simulates physics visually and waits for gameState.
-        if (gameMode !== 'online' || isHost) {
+        // The shooter (whoever's turn it currently is) owns the resolution.
+        // The other client just simulated for visuals and waits for the state push.
+        const iWasShooter = (gameMode !== 'online') || (activeTurn === myId - 1);
+        if (iWasShooter) {
             resolveTurn();
         } else {
-            // Joiner: physics settled — block aiming until host confirms result
             gamePhase = 'awaiting_host';
             updateUI();
+            if (pendingGameState) {
+                const ps = pendingGameState;
+                pendingGameState = null;
+                applyGameState(ps);
+            }
         }
     }
 }
 
-// ── TURN RESOLUTION ──────────────────────────
+// ── TURN RESOLUTION ───────────────────────────
 function resolveTurn() {
     const cb = getCueBall();
+    const wasBreak = isBreakShot;
+    isBreakShot = false;
 
-    // Determine fouls
     const myType    = assignment[activeTurn];
     const myBalls   = getBallsOfType(myType);
     const earlyPot  = pottedThisTurn.filter(id => id !== 8);
 
     let foul = false;
     let foulReason = '';
+    let scratched = cueBallPottedThisTurn;
 
     // Scratch
-    if (cueBallPottedThisTurn) {
-        foul = true; foulReason = '⚠️ Scratch!';
-        cb.pocketed = false;
-        cb.scale = 1;
-        cb.x = table.x + table.w * 0.24;
-        cb.y = table.y + table.h / 2;
+    if (scratched) {
+        foul = true; foulReason = '⚠️ Scratch — ball in hand';
+        cb.pocketed = false; cb.scale = 1;
+        // Park cue ball off-table until opponent places it, so it doesn't render on a pocket
+        cb.x = -100; cb.y = -100;
+        cb.vx = 0;  cb.vy = 0;
     }
 
-    // No first contact or hit wrong ball first
+    // No first contact at all
     if (!foul && firstContact === null) {
-        foul = true; foulReason = '⚠️ Foul: missed all balls!';
+        foul = true; foulReason = '⚠️ Foul: no ball contacted';
     }
 
+    // Hit wrong ball first
     if (!foul && myType !== null && firstContact !== null) {
         const hitType = BALL_CFG[firstContact]?.type;
         const mustHit = myType === 'solids' ? 'solid' : 'stripe';
-        // All solids/stripes are pocketed → must hit 8-ball
         if (myBalls.length === 0) {
-            if (hitType !== 'eight') { foul = true; foulReason = '⚠️ Foul: hit wrong ball!'; }
+            if (hitType !== 'eight') { foul = true; foulReason = '⚠️ Foul: must hit 8-ball'; }
         } else if (hitType !== mustHit) {
-            foul = true; foulReason = '⚠️ Foul: hit wrong ball!';
+            foul = true; foulReason = `⚠️ Foul: hit wrong ball first`;
         }
     }
 
-    // 8-ball potted — check if legal
+    // Break-specific: legal break requires a ball to hit a rail OR a ball pocketed
+    let illegalBreak = false;
+    if (wasBreak && pottedThisTurn.length === 0 && !railHitThisTurn) {
+        illegalBreak = true;
+        foul = true;
+        foulReason = '⚠️ Illegal break — opponent ball in hand';
+    }
+
+    // 8-ball pot — final-game test
     if (pottedThisTurn.includes(8)) {
+        // Determine if 8 was legal: shooter must have cleared their suit, no scratch, no foul
         const myB = getBallsOfType(assignment[activeTurn]);
-        if (myB.length > 0 || foul || cueBallPottedThisTurn) {
-            // Illegal 8-ball pot → lose
-            endGame(1 - activeTurn, 'Illegal 8-ball pot!');
+        const cleared = myB.length === 0;
+        if (!cleared || foul || scratched) {
+            endGame(1 - activeTurn, '8-ball pocketed illegally!');
             return;
         } else {
-            endGame(activeTurn, 'All balls potted!');
+            endGame(activeTurn, 'Cleared the rack and sunk the 8-ball!');
             return;
         }
     }
 
-    // First pot: assign ball types
-    if (assignment[0] === null && earlyPot.length > 0) {
-        const potType = BALL_CFG[earlyPot[0]]?.type;
-        if (potType === 'solid' || potType === 'stripe') {
-            assignment[activeTurn] = potType === 'solid' ? 'solids' : 'stripes';
-            assignment[1 - activeTurn] = potType === 'solid' ? 'stripes' : 'solids';
+    // First-pot suit assignment (only on a clean, non-break legal pot — 8-ball first pot doesn't assign)
+    if (assignment[0] === null && earlyPot.length > 0 && !scratched && !illegalBreak) {
+        // If both stripes and solids potted on the break, leave open until next pot.
+        const types = earlyPot.map(id => BALL_CFG[id]?.type);
+        const hasSolid  = types.includes('solid');
+        const hasStripe = types.includes('stripe');
+        if (hasSolid && !hasStripe) {
+            assignment[activeTurn] = 'solids';
+            assignment[1 - activeTurn] = 'stripes';
+        } else if (hasStripe && !hasSolid) {
+            assignment[activeTurn] = 'stripes';
+            assignment[1 - activeTurn] = 'solids';
         }
+        // If both: table stays open (assignment remains null)
     }
 
     if (foul) {
-        showMsg(foulReason, 2.5);
+        showFoul(foulReason);
         activeTurn = 1 - activeTurn;
-        if (foul && !cueBallPottedThisTurn) {
-            // Ball in hand for opponent
-        }
-        if (foul) {
-            setPhase('ball_in_hand');
-        } else {
-            setPhase('playing');
-        }
+        kitchenRestricted = scratched && wasBreak;     // kitchen rule only on break scratch
+        setPhase('ball_in_hand');
     } else {
-        // Good pots keep the turn
-        const madePot = pottedThisTurn.length > 0;
-        if (!madePot) activeTurn = 1 - activeTurn;
+        // No foul → keep turn iff at least one of YOUR balls was pocketed (or table open + any solid/stripe)
+        const madeProgress = pottedThisTurn.some(id => {
+            if (id === 8) return false;
+            const t = BALL_CFG[id].type;
+            if (myType === 'solids') return t === 'solid';
+            if (myType === 'stripes') return t === 'stripe';
+            return t === 'solid' || t === 'stripe';   // open table
+        });
+        if (!madeProgress) activeTurn = 1 - activeTurn;
         setPhase('playing');
     }
 
     updateUI();
 
-    if (gameMode === 'online') {
-        if (isHost) {
-            pushGameState();
-        } else {
-            // Joiner ran resolveTurn locally for visual consistency but defers
-            // authoritative turn state to the host's next gameState push.
-            // Nothing else to do — gameState will arrive shortly and confirm.
-        }
-    }
+    // Shooter pushes the authoritative result to the opponent
+    if (gameMode === 'online') pushGameState();
+
     if (gameMode === 'ai' && activeTurn === 1 && gamePhase !== 'ended') {
-        setTimeout(doAITurn, 1000);
+        setTimeout(doAITurn, 700);
     }
+}
+
+function showFoul(text) {
+    setTurnMsg(text);
+    lastFoulMsg = text;
+    lastFoulMsgUntil = performance.now() + 1800;
+    setTimeout(refreshTurnMsg, 1850);
 }
 
 function getBallsOfType(type) {
@@ -683,18 +707,23 @@ function endGame(winnerIdx, reason) {
         else SystemStats.recordLoss('pool');
     }
 
-    if (gameMode === 'online' && isHost) pushGameState();
+    if (gameMode === 'online') pushGameState({ winnerIdx, endReason: reason });
 
-    setTimeout(() => {
-        document.getElementById('modal-title').innerText = isMyWin ? '🏆 YOU WIN!' : '💀 YOU LOSE!';
-        document.getElementById('modal-msg').innerText   = `${getPlayerName(winnerIdx)} wins! ${reason}`;
-        document.getElementById('modal-session').innerText = `Session: ${sessionScore[0]} – ${sessionScore[1]}`;
-        document.getElementById('result-modal').classList.remove('hidden');
-    }, 800);
+    setTimeout(() => showResultModal(isMyWin, winnerIdx, reason), 800);
 }
 
-function showMsg(text, dur) {
-    setTurnMsg(text);
+function showResultModal(isMyWin, winnerIdx, reason) {
+    document.getElementById('modal-title').innerText = isMyWin ? '🏆 YOU WIN!' : '💀 YOU LOSE!';
+    document.getElementById('modal-msg').innerText   = `${getPlayerName(winnerIdx)} wins! ${reason || ''}`;
+    document.getElementById('modal-session').innerText = `Session: ${sessionScore[0]} – ${sessionScore[1]}`;
+    document.getElementById('result-modal').classList.remove('hidden');
+}
+
+function startNewRack() {
+    document.getElementById('result-modal').classList.add('hidden');
+    resetGame();
+    setPhase('break');
+    if (gameMode === 'online' && isHost) pushGameState();
 }
 
 // ── RENDERING ─────────────────────────────────
@@ -702,6 +731,7 @@ function render() {
     ctx.clearRect(0, 0, W, H);
     drawTable();
     drawPockets();
+    drawHeadStringIfNeeded();
     drawAimGuide();
     drawBallInHandPreview();
     drawBalls();
@@ -715,108 +745,135 @@ function drawTable() {
     // Outer wood
     const woodGrad = ctx.createLinearGradient(tx - rw, ty - rw, tx - rw, ty + th + rw);
     woodGrad.addColorStop(0, '#3a1f0d');
-    woodGrad.addColorStop(0.5, '#6b320b');
-    woodGrad.addColorStop(1, '#3a1f0d');
+    woodGrad.addColorStop(0.5, '#6b3a18');
+    woodGrad.addColorStop(1, '#2c180a');
     ctx.fillStyle = woodGrad;
-    
-    // Drop shadow for the table
     ctx.shadowColor = 'rgba(0,0,0,0.6)';
-    ctx.shadowBlur = 20;
-    ctx.shadowOffsetY = 10;
-    roundRect(ctx, tx - rw, ty - rw, tw + rw * 2, th + rw * 2, 12);
+    ctx.shadowBlur = 22;
+    ctx.shadowOffsetY = 8;
+    roundRect(ctx, tx - rw, ty - rw, tw + rw * 2, th + rw * 2, 14);
     ctx.fill();
     ctx.shadowColor = 'transparent';
 
-    // Rail inner bevel
+    // Rail bevel
     ctx.fillStyle = '#4a210d';
-    roundRect(ctx, tx - rw + 4, ty - rw + 4, tw + rw * 2 - 8, th + rw * 2 - 8, 10);
+    roundRect(ctx, tx - rw + 4, ty - rw + 4, tw + rw * 2 - 8, th + rw * 2 - 8, 11);
     ctx.fill();
 
-    // Felt surface (richer vignette)
-    const feltGrad = ctx.createRadialGradient(tx + tw / 2, ty + th / 2, 10, tx + tw / 2, ty + th / 2, Math.max(tw, th) * 0.75);
-    feltGrad.addColorStop(0, '#228236');
-    feltGrad.addColorStop(0.8, '#124f1c');
-    feltGrad.addColorStop(1, '#082b0d');
+    // Diamond markers on rails
+    ctx.fillStyle = '#f4e7c2';
+    const diamondsTopBot = 7;
+    const diamondsLR     = 3;
+    for (let i = 1; i < diamondsTopBot + 1; i++) {
+        if (i === Math.ceil((diamondsTopBot + 1) / 2)) continue;     // skip side-pocket spot
+        const dx = tx + (tw / (diamondsTopBot + 1)) * i;
+        drawDiamond(dx, ty - rw / 2, 3);
+        drawDiamond(dx, ty + th + rw / 2, 3);
+    }
+    for (let i = 1; i <= diamondsLR; i++) {
+        const dy = ty + (th / (diamondsLR + 1)) * i;
+        drawDiamond(tx - rw / 2, dy, 3);
+        drawDiamond(tx + tw + rw / 2, dy, 3);
+    }
+
+    // Felt
+    const feltGrad = ctx.createRadialGradient(tx + tw / 2, ty + th / 2, 20, tx + tw / 2, ty + th / 2, Math.max(tw, th) * 0.7);
+    feltGrad.addColorStop(0, '#2a8a44');
+    feltGrad.addColorStop(0.7, '#175e25');
+    feltGrad.addColorStop(1, '#0a3010');
     ctx.fillStyle = feltGrad;
     ctx.fillRect(tx, ty, tw, th);
 
-    // Inner felt shadow
-    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-    ctx.lineWidth = 12;
-    ctx.strokeRect(tx, ty, tw, th);
+    // Subtle inner shadow
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(tx + 0.5, ty + 0.5, tw - 1, th - 1);
 
-    // Head/foot string markers
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    // Head string + foot spot
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 6]);
     ctx.beginPath();
-    ctx.moveTo(tx + tw * 0.25, ty + 4);
-    ctx.lineTo(tx + tw * 0.25, ty + th - 4);
+    ctx.moveTo(headStringX, ty + 4);
+    ctx.lineTo(headStringX, ty + th - 4);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Center dot
+    // Foot spot
     ctx.beginPath();
-    ctx.arc(tx + tw / 2, ty + th / 2, 4, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.arc(tx + tw * 0.72, ty + th / 2, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
     ctx.fill();
+}
 
-    // Rack spot
+function drawDiamond(x, y, r) {
     ctx.beginPath();
-    ctx.arc(tx + tw * 0.74, ty + th / 2, 4, 0, Math.PI * 2);
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x + r * 0.7, y);
+    ctx.lineTo(x, y + r);
+    ctx.lineTo(x - r * 0.7, y);
+    ctx.closePath();
     ctx.fill();
 }
 
 function drawPockets() {
     for (const p of pockets) {
         ctx.save();
+        // Outer leather
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r + 4, 0, Math.PI * 2);
-        ctx.fillStyle = '#0a0a0a';
+        ctx.arc(p.x, p.y, p.r + 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#1a0c08';
         ctx.fill();
+
+        // Hole
+        const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+        pg.addColorStop(0, '#000000');
+        pg.addColorStop(0.7, '#0a0604');
+        pg.addColorStop(1, '#1f0e07');
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
-        pg.addColorStop(0, '#1a0c08');
-        pg.addColorStop(1, '#000000');
         ctx.fillStyle = pg;
         ctx.fill();
-        
-        // Inner shadow to simulate hole depth
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.shadowColor = 'rgba(0,0,0,0.9)';
-        ctx.shadowBlur = 10;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.shadowColor = 'transparent';
 
-        // Leather ring
+        // Leather highlight ring
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r + 2, 0, Math.PI * 2);
-        ctx.strokeStyle = '#3d1a08';
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(120, 80, 50, 0.7)';
+        ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.restore();
     }
 }
 
+function drawHeadStringIfNeeded() {
+    if (gamePhase !== 'ball_in_hand' || !kitchenRestricted) return;
+    const { x: tx, y: ty, w: tw, h: th } = table;
+    ctx.save();
+    ctx.fillStyle = 'rgba(241, 196, 15, 0.08)';
+    ctx.fillRect(tx, ty, headStringX - tx, th);
+    ctx.strokeStyle = 'rgba(241, 196, 15, 0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.moveTo(headStringX, ty);
+    ctx.lineTo(headStringX, ty + th);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+}
+
 function drawBalls() {
-    // Draw shadow first
+    // Shadows
     for (const b of balls) {
         if (b.pocketed && b.scale <= 0) continue;
         ctx.save();
-        const currentR = b.r * b.scale;
+        const r = b.r * b.scale;
         ctx.beginPath();
-        ctx.arc(b.x + 2 * b.scale, b.y + 3 * b.scale, currentR, 0, Math.PI * 2);
+        ctx.arc(b.x + 2, b.y + 3, r, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(0,0,0,${0.3 * b.scale})`;
         ctx.fill();
         ctx.restore();
     }
-    // Draw balls
     for (const b of balls) {
         if (b.pocketed && b.scale <= 0) continue;
         drawBall(b);
@@ -827,98 +884,72 @@ function drawBall(b) {
     const cfg = BALL_CFG[b.id];
     if (!cfg) return;
     ctx.save();
-
-    const currentR = b.r * b.scale;
-    
-    // Apply scale transformation center
     ctx.translate(b.x, b.y);
     ctx.scale(b.scale, b.scale);
-    const bx = 0;
-    const by = 0;
 
-    // 3D Ball Shading - Base Radial Gradient
-    const g = ctx.createRadialGradient(bx - b.r * 0.3, by - b.r * 0.3, b.r * 0.1, bx, by, b.r * 1.1);
+    const r = b.r;
 
+    // Base body
     if (cfg.type === 'cue') {
-        // White cue ball
+        const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r * 1.05);
         g.addColorStop(0, '#ffffff');
-        g.addColorStop(0.7, '#d4d4d4');
-        g.addColorStop(1, '#888888');
-        ctx.beginPath();
-        ctx.arc(bx, by, b.r, 0, Math.PI * 2);
-        ctx.fillStyle = g;
-        ctx.fill();
+        g.addColorStop(0.7, '#dadada');
+        g.addColorStop(1, '#7a7a7a');
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = g; ctx.fill();
     } else if (cfg.type === 'solid' || cfg.type === 'eight') {
-        // Base color
-        g.addColorStop(0, adjustColorLightness(cfg.fill, 40));
-        g.addColorStop(0.4, cfg.fill);
-        g.addColorStop(1, adjustColorLightness(cfg.fill, -60));
-        
-        ctx.beginPath();
-        ctx.arc(bx, by, b.r, 0, Math.PI * 2);
-        ctx.fillStyle = g;
-        ctx.fill();
-        
-        // Number circle
-        ctx.beginPath();
-        ctx.arc(bx, by, b.r * 0.52, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        ctx.fill();
+        const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r * 1.05);
+        g.addColorStop(0, lighten(cfg.fill, 38));
+        g.addColorStop(0.45, cfg.fill);
+        g.addColorStop(1, lighten(cfg.fill, -55));
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = g; ctx.fill();
     } else {
-        // Stripe ball
+        // Stripe ball — white base with a colored equatorial band
+        const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r * 1.05);
         g.addColorStop(0, '#ffffff');
-        g.addColorStop(0.7, '#d4d4d4');
-        g.addColorStop(1, '#888888');
-        
-        ctx.beginPath();
-        ctx.arc(bx, by, b.r, 0, Math.PI * 2);
-        ctx.fillStyle = g;
-        ctx.fill();
-        
-        // Stripe band
+        g.addColorStop(0.7, '#dadada');
+        g.addColorStop(1, '#7a7a7a');
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = g; ctx.fill();
+
         ctx.save();
-        ctx.beginPath();
-        ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.clip();
-        
-        const stripeG = ctx.createRadialGradient(bx - b.r * 0.3, by - b.r * 0.3, b.r * 0.1, bx, by, b.r * 1.1);
-        stripeG.addColorStop(0, adjustColorLightness(cfg.fill, 40));
-        stripeG.addColorStop(0.4, cfg.fill);
-        stripeG.addColorStop(1, adjustColorLightness(cfg.fill, -60));
-        
-        ctx.fillStyle = stripeG;
-        ctx.fillRect(bx - b.r, by - b.r * 0.48, b.r * 2, b.r * 0.96);
+        const sg = ctx.createLinearGradient(0, -r * 0.4, 0, r * 0.4);
+        sg.addColorStop(0, lighten(cfg.fill, 25));
+        sg.addColorStop(0.5, cfg.fill);
+        sg.addColorStop(1, lighten(cfg.fill, -35));
+        ctx.fillStyle = sg;
+        ctx.fillRect(-r, -r * 0.4, r * 2, r * 0.8);
         ctx.restore();
-        
-        // Number circle
-        ctx.beginPath();
-        ctx.arc(bx, by, b.r * 0.48, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
-        ctx.fill();
     }
 
-    // Number text
+    // Number disc (skip cue ball)
     if (b.id > 0) {
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.96)';
+        ctx.fill();
         ctx.fillStyle = '#1a1a1a';
-        ctx.font = `bold ${b.r * 0.92}px Orbitron, Arial, sans-serif`;
+        ctx.font = `bold ${Math.round(r * 0.85)}px Orbitron, Arial, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(b.id, bx, by + 0.5);
+        ctx.fillText(b.id, 0, 1);
     }
 
-    // High-quality Specular shine (crescent highlight)
+    // Specular crescent
     ctx.beginPath();
-    ctx.arc(bx - b.r * 0.25, by - b.r * 0.3, b.r * 0.35, 0, Math.PI * 2);
-    const shineG = ctx.createRadialGradient(bx - b.r * 0.35, by - b.r * 0.4, 0, bx - b.r * 0.25, by - b.r * 0.3, b.r * 0.35);
-    shineG.addColorStop(0, 'rgba(255,255,255,0.6)');
-    shineG.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = shineG;
+    ctx.arc(-r * 0.3, -r * 0.32, r * 0.36, 0, Math.PI * 2);
+    const shine = ctx.createRadialGradient(-r * 0.4, -r * 0.42, 0, -r * 0.3, -r * 0.32, r * 0.36);
+    shine.addColorStop(0, 'rgba(255,255,255,0.65)');
+    shine.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = shine;
     ctx.fill();
 
-    // Darken it slightly if it's falling in the pocket
+    // Pocket fade
     if (b.pocketed && b.scale < 1) {
-        ctx.beginPath();
-        ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(0,0,0,${1 - b.scale})`;
         ctx.fill();
     }
@@ -929,17 +960,23 @@ function drawBall(b) {
 function drawCue() {
     const cb = getCueBall();
     if (!cb || cb.pocketed) return;
-    if (gamePhase !== 'playing' && gamePhase !== 'break') return;
-    // Show cue for both players (including AI/opponent during their turn)
-    if (!PoolPhysics.isSettled(balls) && gameMode === 'ai' && activeTurn === 1) return;
-    if (!PoolPhysics.isSettled(balls) && isMyTurn()) return;
-    if (!isMyTurn() && gameMode === 'online') return;
+    if (gamePhase !== 'playing' && gamePhase !== 'break' && gamePhase !== 'ai_thinking') return;
+    if (!PoolPhysics.isSettled(balls)) return;
 
-    const CUE_LEN  = 140;
+    // Determine whose cue to draw
+    const showMine     = isMyTurn() && gameMode !== 'ai';
+    const showAI       = gameMode === 'ai' && activeTurn === 1;
+    const showLocalAi  = gameMode === 'ai' && activeTurn === 0;
+    if (!showMine && !showAI && !showLocalAi) return;
+    if (gameMode === 'online' && !isMyTurn()) return;
+
+    const CUE_LEN  = 150;
     const CUE_W_TIP = 3;
     const CUE_W_BUTT = 10;
     const MIN_GAP  = 5;
-    const pullback = isDragging ? (shotPower / MAX_POWER) * 28 : 0;
+    let pullback = 0;
+    if (isDragging) pullback = (shotPower / MAX_POWER) * 28;
+    if (showAI)      pullback = aiAimPullback * 28;
     const gap      = MIN_GAP + pullback;
 
     const tipX   = cb.x - Math.cos(aimAngle) * (cb.r + gap);
@@ -948,20 +985,17 @@ function drawCue() {
     const buttY  = tipY  - Math.sin(aimAngle) * CUE_LEN;
 
     ctx.save();
-    ctx.lineWidth = 1;
-
-    // Cue body (gradient from tip to butt)
-    const cueGrad = ctx.createLinearGradient(tipX, tipY, buttX, buttY);
-    cueGrad.addColorStop(0, '#f5e6c8');
-    cueGrad.addColorStop(0.25, '#c8a050');
-    cueGrad.addColorStop(0.6, '#8b5e3c');
-    cueGrad.addColorStop(1, '#5c3317');
-
-    // Draw as a tapered rectangle
     const angle = aimAngle;
     const perp  = angle + Math.PI / 2;
     const px = Math.cos(perp);
     const py = Math.sin(perp);
+
+    // Shaft
+    const cueGrad = ctx.createLinearGradient(tipX, tipY, buttX, buttY);
+    cueGrad.addColorStop(0, '#f5e6c8');
+    cueGrad.addColorStop(0.25, '#c8a050');
+    cueGrad.addColorStop(0.6, '#8b5e3c');
+    cueGrad.addColorStop(1, '#3d220f');
 
     ctx.beginPath();
     ctx.moveTo(tipX  + px * CUE_W_TIP  / 2, tipY  + py * CUE_W_TIP  / 2);
@@ -971,11 +1005,26 @@ function drawCue() {
     ctx.closePath();
     ctx.fillStyle = cueGrad;
     ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
 
-    // Tip highlight
+    // Ferrule (white)
+    const ferrX = tipX + Math.cos(angle + Math.PI) * 6;
+    const ferrY = tipY + Math.sin(angle + Math.PI) * 6;
     ctx.beginPath();
-    ctx.arc(tipX, tipY, CUE_W_TIP / 2, 0, Math.PI * 2);
-    ctx.fillStyle = '#6dc';
+    ctx.moveTo(tipX  + px * CUE_W_TIP  / 2, tipY  + py * CUE_W_TIP  / 2);
+    ctx.lineTo(tipX  - px * CUE_W_TIP  / 2, tipY  - py * CUE_W_TIP  / 2);
+    ctx.lineTo(ferrX - px * (CUE_W_TIP * 1.1) / 2, ferrY - py * (CUE_W_TIP * 1.1) / 2);
+    ctx.lineTo(ferrX + px * (CUE_W_TIP * 1.1) / 2, ferrY + py * (CUE_W_TIP * 1.1) / 2);
+    ctx.closePath();
+    ctx.fillStyle = '#fdfdf6';
+    ctx.fill();
+
+    // Chalk tip
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, CUE_W_TIP / 1.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#2da4d8';
     ctx.fill();
 
     ctx.restore();
@@ -984,107 +1033,106 @@ function drawCue() {
 function drawAimGuide() {
     const cb = getCueBall();
     if (!cb || cb.pocketed) return;
-    if (gamePhase !== 'playing' && gamePhase !== 'break') return;
-    // Show aim guide for both players (including AI/opponent)
-    if (!PoolPhysics.isSettled(balls) && gameMode === 'ai' && activeTurn === 1) return;
-    if (!PoolPhysics.isSettled(balls) && isMyTurn()) return;
-    if (!isMyTurn() && gameMode === 'online') return;
+    if (gamePhase !== 'playing' && gamePhase !== 'break' && gamePhase !== 'ai_thinking') return;
+    if (!PoolPhysics.isSettled(balls)) return;
+    if (gameMode === 'online' && !isMyTurn()) return;
+    if (gameMode === 'ai' && activeTurn === 1 && gamePhase !== 'ai_thinking') return;
 
     ctx.save();
-
-    // Ray from cue ball in aim direction
     const hit = PoolPhysics.castRay(balls, cb.x, cb.y, aimAngle, 0);
 
     if (hit) {
-        // Dashed line from cue ball to ghost ball
+        // Cue → ghost
         ctx.setLineDash([6, 6]);
         ctx.lineWidth = 1.2;
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.42)';
         ctx.beginPath();
         ctx.moveTo(cb.x, cb.y);
         ctx.lineTo(hit.gx, hit.gy);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Ghost ball outline
+        // Ghost ball
         ctx.beginPath();
         ctx.arc(hit.gx, hit.gy, BALL_R, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        // Object ball direction after hit
+        // Object ball direction
         const nx = (hit.ball.x - hit.gx) / (BALL_R * 2);
         const ny = (hit.ball.y - hit.gy) / (BALL_R * 2);
-        const obLen = 60;
+        const obLen = 70;
         ctx.beginPath();
         ctx.moveTo(hit.ball.x, hit.ball.y);
         ctx.lineTo(hit.ball.x + nx * obLen, hit.ball.y + ny * obLen);
-        ctx.strokeStyle = 'rgba(100,220,100,0.6)';
+        ctx.strokeStyle = 'rgba(120,255,140,0.55)';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 5]);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Cue ball path after collision (90-degree rule + spin)
-        // Base deflection: perpendicular to collision normal
-        const baseAngle = Math.atan2(-nx, ny); // 90° from object ball direction
-        const spinInfluence = spinTop * (Math.PI / 4);
-        let deflAngle = baseAngle + spinInfluence;
-        // Backspin reverses
-        if (spinTop < -0.5) deflAngle = aimAngle + Math.PI;
-        // Topspin follows through
-        if (spinTop > 0.5)  deflAngle = aimAngle;
+        // Cue ball post-collision direction (90° rule + spin influence)
+        // Tangent to collision normal
+        let deflAngle = Math.atan2(-nx, ny);
+        // Make sure deflection points "with" the original aim's tangential component
+        const aimDx = Math.cos(aimAngle), aimDy = Math.sin(aimAngle);
+        const tangX = -ny, tangY = nx;
+        if (aimDx * tangX + aimDy * tangY < 0) deflAngle += Math.PI;
+
+        // Spin influence
+        if (spinTop >  0.55) deflAngle = aimAngle;            // strong topspin → follow
+        else if (spinTop < -0.55) deflAngle = aimAngle + Math.PI; // strong backspin → draw
+        else deflAngle += spinTop * 0.45;
+        deflAngle += spinSide * 0.20;
+
+        // Cut angle scaling — head-on shots stop the cue, thin cuts let it travel
+        const cutDot = Math.abs(aimDx * nx + aimDy * ny);     // 1 = full hit, 0 = grazing
+        const baseLen = 80 * (1 - cutDot * 0.7);
+        const cuePathLen = Math.max(20, baseLen);
 
         const cuePath = PoolPhysics.castRayToRail(hit.gx, hit.gy, deflAngle, table);
-        const cueEndX = hit.gx + Math.cos(deflAngle) * Math.min(cuePath, 70);
-        const cueEndY = hit.gy + Math.sin(deflAngle) * Math.min(cuePath, 70);
+        const drawLen = Math.min(cuePath, cuePathLen);
+        const ex = hit.gx + Math.cos(deflAngle) * drawLen;
+        const ey = hit.gy + Math.sin(deflAngle) * drawLen;
         ctx.beginPath();
         ctx.moveTo(hit.gx, hit.gy);
-        ctx.lineTo(cueEndX, cueEndY);
-        ctx.strokeStyle = 'rgba(200,200,255,0.45)';
+        ctx.lineTo(ex, ey);
+        ctx.strokeStyle = 'rgba(180,200,255,0.45)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 6]);
         ctx.stroke();
         ctx.setLineDash([]);
 
     } else {
-        // No ball hit — draw line to rail, then reflect
+        // No ball — line to rail and one reflection
         const railDist = PoolPhysics.castRayToRail(cb.x, cb.y, aimAngle, table);
-        const railHitX = cb.x + Math.cos(aimAngle) * railDist;
-        const railHitY = cb.y + Math.sin(aimAngle) * railDist;
+        const hx = cb.x + Math.cos(aimAngle) * railDist;
+        const hy = cb.y + Math.sin(aimAngle) * railDist;
 
         ctx.setLineDash([6, 8]);
         ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
         ctx.beginPath();
         ctx.moveTo(cb.x, cb.y);
-        ctx.lineTo(railHitX, railHitY);
+        ctx.lineTo(hx, hy);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Reflect angle off the rail that was hit
         const { x: tx, y: ty, w: tw, h: th } = table;
         let reflAngle = aimAngle;
-        // Which rail did we hit? Reflect the perpendicular component
-        const hitLeft  = Math.abs(railHitX - tx)       < 1.5;
-        const hitRight = Math.abs(railHitX - (tx + tw)) < 1.5;
-        const hitTop   = Math.abs(railHitY - ty)       < 1.5;
-        const hitBot   = Math.abs(railHitY - (ty + th)) < 1.5;
-        if (hitLeft || hitRight) reflAngle = Math.PI - aimAngle;
-        if (hitTop  || hitBot)   reflAngle = -aimAngle;
+        if (Math.abs(hx - tx) < 1.5 || Math.abs(hx - (tx + tw)) < 1.5) reflAngle = Math.PI - aimAngle;
+        if (Math.abs(hy - ty) < 1.5 || Math.abs(hy - (ty + th)) < 1.5) reflAngle = -aimAngle;
 
-        // Draw reflected ray to next rail, fading out
-        const reflDist = PoolPhysics.castRayToRail(railHitX, railHitY, reflAngle, table);
-        const reflEndX = railHitX + Math.cos(reflAngle) * Math.min(reflDist, 160);
-        const reflEndY = railHitY + Math.sin(reflAngle) * Math.min(reflDist, 160);
-
+        const reflDist = PoolPhysics.castRayToRail(hx, hy, reflAngle, table);
+        const ex = hx + Math.cos(reflAngle) * Math.min(reflDist, 180);
+        const ey = hy + Math.sin(reflAngle) * Math.min(reflDist, 180);
         ctx.setLineDash([4, 9]);
         ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
         ctx.beginPath();
-        ctx.moveTo(railHitX, railHitY);
-        ctx.lineTo(reflEndX, reflEndY);
+        ctx.moveTo(hx, hy);
+        ctx.lineTo(ex, ey);
         ctx.stroke();
         ctx.setLineDash([]);
     }
@@ -1099,7 +1147,7 @@ function drawBallInHandPreview() {
     ctx.save();
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, BALL_R, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
     ctx.stroke();
@@ -1107,10 +1155,12 @@ function drawBallInHandPreview() {
     ctx.restore();
 }
 
-// ── UI UPDATES ────────────────────────────────
+// ── UI ────────────────────────────────────────
 function setTurnMsg(text) {
     const el = document.getElementById('turn-msg');
-    if (el) el.innerText = text;
+    if (!el) return;
+    el.innerText = text || '';
+    el.classList.toggle('foul', !!(text && text.startsWith('⚠')));
 }
 
 function updatePowerBar(pct) {
@@ -1121,41 +1171,18 @@ function updatePowerBar(pct) {
 }
 
 function updateUI() {
-    // Names — slot 0=host/player1, slot 1=joiner/player2
-    if (gameMode === 'ai') {
-        document.getElementById('pname-0').innerText = SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'You';
-        document.getElementById('pname-1').innerText = '🤖 AI';
-    } else {
-        document.getElementById('pname-0').innerText = playerNames[0] || 'Player 1';
-        document.getElementById('pname-1').innerText = playerNames[1] || 'Player 2';
-    }
+    document.getElementById('pname-0').innerText = getPlayerName(0);
+    document.getElementById('pname-1').innerText = getPlayerName(1);
 
-    // Types
-    const typeLabels = { solids: '🔴 SOLIDS', stripes: '🟡 STRIPES', null: '—' };
-    
-    const ptype0 = document.getElementById('ptype-0');
-    ptype0.innerText = typeLabels[assignment[0]] || '—';
-    ptype0.style.color = assignment[0] === 'solids' ? '#e74c3c' : (assignment[0] === 'stripes' ? '#f1c40f' : 'rgba(255,255,255,0.4)');
-    ptype0.style.fontWeight = assignment[0] ? '900' : 'normal';
-    ptype0.style.fontSize = assignment[0] ? '0.7rem' : '0.55rem';
-
-    const ptype1 = document.getElementById('ptype-1');
-    ptype1.innerText = typeLabels[assignment[1]] || '—';
-    ptype1.style.color = assignment[1] === 'solids' ? '#e74c3c' : (assignment[1] === 'stripes' ? '#f1c40f' : 'rgba(255,255,255,0.4)');
-    ptype1.style.fontWeight = assignment[1] ? '900' : 'normal';
-    ptype1.style.fontSize = assignment[1] ? '0.7rem' : '0.55rem';
-
-    // Ball dots
-    updateBallDots(0);
-    updateBallDots(1);
-
-    // Active player highlight
-    document.getElementById('pinfo-0').style.opacity = activeTurn === 0 ? '1' : '0.45';
-    document.getElementById('pinfo-1').style.opacity = activeTurn === 1 ? '1' : '0.45';
-
-    if (gamePhase === 'playing' || gamePhase === 'break') {
-        const myT = isMyTurn();
-        setTurnMsg(myT ? '🏹 YOUR TURN' : `${getPlayerName(activeTurn)}'s turn...`);
+    const typeLabels = { solids: '🔴 SOLIDS', stripes: '🟡 STRIPES' };
+    for (let i = 0; i < 2; i++) {
+        const el = document.getElementById('ptype-' + i);
+        const t = assignment[i];
+        el.innerText = typeLabels[t] || '—';
+        el.style.color = t === 'solids' ? '#e74c3c' : (t === 'stripes' ? '#f1c40f' : 'rgba(255,255,255,0.4)');
+        el.style.fontWeight = t ? '900' : 'normal';
+        updateBallDots(i);
+        document.getElementById('pinfo-' + i).style.opacity = activeTurn === i ? '1' : '0.45';
     }
 }
 
@@ -1164,18 +1191,13 @@ function updateBallDots(playerIdx) {
     if (!el) return;
     const type = assignment[playerIdx];
     if (!type) { el.innerHTML = ''; return; }
-    const ballType = type === 'solids' ? 'solid' : 'stripe';
     const ids = type === 'solids' ? [1,2,3,4,5,6,7] : [9,10,11,12,13,14,15];
     el.innerHTML = ids.map(id => {
         const b = balls[id];
         const pocketed = b && b.pocketed;
-        if (pocketed) {
-            return `<div class="ball-dot" style="background:#222; opacity:0.3;"></div>`;
-        }
+        if (pocketed) return `<div class="ball-dot" style="background:#222; opacity:0.3;"></div>`;
         const fill = BALL_CFG[id].fill;
-        const isStripe = BALL_CFG[id].type === 'stripe';
-        if (isStripe) {
-            // White ball with colored stripe band through the center
+        if (BALL_CFG[id].type === 'stripe') {
             const bg = `linear-gradient(to bottom, #e8e8e8 28%, ${fill} 28%, ${fill} 72%, #e8e8e8 72%)`;
             return `<div class="ball-dot" style="background:${bg}; border:1px solid rgba(255,255,255,0.25);"></div>`;
         }
@@ -1189,89 +1211,140 @@ async function doAITurn() {
     if (activeTurn !== 1) return;
     if (!PoolPhysics.isSettled(balls)) return;
 
-    // Handle ball in hand BEFORE the thinking delay so phase is correct afterward
     if (gamePhase === 'ball_in_hand') {
+        // Pick a smart ball-in-hand spot: behind cue line if kitchen-restricted, otherwise near best pot
         const cb = getCueBall();
-        cb.pocketed = false;
-        cb.scale = 1;
-        cb.x = table.x + table.w * 0.24;
-        cb.y = table.y + table.h / 2;
+        cb.pocketed = false; cb.scale = 1;
+        const spot = pickAIBallInHand();
+        cb.x = spot.x; cb.y = spot.y;
+        kitchenRestricted = false;
         setPhase('playing');
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 500));
     }
 
-    // Calculate shot first so aimAngle is set BEFORE the delay,
-    // letting the cue and aim guide render during the thinking pause
     const cb = getCueBall();
     if (!cb || cb.pocketed) return;
 
     const shot = calcAIShot();
     let shotAngle, shotPowerVal;
+    const noiseScale = aiDifficulty === 'easy' ? 0.20 : aiDifficulty === 'normal' ? 0.07 : 0.018;
     if (shot) {
-        const ns = aiDifficulty === 'easy' ? 0.22 : aiDifficulty === 'normal' ? 0.08 : 0.02;
-        shotAngle    = shot.angle + (Math.random() - 0.5) * ns;
-        shotPowerVal = Math.max(MIN_POWER, Math.min(MAX_POWER, shot.power * (1 + (Math.random() - 0.5) * ns)));
+        shotAngle    = shot.angle + (Math.random() - 0.5) * noiseScale;
+        shotPowerVal = Math.max(MIN_POWER * 1.5,
+                       Math.min(MAX_POWER, shot.power * (1 + (Math.random() - 0.5) * noiseScale)));
     } else {
-        // No good shot found — just nudge the rack
-        shotAngle    = Math.random() * Math.PI * 2;
-        shotPowerVal = MAX_POWER * 0.4;
+        // Defensive nudge — aim at a target ball softly
+        const targets = getBallsOfType(assignment[1]);
+        const t = targets[0] || balls[8];
+        shotAngle = t ? Math.atan2(t.y - cb.y, t.x - cb.x) : Math.random() * Math.PI * 2;
+        shotPowerVal = MAX_POWER * 0.45;
     }
 
-    // Set aimAngle now so cue + guide are visible during the thinking delay
     aimAngle = shotAngle;
+    setPhase('ai_thinking');
+    setTurnMsg('🤖 AI is thinking…');
 
-    setTurnMsg('🤖 AI is thinking...');
-    await new Promise(r => setTimeout(r, 1400));
+    // Animate the cue pull-back during the thinking pause
+    const start = performance.now();
+    const dur = 1100;
+    const peak = Math.min(1, shotPowerVal / MAX_POWER);
+    aiAimPullback = 0;
+    await new Promise(resolve => {
+        function tick() {
+            const t = (performance.now() - start) / dur;
+            if (t >= 1) { aiAimPullback = peak; resolve(); return; }
+            aiAimPullback = Math.sin(Math.min(t, 1) * Math.PI / 2) * peak;
+            requestAnimationFrame(tick);
+        }
+        tick();
+    });
+    aiAimPullback = 0;
 
     executeShot(shotAngle, shotPowerVal, 0, 0);
     if (gameMode === 'online') sendShot(shotAngle, shotPowerVal, 0, 0);
+}
+
+function pickAIBallInHand() {
+    // Try a handful of candidate positions; pick one with a clear shot at one of our balls
+    let best = null;
+    let bestScore = -Infinity;
+    const tries = 80;
+    const xMin = table.x + 30;
+    const xMax = kitchenRestricted ? headStringX - BALL_R - 2 : table.x + table.w - 30;
+    for (let i = 0; i < tries; i++) {
+        const px = xMin + Math.random() * Math.max(1, xMax - xMin);
+        const py = table.y + 20 + Math.random() * (table.h - 40);
+        if (!isValidCueBallPos(px, py)) continue;
+        // Score = best shot from here
+        const cb = getCueBall();
+        const ox = cb.x, oy = cb.y;
+        cb.x = px; cb.y = py;
+        const shot = calcAIShot();
+        cb.x = ox; cb.y = oy;
+        const s = shot ? -shot.cost : -1e6;
+        if (s > bestScore) { bestScore = s; best = { x: px, y: py }; }
+    }
+    return best || { x: table.x + table.w * 0.20, y: table.y + table.h / 2 };
 }
 
 function calcAIShot() {
     const cb       = getCueBall();
     const myType   = assignment[1];
     const myBalls  = getBallsOfType(myType);
-    const targets  = myBalls.length > 0 ? myBalls : [balls[8]];
+    const targets  = myBalls.length > 0 ? myBalls
+                   : (assignment[1] !== null ? [balls[8]]
+                      : balls.filter(b => !b.pocketed && b.id !== 0 && b.id !== 8));
 
     let bestShot = null;
     let bestScore = -Infinity;
 
     for (const target of targets) {
         for (const pocket of pockets) {
-            // Direction from target ball to pocket
             const dx = pocket.x - target.x;
             const dy = pocket.y - target.y;
             const dist = Math.hypot(dx, dy);
-            if (dist < 1) continue;
+            if (dist < 2) continue;
             const nx = dx / dist, ny = dy / dist;
 
-            // Ghost ball position: where cue ball must contact target
             const gx = target.x - nx * BALL_R * 2;
             const gy = target.y - ny * BALL_R * 2;
 
-            // Angle from cue ball to ghost ball
-            const angle = Math.atan2(gy - cb.y, gx - cb.x);
+            // Skip ghost positions outside the table
+            if (gx < table.x + BALL_R || gx > table.x + table.w - BALL_R) continue;
+            if (gy < table.y + BALL_R || gy > table.y + table.h - BALL_R) continue;
 
-            // Check line of sight from cue ball to ghost ball
+            const angle = Math.atan2(gy - cb.y, gx - cb.x);
+            const cbDist = Math.hypot(gx - cb.x, gy - cb.y);
+
+            // LOS cue → ghost
             const los = PoolPhysics.castRay(balls, cb.x, cb.y, angle, 0);
             if (!los || los.ball.id !== target.id) continue;
 
-            // Check target ball to pocket is clear
+            // LOS object → pocket
             const potAngle = Math.atan2(pocket.y - target.y, pocket.x - target.x);
-            const potLos   = PoolPhysics.castRay(balls, target.x, target.y, potAngle, target.id);
-            const potDist  = Math.hypot(pocket.x - target.x, pocket.y - target.y);
-            if (potLos && potLos.dist < potDist - BALL_R) continue;
+            const potLos = PoolPhysics.castRay(balls, target.x, target.y, potAngle, target.id);
+            if (potLos && potLos.dist < dist - BALL_R) continue;
 
-            // Score: shorter distance = easier, more direct angle = better
-            const cbDist = Math.hypot(gx - cb.x, gy - cb.y);
-            const cutAngle = Math.acos(Math.max(-1, Math.min(1, nx * Math.cos(angle) + ny * Math.sin(angle))));
-            const score = 1000 - cbDist * 0.3 - cutAngle * 40 - dist * 0.1;
+            // Cut angle: dot of (cue→ghost) and (target→pocket)
+            const cax = (gx - cb.x) / cbDist;
+            const cay = (gy - cb.y) / cbDist;
+            const cutDot = Math.max(-1, Math.min(1, cax * nx + cay * ny));
+            const cutAngle = Math.acos(cutDot);
+
+            // Score: closer + straighter is better
+            let score = 1000 - cbDist * 0.4 - cutAngle * 80 - dist * 0.15;
+            // Penalize side-pocket shots for non-ideal angles
+            if ((pocket.kind === 'TM' || pocket.kind === 'BM') && Math.abs(target.x - pocket.x) > 35) {
+                score -= 60;
+            }
 
             if (score > bestScore) {
                 bestScore = score;
-                // Calculate power for the new scaled MAX_POWER math
-                const power = Math.max(MIN_POWER * 2, Math.min(MAX_POWER * 0.85, (cbDist + dist) * 0.05));
-                bestShot = { angle, power };
+                // Pick power proportional to distance, capped by difficulty
+                const cap = aiDifficulty === 'easy' ? 0.55 : aiDifficulty === 'normal' ? 0.75 : 0.85;
+                let power = Math.min(MAX_POWER * cap, (cbDist + dist) * 0.045);
+                power = Math.max(power, MIN_POWER * 3);
+                bestShot = { angle, power, cost: -score };
             }
         }
     }
@@ -1311,9 +1384,15 @@ SystemUI.v2Lobby.setup({
     onLeave: () => {
         if (roomListener) { roomListener(); roomListener = null; }
         SystemUI.stopChat(); chatStarted = false;
+        currentRoomId = null;
+        lastActionTs = 0; lastSyncTime = 0; lastRematchTs = 0;
+        pendingGameState = null;
+        onlineGameStarted = false;
         myId = 1; isHost = true;
         document.getElementById('action-zone').classList.remove('hidden');
         gameMode = 'ai';
+        const modeEl = document.getElementById('pool-mode');
+        if (modeEl) modeEl.value = 'ai';
         resetGame(); setPhase('break');
     },
     onStart: () => {
@@ -1321,14 +1400,16 @@ SystemUI.v2Lobby.setup({
     }
 });
 
+let onlineGameStarted = false;
+
 function listenToRoom() {
+    onlineGameStarted = false;
     roomListener = window.dbOnValue(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), snap => {
         const data = snap.val();
         if (!data) return;
 
         if (data.seats) {
             SystemUI.v2Lobby.renderSeats(data.seats);
-            // Keep playerNames in sync from Firebase seats
             if (data.seats[0]) playerNames[0] = data.seats[0].name || playerNames[0];
             if (data.seats[1] && data.seats[1].type === 'human') playerNames[1] = data.seats[1].name || playerNames[1];
         }
@@ -1336,68 +1417,90 @@ function listenToRoom() {
         if (data.status === 'playing') {
             SystemUI.v2Lobby.hide();
             document.getElementById('action-zone').classList.remove('hidden');
+            gameMode = 'online';
             if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
-            if (isHost && gamePhase === 'idle') {
-                resetGame(); setPhase('break'); updateUI();
-            } else if (!isHost) {
-                gameMode = 'online';
-                // Joiner: reset rack if starting fresh or replaying
-                if (gamePhase === 'idle' || gamePhase === 'ended') {
-                    resetGame();
-                    resizeCanvas();
-                    setPhase('break');
-                    updateUI();
-                }
-                if (data.gameState) applyGameState(data.gameState);
+
+            // Both clients reset cleanly the first time they see 'playing'
+            if (!onlineGameStarted) {
+                onlineGameStarted = true;
+                resetGame();
+                resizeCanvas();
+                setPhase('break');
+                updateUI();
+                // Host establishes the initial authoritative state
+                if (isHost) pushGameState();
             }
+
+            if (data.gameState) applyGameState(data.gameState);
+        } else if (data.status === 'waiting') {
+            onlineGameStarted = false;
+        }
+
+        // Either side can request a rematch; only the host actually starts it
+        if (isHost && data.rematchRequest && data.rematchRequest !== lastRematchTs) {
+            lastRematchTs = data.rematchRequest;
+            if (gamePhase === 'ended') startNewRack();
         }
 
         if (data.playerAction && data.playerAction.ts !== lastActionTs) {
             lastActionTs = data.playerAction.ts;
             const a = data.playerAction;
+            // Ignore actions we wrote ourselves
+            if (a.pusher === myId) return;
+
             if (a.action === 'shot') {
-                // Only execute if we didn't fire this shot ourselves
-                // (shooter already executed locally in onCanvasUp / doAITurn)
-                const shotByMe = (isHost && a.shooterId === 'host') ||
-                                 (!isHost && a.shooterId === 'joiner');
-                if (!shotByMe) {
-                    aimAngle = a.angle;
-                    executeShot(a.angle, a.power, a.spinTop, a.spinSide);
-                }
-            }
-            if (a.action === 'ball_in_hand') {
+                aimAngle = a.angle;
+                executeShot(a.angle, a.power, a.spinTop, a.spinSide);
+            } else if (a.action === 'ball_in_hand') {
                 const cb = getCueBall();
-                cb.pocketed = false; cb.scale = 1; cb.x = a.x; cb.y = a.y;
+                cb.pocketed = false; cb.scale = 1;
+                cb.x = a.x; cb.y = a.y;
+                kitchenRestricted = false;
                 setPhase('playing');
-                if (isHost) pushGameState();
             }
         }
     });
 }
 
-function pushGameState() {
-    if (!isHost || gameMode !== 'online') return;
+function pushGameState(extra) {
+    if (gameMode !== 'online' || !currentRoomId) return;
     const ballData = balls.map(b => ({ id: b.id, x: b.x, y: b.y, pocketed: b.pocketed }));
-    window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
-        gameState: {
-            balls: JSON.stringify(ballData),
-            activeTurn, assignment: JSON.stringify(assignment),
-            gamePhase, ts: Date.now()
-        }
-    });
+    const payload = {
+        balls: JSON.stringify(ballData),
+        activeTurn,
+        assignment: JSON.stringify(assignment),
+        kitchenRestricted,
+        isBreakShot,
+        gamePhase,
+        ts: Date.now(),
+        pusher: myId
+    };
+    if (extra && typeof extra.winnerIdx === 'number') {
+        payload.winnerIdx = extra.winnerIdx;
+        payload.endReason = extra.endReason || '';
+    }
+    window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), { gameState: payload });
 }
 
 function applyGameState(s) {
     if (!s || s.ts <= lastSyncTime) return;
+    // Skip our own pushes
+    if (s.pusher === myId) { lastSyncTime = s.ts; return; }
+    // If our local physics is still resolving, defer until settle
+    if (gamePhase === 'shooting') { pendingGameState = s; return; }
     lastSyncTime = s.ts;
-    // Never teleport balls while physics is running locally
+    pendingGameState = null;
+
+    const wasEnded = gamePhase === 'ended';
+
     if (gamePhase !== 'shooting') {
         try {
             const bd = JSON.parse(s.balls);
             bd.forEach(d => {
                 const b = balls[d.id];
                 if (b) {
-                    b.x = d.x; b.y = d.y; b.pocketed = d.pocketed; b.vx = 0; b.vy = 0;
+                    b.x = d.x; b.y = d.y; b.pocketed = d.pocketed;
+                    b.vx = 0; b.vy = 0;
                     if (!b.pocketed) b.scale = 1;
                 }
             });
@@ -1405,30 +1508,69 @@ function applyGameState(s) {
     }
     try { assignment = JSON.parse(s.assignment); } catch(e) {}
     activeTurn = s.activeTurn;
+    if (typeof s.kitchenRestricted === 'boolean') kitchenRestricted = s.kitchenRestricted;
+    if (typeof s.isBreakShot === 'boolean') isBreakShot = s.isBreakShot;
+
+    const newPhase = s.gamePhase || gamePhase;
+
     if (gamePhase !== 'shooting') {
-        if (gamePhase === 'idle') {
-            gamePhase = s.gamePhase || 'playing';
+        // End-of-game just announced by host
+        if (newPhase === 'ended' && !wasEnded && typeof s.winnerIdx === 'number') {
+            gamePhase = 'ended';
+            const isMyWin = s.winnerIdx === myId - 1;
+            if (isMyWin) sessionScore[0]++; else sessionScore[1]++;
+            if (typeof SystemStats !== 'undefined') {
+                if (isMyWin) SystemStats.recordWin('pool', 0);
+                else SystemStats.recordLoss('pool');
+            }
+            setTimeout(() => showResultModal(isMyWin, s.winnerIdx, s.endReason || ''), 800);
+        }
+        // Host started a new rack — clear shot state and dismiss any leftover modal
+        else if (wasEnded && (newPhase === 'break' || newPhase === 'playing')) {
+            document.getElementById('result-modal').classList.add('hidden');
+            firstContact = null;
+            pottedThisTurn = [];
+            cueBallPottedThisTurn = false;
+            railHitThisTurn = false;
+            spinApplied = false;
+            gamePhase = newPhase;
         } else {
-            gamePhase = s.gamePhase || gamePhase;
+            gamePhase = newPhase;
         }
     }
     updateUI();
+    refreshTurnMsg();
 }
 
 function sendShot(angle, power, sTop, sSide) {
+    if (!currentRoomId) return;
     window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
         playerAction: { action: 'shot', angle, power, spinTop: sTop, spinSide: sSide,
-                        shooterId: isHost ? 'host' : 'joiner', ts: Date.now() }
+                        pusher: myId, ts: Date.now() }
     });
 }
 
 function sendBallInHand(x, y) {
+    if (!currentRoomId) return;
     window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
-        playerAction: { action: 'ball_in_hand', x, y, ts: Date.now() }
+        playerAction: { action: 'ball_in_hand', x, y,
+                        pusher: myId, ts: Date.now() }
     });
 }
 
-// ── UTILS ────────────────────────────────────
+// ── UTILS ─────────────────────────────────────
+function lighten(hex, percent) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const amt = Math.round(2.55 * percent);
+    let r = ((num >> 16) & 0xff) + amt;
+    let g = ((num >>  8) & 0xff) + amt;
+    let b = ( num        & 0xff) + amt;
+    r = Math.min(255, Math.max(0, r));
+    g = Math.min(255, Math.max(0, g));
+    b = Math.min(255, Math.max(0, b));
+    return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+}
+
 function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
