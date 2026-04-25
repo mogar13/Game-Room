@@ -154,7 +154,9 @@ window.SystemMatch = {
                         SystemUI.v2Lobby.showError('ROOM FULL');
                         return;
                     }
-                    seats[claimIdx] = { type: 'human', name: myName };
+                    // Preserve any extra fields the host put on the seat
+                    // (e.g. assigned color, slot id) — only the type/name flip.
+                    seats[claimIdx] = Object.assign({}, seats[claimIdx], { type: 'human', name: myName });
 
                     return window.dbUpdate(window.dbRef(window.db, self._roomPath + '/' + code), { seats: seats })
                         .then(function() {

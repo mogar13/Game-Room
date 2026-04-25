@@ -2283,7 +2283,21 @@ function updateLobbyPreview() {
     SystemUI.v2Lobby.updatePreview(slots);
 }
 
-SystemUI.v2Lobby.setup({
+SystemMatch.setup({
+    gameId:   "risk",
+    roomPath: "risk_rooms",
+    autoShow: false,
+    getSeatCount: () => lobbyPlayerCount,
+    buildSeats: (count) => {
+        const out = [{ type: "human", name: SystemUI.getPlayerName(), color: PLAYER_COLORS[selectedColorIdx] }];
+        const availableColorIdxs = [0, 1, 2, 3, 4, 5].filter(i => i !== selectedColorIdx);
+        for (let i = 1; i < count; i++) {
+            const cIdx = availableColorIdxs[i - 1];
+            out.push({ type: "ai", name: "AI (" + aiDifficulty + ")", color: PLAYER_COLORS[cIdx] });
+        }
+        return out;
+    },
+    extraRoomFields: () => ({ hostName: SystemUI.getPlayerName() }),
     settingsConfig: [
         {
             id: "lobby-count",
@@ -2334,9 +2348,7 @@ SystemUI.v2Lobby.setup({
             ]
         }
     ],
-    onSettingsRendered: () => {
-        updateLobbyPreview();
-    },
+    onSettingsRendered: () => updateLobbyPreview(),
     onSettingChange: (key, val) => {
         if (key === "lobby-count") {
             lobbyPlayerCount = parseInt(val);
@@ -2352,78 +2364,35 @@ SystemUI.v2Lobby.setup({
         }
         updateLobbyPreview();
     },
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
+    onHost: (roomId) => {
+        currentRoomId = roomId;
         isHost = true; myId = 1; myPlayerIndex = 0; chatStarted = false;
-        
-        seats = [{ type: "human", name: SystemUI.getPlayerName(), color: PLAYER_COLORS[selectedColorIdx] }];
-        const availableColorIdxs = [0, 1, 2, 3, 4, 5].filter(i => i !== selectedColorIdx);
-        for (let i = 1; i < lobbyPlayerCount; i++) {
-            const cIdx = availableColorIdxs[i - 1];
-            seats.push({ type: "ai", name: "AI (" + aiDifficulty + ")", color: PLAYER_COLORS[cIdx] });
-        }
-
-        window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), {
-            status: "waiting", hostName: SystemUI.getPlayerName(), seats: seats
-        }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
-            listenToRoom();
-        });
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db), `risk_rooms/${code}`))
-            .then(snap => {
-                if (snap.exists()) {
-                    const data = snap.val();
-                    if (data.status === "waiting" || data.status === "playing") {
-                        const updatedSeats = data.seats ? [...data.seats] : [];
-                        let joinedSeatIdx = -1;
-                        for (let i = 1; i < updatedSeats.length; i++) {
-                            if (updatedSeats[i].type === "ai") {
-                                joinedSeatIdx = i;
-                                updatedSeats[i] = { type: "human", name: SystemUI.getPlayerName(), color: updatedSeats[i].color };
-                                break;
-                            }
-                        }
-
-                        if (joinedSeatIdx !== -1) {
-                            currentRoomId = code; isHost = false; myId = joinedSeatIdx + 1; myPlayerIndex = joinedSeatIdx; chatStarted = false;
-                            
-                            window.dbUpdate(window.dbRef(window.db, `risk_rooms/${code}`), {
-                                seats: updatedSeats
-                            });
-                            SystemUI.v2Lobby.showRoomPhase(code, false);
-                            listenToRoom();
-                        } else {
-                            SystemUI.v2Lobby.showError("ROOM IS FULL");
-                        }
-                    } else {
-                        SystemUI.v2Lobby.showError("ROOM NOT JOINABLE");
-                    }
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM NOT FOUND");
-                }
-            });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false; chatStarted = false;
+        myId = SystemMatch.getMyId();
+        myPlayerIndex = myId - 1;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
     onLeave: () => {
-        if (isHost && currentRoomId) {
-            window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), null);
-        }
         gameMode = "ai";
         const modeEl = document.getElementById("sys-risk-mode");
         if (modeEl) modeEl.value = "ai";
         localStorage.setItem("risk_mode", "ai");
-        SystemUI.stopChat(); chatStarted = false;
+        chatStarted = false;
         myId = 1; isHost = true; myPlayerIndex = 0;
     },
     onStart: () => {
-        window.dbUpdate(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), { status: "playing" });
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), { status: "playing" });
+        }
     },
     onClose: () => {
         if (gameMode === "online" && gamePhase === "idle") {
-            if (isHost && currentRoomId) {
-                window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), null);
-            }
             gameMode = "ai";
             const modeEl = document.getElementById("sys-risk-mode");
             if (modeEl) modeEl.value = "ai";
