@@ -671,7 +671,17 @@ function updateLobbyPreview() {
     SystemUI.v2Lobby.updatePreview(slots);
 }
 
-SystemUI.v2Lobby.setup({
+SystemMatch.setup({
+    gameId:   "uno",
+    roomPath: "uno_rooms",
+    autoShow: false,
+    getSeatCount: () => playerCount,
+    buildSeats: (count) => {
+        const out = [{ type: "human", name: SystemUI.getPlayerName() }];
+        for (let i = 1; i < count; i++) out.push({ type: "ai", name: "AI " + (i + 1) });
+        return out;
+    },
+    extraRoomFields: () => ({ aiDifficulty: aiDifficulty, ts: Date.now() }),
     settingsConfig: [
         { id: "lobby-count", label: "PLAYERS", type: "select", default: playerCount, options: [{value:2, label:"2"},{value:3, label:"3"},{value:4, label:"4"}] },
         { id: "lobby-ai-diff", label: "AI LEVEL", type: "select", default: aiDifficulty, options: [{value:"easy", label:"EASY"},{value:"normal", label:"NORMAL"},{value:"hard", label:"HARD"}] }
@@ -683,57 +693,45 @@ SystemUI.v2Lobby.setup({
         updateLobbyPreview();
 
         if (gameMode === "online" && isHost && currentRoomId && window.db) {
-            const oldSeats = Array.isArray(seats) ? seats : [];
-            const newSeats = [];
-            for (let i = 0; i < playerCount; i++) {
-                if (oldSeats[i] && oldSeats[i].type === "human") newSeats.push(oldSeats[i]);
-                else if (i === 0) newSeats.push({ type: "human", name: SystemUI.getPlayerName() });
-                else newSeats.push({ type: "ai", name: "AI " + (i + 1) });
+            // Use SystemMatch.resizeSeats for player count, then sync aiDifficulty
+            if (key === "lobby-count") {
+                SystemMatch.resizeSeats(playerCount);
+                seats = SystemMatch.getSeats();
             }
-            seats = newSeats;
-            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { seats: newSeats, aiDifficulty: aiDifficulty, ts: Date.now() });
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { aiDifficulty: aiDifficulty, ts: Date.now() });
         }
     },
-    onHost: () => {
-        currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
-        isHost = true; myId = 1; seats = [{ type: "human", name: SystemUI.getPlayerName() }];
-        for (let i = 1; i < playerCount; i++) seats.push({ type: "ai", name: "AI " + (i + 1) });
-        window.dbSet(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "waiting", seats: seats, aiDifficulty: aiDifficulty, ts: Date.now(), createdAt: Date.now() }).then(() => {
-            SystemUI.v2Lobby.showRoomPhase(currentRoomId, true); listenToRoom();
-        });
+    onHost: (roomId) => {
+        currentRoomId = roomId;
+        isHost = true; myId = 1;
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
-    onJoin: (code) => {
-        window.dbGet(window.dbChild(window.dbRef(window.db), `uno_rooms/${code}`)).then((snap) => {
-            if (snap.exists()) {
-                const data = snap.val();
-                let joinedIdx = data.seats.findIndex(s => s.type === "ai");
-                if (joinedIdx !== -1) {
-                    currentRoomId = code; isHost = false; myId = joinedIdx + 1;
-                    let updated = data.seats; updated[joinedIdx] = { type: "human", name: SystemUI.getPlayerName() };
-                    window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + code), { seats: updated, ts: Date.now() });
-                    SystemUI.v2Lobby.showRoomPhase(code, false); listenToRoom();
-                } else {
-                    SystemUI.v2Lobby.showError("ROOM FULL");
-                }
-            } else {
-                SystemUI.v2Lobby.showError("ROOM NOT FOUND");
-            }
-        });
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        isHost = false;
+        myId = SystemMatch.getMyId();
+        seats = SystemMatch.getSeats();
+        listenToRoom();
     },
     onLeave: () => {
         if (isHost && currentRoomId && window.db) {
-            window.dbSet(window.dbRef(window.db, `uno_rooms/${currentRoomId}`), null);
             window.dbSet(window.dbRef(window.db, `uno_hands/${currentRoomId}`), null);
             window.dbSet(window.dbRef(window.db, `uno_hand_incoming/${currentRoomId}`), null);
         }
         location.reload();
     },
-    onStart: () => window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "playing", ts: Date.now() }),
+    onStart: () => {
+        if (currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "playing", ts: Date.now() });
+        }
+    },
     onClose: () => {
         if (gameMode === "online" && currentRoomId && isHost && currentTurn === 1) {
-             window.dbSet(window.dbRef(window.db, `uno_rooms/${currentRoomId}`), null);
-             window.dbSet(window.dbRef(window.db, `uno_hands/${currentRoomId}`), null);
-             window.dbSet(window.dbRef(window.db, `uno_hand_incoming/${currentRoomId}`), null);
+            if (window.db) {
+                window.dbSet(window.dbRef(window.db, `uno_hands/${currentRoomId}`), null);
+                window.dbSet(window.dbRef(window.db, `uno_hand_incoming/${currentRoomId}`), null);
+            }
         }
     }
 });

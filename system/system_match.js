@@ -233,8 +233,18 @@ window.SystemMatch = {
             this._roomListener = null;
         }
         const wasHost = this._isHost;
-        if (wasHost && this._roomId && window.db && window.dbRemove) {
-            window.dbRemove(window.dbRef(window.db, this._roomPath + '/' + this._roomId));
+        if (wasHost && this._roomId && window.db) {
+            // Prefer dbRemove if the page imported it; otherwise fall back to
+            // dbSet(null) which has the same effect and is universally
+            // available across every game's Firebase wiring. Without this
+            // fallback, host-leave rooms pile up in Firebase forever on the
+            // many games that don't import remove().
+            const ref = window.dbRef(window.db, this._roomPath + '/' + this._roomId);
+            if (typeof window.dbRemove === 'function') {
+                window.dbRemove(ref);
+            } else if (typeof window.dbSet === 'function') {
+                window.dbSet(ref, null);
+            }
         }
         this._roomId  = null;
         this._myId    = 1;
