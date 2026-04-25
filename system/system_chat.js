@@ -126,11 +126,15 @@ window.SystemChat = {
         this.seenKeys = null;
         this.hasUnread = false;
 
-        document.getElementById('sys-chat-messages').innerHTML = '';
+        // DOM may not exist yet if stopChat fires during early init
+        // (e.g. SystemMatch.cleanup running at module load before the
+        // chat panel has been injected).
+        const msgs = document.getElementById('sys-chat-messages');
+        if (msgs) msgs.innerHTML = '';
         const btn = document.getElementById('sys-btn-chat');
         if (btn) btn.classList.remove('chat-visible');
         this.updateBadge(false);
-        this.closeChat();
+        if (document.getElementById('sys-chat-panel')) this.closeChat();
     },
 
     openChat: function() {
@@ -149,8 +153,10 @@ window.SystemChat = {
 
     closeChat: function() {
         this.isOpen = false;
-        document.getElementById('sys-chat-panel').classList.remove('open');
-        document.getElementById('sys-chat-backdrop').classList.remove('open');
+        const panel = document.getElementById('sys-chat-panel');
+        if (panel) panel.classList.remove('open');
+        const backdrop = document.getElementById('sys-chat-backdrop');
+        if (backdrop) backdrop.classList.remove('open');
     },
 
     sendMessage: function() {

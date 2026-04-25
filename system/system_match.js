@@ -46,8 +46,12 @@ window.SystemMatch = {
     setup: function(config) {
         // Reset any stale state from a prior setup() (e.g. host left, then
         // re-opened the lobby in the same session) so the previous listener
-        // and seat data don't leak forward.
-        this.cleanup();
+        // and seat data don't leak forward. Skip when there is no state to
+        // clean up — avoids touching the DOM during early module-load init
+        // before the chat panel has been injected.
+        if (this._roomId || this._roomListener) {
+            this.cleanup();
+        }
 
         this._gameId   = config.gameId   || null;
         this._roomPath = config.roomPath || null;
