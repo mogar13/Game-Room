@@ -2,7 +2,7 @@
   "name": "The Game Shack",
   "short_name": "Game Shack",
   "description": "Your personal arcade and casino.",
-  "start_url": "./Index.html",
+  "start_url": "./index.html",
   "display": "fullscreen",
   "background_color": "#050505",
   "theme_color": "#111111",
