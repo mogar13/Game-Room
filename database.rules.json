@@ -1,0 +1,54 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      ".read": false,
+      "$username": {
+        ".read": true,
+        ".write": true,
+        ".validate": "!newData.exists() || newData.hasChildren(['username', 'password'])",
+        "username": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "password": { ".validate": "newData.isString() && newData.val().length <= 400" },
+        "$other":   { ".validate": true }
+      }
+    },
+
+    "chat": {
+      ".read": true,
+      "$roomId": {
+        ".write": true,
+        "messages": {
+          "$msgId": {
+            ".validate": "newData.hasChildren(['text']) || !newData.exists()",
+            "text": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+            "$other": { ".validate": true }
+          }
+        }
+      }
+    },
+
+    "global_chat": {
+      ".read": true,
+      ".write": true,
+      "$msgId": {
+        "text": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+        "$other": { ".validate": true }
+      }
+    },
+
+    "bug_reports": {
+      ".read": false,
+      ".write": true,
+      "$id": {
+        ".validate": "newData.isString() ? newData.val().length <= 5000 : true"
+      }
+    },
+
+    "$room": {
+      ".read": "$room.matches(/(_rooms|_hands|_hand_incoming)$/)",
+      ".write": "$room.matches(/(_rooms|_hands|_hand_incoming)$/)"
+    }
+  }
+}
