@@ -182,16 +182,9 @@ window.SystemProfile = {
     },
 
     // --- DEV & TESTING API ---
-
-    authenticateDev: function(password) {
-        if (this.data.name === "forerunner" && password === "luna&abi") {
-            this.data.isDev = true;
-            this.saveProfile();
-            console.log("Casino OS: Developer mode activated for forerunner.");
-            return true;
-        }
-        return false;
-    },
+    // Dev rights are granted by admins/<uid> in the database rules and applied by
+    // SystemAuth. There is deliberately no client-side password check here — one
+    // shipped in the public source would be no gate at all.
 
     isDev: function() {
         return this.data.isDev === true;

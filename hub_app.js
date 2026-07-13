@@ -52,6 +52,12 @@ if (window.SystemRewards) {
 // --- 2. PROFILE BANNER & DAILY BONUS (REFACTORED FOR CASINO OS 2.0) ---
 const bonusBtn = document.getElementById("daily-bonus-btn");
 
+// Firebase restores a session asynchronously, so the first render can happen
+// before auth resolves. SystemAuth fires this once it knows the real state.
+window.addEventListener("casino-auth-changed", () => {
+    if (typeof updateBonusUI === 'function') updateBonusUI();
+});
+
 function updateBonusUI() {
     if (!window.SystemProfile || !window.SystemRewards) return;
 
@@ -122,10 +128,12 @@ function updateBonusUI() {
     // 4. Handle Dev & Logout Visibility (FIXED)
     const devBtn = document.getElementById("sys-dev-btn");
     const logoutBtn = document.getElementById("sys-logout-btn");
-    const isForerunner = window.SystemAuth && SystemAuth.getActiveUsername() === "forerunner" && SystemProfile.isDev();
-    
+    // Admin rights come from admins/<uid> in the database rules. Hiding the button
+    // is cosmetic — the rules are what actually stop a non-admin's writes.
+    const isAdmin = !!(window.SystemAuth && typeof SystemAuth.isAdmin === 'function' && SystemAuth.isAdmin());
+
     if (devBtn) {
-        if (isForerunner) devBtn.classList.remove("dev-only");
+        if (isAdmin) devBtn.classList.remove("dev-only");
         else devBtn.classList.add("dev-only");
     }
     if (logoutBtn) {
@@ -196,11 +204,10 @@ function wireAuthModals() {
     if (submitReg) submitReg.addEventListener("click", async () => {
         const username = (document.getElementById("register-username")?.value || "").trim();
         const password = (document.getElementById("register-password")?.value || "").trim();
-        const question = (document.getElementById("register-security-question")?.value || "").trim();
-        const answer   = (document.getElementById("register-security-answer")?.value || "").trim();
+        const email    = (document.getElementById("register-email")?.value || "").trim();
         const errorEl  = document.getElementById("register-error");
         if (errorEl) errorEl.classList.add("hidden");
-        const result = window.SystemAuth ? await SystemAuth.register(username, password, question, answer) : { ok: false, error: "Auth not loaded." };
+        const result = window.SystemAuth ? await SystemAuth.register(username, password, email) : { ok: false, error: "Auth not loaded." };
         if (result.ok) {
             if (modalRegister) modalRegister.classList.add("hidden");
             playHubSound('win');
@@ -224,7 +231,6 @@ function wireAuthModals() {
     if (closeForgot) closeForgot.addEventListener("click", () => modalForgot && modalForgot.classList.add("hidden"));
 
     const submitForgot = document.getElementById("btn-submit-forgot");
-    let forgotStep = 1;
 
     const linkBackToLogin = document.getElementById("link-back-to-login");
     if (linkBackToLogin) linkBackToLogin.addEventListener("click", () => {
@@ -234,51 +240,25 @@ function wireAuthModals() {
         const sucEl = document.getElementById("forgot-success");
         if (errEl) errEl.classList.add("hidden");
         if (sucEl) sucEl.classList.add("hidden");
-        forgotStep = 1;
-        if (submitForgot) submitForgot.innerText = "CONTINUE";
-        const step2 = document.getElementById("forgot-step-2");
-        if (step2) step2.classList.add("hidden");
     });
 
-    if (submitForgot) submitForgot.addEventListener("click", () => {
+    // Firebase holds a one-way password hash, so recovery is a reset link sent to
+    // the account's email — passwords can never be read back out.
+    if (submitForgot) submitForgot.addEventListener("click", async () => {
         const errEl = document.getElementById("forgot-error");
         const sucEl = document.getElementById("forgot-success");
         if (errEl) errEl.classList.add("hidden");
         if (sucEl) sucEl.classList.add("hidden");
 
-        if (forgotStep === 1) {
-            const username = (document.getElementById("forgot-username")?.value || "").trim().toLowerCase();
-            const question = window.SystemAuth ? SystemAuth.getSecurityQuestion(username) : null;
-            if (!question) {
-                if (errEl) { errEl.innerText = "User not found."; errEl.classList.remove("hidden"); }
-                return;
-            }
-            const questionLabels = {
-                game:       "What is your favorite video game of all time?",
-                character:  "Who is your favorite fictional character?",
-                movie:      "What was the first movie you saw in theaters?",
-                karaoke:    "What is your go-to karaoke song?",
-                superpower: "If you had a superpower, what would it be?"
-            };
-            const step2 = document.getElementById("forgot-step-2");
-            const qText = document.getElementById("forgot-question-text");
-            if (qText) qText.innerText = questionLabels[question] || question;
-            if (step2) step2.classList.remove("hidden");
-            submitForgot.innerText = "VERIFY ANSWER";
-            forgotStep = 2;
+        const email  = (document.getElementById("forgot-email")?.value || "").trim();
+        const result = window.SystemAuth
+            ? await SystemAuth.sendPasswordReset(email)
+            : { ok: false, error: "Auth not loaded." };
+
+        if (result.ok) {
+            if (sucEl) { sucEl.innerText = result.message; sucEl.classList.remove("hidden"); }
         } else {
-            const username = (document.getElementById("forgot-username")?.value || "").trim().toLowerCase();
-            const answer   = (document.getElementById("forgot-security-answer")?.value || "").trim();
-            const result   = window.SystemAuth ? SystemAuth.verifySecurityAnswer(username, answer) : { ok: false, error: "Auth not loaded." };
-            if (result.ok) {
-                if (sucEl) { sucEl.innerText = `Your password is: ${result.password}`; sucEl.classList.remove("hidden"); }
-                const step2 = document.getElementById("forgot-step-2");
-                if (step2) step2.classList.add("hidden");
-                submitForgot.innerText = "CONTINUE";
-                forgotStep = 1;
-            } else {
-                if (errEl) { errEl.innerText = result.error; errEl.classList.remove("hidden"); }
-            }
+            if (errEl) { errEl.innerText = result.error; errEl.classList.remove("hidden"); }
         }
     });
 
@@ -297,10 +277,8 @@ function wireAuthModals() {
     triggerClickOnEnter("login-password", "btn-submit-login");
     triggerClickOnEnter("register-username", "btn-submit-register");
     triggerClickOnEnter("register-password", "btn-submit-register");
-    triggerClickOnEnter("register-security-question", "btn-submit-register");
-    triggerClickOnEnter("register-security-answer", "btn-submit-register");
-    triggerClickOnEnter("forgot-username", "btn-submit-forgot");
-    triggerClickOnEnter("forgot-security-answer", "btn-submit-forgot");
+    triggerClickOnEnter("register-email", "btn-submit-register");
+    triggerClickOnEnter("forgot-email", "btn-submit-forgot");
 
     document.querySelectorAll(".dev-tab").forEach(tab => {
         tab.addEventListener("click", () => {
@@ -328,23 +306,23 @@ function wireDevModal() {
     const econAdd = document.getElementById("dev-econ-add");
     const econSub = document.getElementById("dev-econ-sub");
 
-    if (econAdd) econAdd.addEventListener("click", () => {
+    if (econAdd) econAdd.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
         const target = econTarget.value;
         const amount = parseInt(econAmount.value) || 0;
         if (amount > 0) {
-            const res = SystemAuth.admin.modifyMoney(target, amount);
+            const res = await SystemAuth.admin.modifyMoney(target, amount);
             alert(res.message || res.error);
             updateBonusUI();
         }
     });
     
-    if (econSub) econSub.addEventListener("click", () => {
+    if (econSub) econSub.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
         const target = econTarget.value;
         const amount = parseInt(econAmount.value) || 0;
         if (amount > 0) {
-            const res = SystemAuth.admin.modifyMoney(target, -amount);
+            const res = await SystemAuth.admin.modifyMoney(target, -amount);
             alert(res.message || res.error);
             updateBonusUI();
         }
@@ -356,23 +334,23 @@ function wireDevModal() {
     const progAdd = document.getElementById("dev-prog-add");
     const progSub = document.getElementById("dev-prog-sub");
 
-    if (progAdd) progAdd.addEventListener("click", () => {
+    if (progAdd) progAdd.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
         const target = progTarget.value;
         const amount = parseInt(progAmount.value) || 0;
         if (amount > 0) {
-            const res = SystemAuth.admin.modifyXP(target, amount);
+            const res = await SystemAuth.admin.modifyXP(target, amount);
             alert(res.message || res.error);
             updateBonusUI();
         }
     });
 
-    if (progSub) progSub.addEventListener("click", () => {
+    if (progSub) progSub.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
         const target = progTarget.value;
         const amount = parseInt(progAmount.value) || 0;
         if (amount > 0) {
-            const res = SystemAuth.admin.modifyXP(target, -amount);
+            const res = await SystemAuth.admin.modifyXP(target, -amount);
             alert(res.message || res.error);
             updateBonusUI();
         }
@@ -383,23 +361,23 @@ function wireDevModal() {
     const adminReset = document.getElementById("dev-admin-reset");
     const adminDelete = document.getElementById("dev-admin-delete");
 
-    if (adminReset) adminReset.addEventListener("click", () => {
+    if (adminReset) adminReset.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
         const target = adminTarget.value;
         if (!target) { alert("Target Username is REQUIRED for Admin actions."); return; }
         if (confirm(`Are you absolutely sure you want to RESET progress for '${target}'?`)) {
-            const res = SystemAuth.admin.resetProgress(target);
+            const res = await SystemAuth.admin.resetProgress(target);
             alert(res.message || res.error);
             updateBonusUI();
         }
     });
 
-    if (adminDelete) adminDelete.addEventListener("click", () => {
+    if (adminDelete) adminDelete.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
         const target = adminTarget.value;
         if (!target) { alert("Target Username is REQUIRED for Admin actions."); return; }
         if (confirm(`Are you absolutely sure you want to DELETE the account '${target}'? This cannot be undone.`)) {
-            const res = SystemAuth.admin.deleteAccount(target);
+            const res = await SystemAuth.admin.deleteAccount(target);
             alert(res.message || res.error);
             if (res.ok && (!SystemAuth.isLoggedIn() || SystemAuth.getActiveUsername() === target)) {
                 window.location.reload(); 
@@ -414,23 +392,23 @@ function wireDevModal() {
     const rewLock = document.getElementById("dev-rew-lock");
     const rewDaily = document.getElementById("dev-rew-daily");
 
-    if (rewUnlock) rewUnlock.addEventListener("click", () => {
+    if (rewUnlock) rewUnlock.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
-        const res = SystemAuth.admin.toggleAchievement(rewTarget.value, rewAchId.value, true);
+        const res = await SystemAuth.admin.toggleAchievement(rewTarget.value, rewAchId.value, true);
         alert(res.message || res.error);
         if (res.ok && typeof renderTrophyRoom === 'function') renderTrophyRoom();
     });
 
-    if (rewLock) rewLock.addEventListener("click", () => {
+    if (rewLock) rewLock.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
-        const res = SystemAuth.admin.toggleAchievement(rewTarget.value, rewAchId.value, false);
+        const res = await SystemAuth.admin.toggleAchievement(rewTarget.value, rewAchId.value, false);
         alert(res.message || res.error);
         if (res.ok && typeof renderTrophyRoom === 'function') renderTrophyRoom();
     });
 
-    if (rewDaily) rewDaily.addEventListener("click", () => {
+    if (rewDaily) rewDaily.addEventListener("click", async () => {
         if (!window.SystemAuth || !window.SystemAuth.admin) return;
-        const res = SystemAuth.admin.resetDailyBonus(rewTarget.value);
+        const res = await SystemAuth.admin.resetDailyBonus(rewTarget.value);
         alert(res.message || res.error);
         updateBonusUI();
     });
@@ -882,10 +860,20 @@ function wireLeaderboards() {
         }
 
         try {
-            const snap = await window.dbGet(window.dbRef(window.db, "users"));
+            // Reads the public leaderboard/ projection, not users/ — private records
+            // are locked to their owner, and rankings need no secrets to render.
+            const snap = await window.dbGet(window.dbRef(window.db, "leaderboard"));
             if (snap.exists()) {
-                const data = snap.val();
-                cachedUsers = Object.values(data);
+                cachedUsers = Object.values(snap.val()).map(e => ({
+                    profile: {
+                        name:     e.name,
+                        avatar:   e.avatar,
+                        bankroll: e.bankroll || 0,
+                        xp:       e.xp    || 0,
+                        level:    e.level || 1,
+                        wins:     e.wins  || 0
+                    }
+                }));
                 lbLoading.classList.add("hidden");
                 lbList.classList.remove("hidden");
                 renderLb();
@@ -1133,11 +1121,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     if (confirmLogoutBtn) {
-        confirmLogoutBtn.addEventListener("click", () => {
+        confirmLogoutBtn.addEventListener("click", async () => {
             playHubSound('click');
             document.getElementById("modal-logout").classList.add("hidden");
             if (window.SystemAuth && window.SystemAuth.isLoggedIn()) {
-                SystemAuth.logout();
+                // Awaited: logout flushes the final save and signs out of Firebase.
+                // Reloading before it settles would drop both.
+                await SystemAuth.logout();
             } else {
                 SystemProfile.data.isDev = false;
                 SystemProfile.data.name = "Player";

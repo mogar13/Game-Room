@@ -4,14 +4,38 @@
     ".write": false,
 
     "users": {
-      ".read": false,
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+        ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())"
+      }
+    },
+
+    "usernames": {
+      ".read": true,
       "$username": {
-        ".read": true,
-        ".write": true,
-        ".validate": "!newData.exists() || newData.hasChildren(['username', 'password'])",
-        "username": { ".validate": "newData.isString() && newData.val().length <= 40" },
-        "password": { ".validate": "newData.isString() && newData.val().length <= 400" },
-        "$other":   { ".validate": true }
+        ".write": "auth != null && (data.child('uid').val() === auth.uid || (!data.exists() && newData.child('uid').val() === auth.uid) || root.child('admins').child(auth.uid).exists())",
+        ".validate": "newData.hasChildren(['uid'])"
+      }
+    },
+
+    "leaderboard": {
+      ".read": true,
+      "$uid": {
+        ".write": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).exists())",
+        ".validate": "!newData.exists() || newData.hasChildren(['name'])",
+        "name":     { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "avatar":   { ".validate": "newData.isString() && newData.val().length <= 8" },
+        "bankroll": { ".validate": "newData.isNumber()" },
+        "xp":       { ".validate": "newData.isNumber()" },
+        "level":    { ".validate": "newData.isNumber()" },
+        "wins":     { ".validate": "newData.isNumber()" },
+        "$other":   { ".validate": false }
+      }
+    },
+
+    "admins": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
       }
     },
 
@@ -21,8 +45,7 @@
         ".write": true,
         "messages": {
           "$msgId": {
-            ".validate": "newData.hasChildren(['text']) || !newData.exists()",
-            "text": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+            "text":   { ".validate": "newData.isString() && newData.val().length <= 2000" },
             "$other": { ".validate": true }
           }
         }
@@ -33,17 +56,14 @@
       ".read": true,
       ".write": true,
       "$msgId": {
-        "text": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+        "text":   { ".validate": "newData.isString() && newData.val().length <= 2000" },
         "$other": { ".validate": true }
       }
     },
 
     "bug_reports": {
       ".read": false,
-      ".write": true,
-      "$id": {
-        ".validate": "newData.isString() ? newData.val().length <= 5000 : true"
-      }
+      ".write": true
     },
 
     "$room": {

@@ -196,7 +196,7 @@
       <button id="close-login-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
       <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">SIGN IN</h2>
       <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
-        <input type="text" id="login-username" placeholder="Username" maxlength="16" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <input type="text" id="login-username" placeholder="Username or email" maxlength="64" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
         <input type="password" id="login-password" placeholder="Password" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
         <div id="login-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Invalid credentials</div>
         <button id="btn-submit-login" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">LOGIN</button>
@@ -214,16 +214,9 @@
       <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">REGISTER</h2>
       <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
         <input type="text" id="register-username" placeholder="Username" maxlength="16" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
-        <input type="password" id="register-password" placeholder="Password" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
-        <select id="register-security-question" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.7); color: #fff; font-family: 'Roboto', sans-serif; font-size: 0.9rem; outline: none; cursor: pointer;">
-          <option value="" disabled selected>— Select a security question —</option>
-          <option value="game">What is your favorite video game of all time?</option>
-          <option value="character">Who is your favorite fictional character?</option>
-          <option value="movie">What was the first movie you saw in theaters?</option>
-          <option value="karaoke">What is your go-to karaoke song?</option>
-          <option value="superpower">If you had a superpower, what would it be?</option>
-        </select>
-        <input type="text" id="register-security-answer" placeholder="Your answer" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <input type="password" id="register-password" placeholder="Password (min 6 characters)" class="auth-input" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <input type="email" id="register-email" placeholder="Email (optional)" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <p style="color: #888; font-size: 0.75rem; margin: -6px 0 0 0; text-align: center; line-height: 1.4;">Add an email and you can reset a forgotten password — you'll then sign in with that email. Skip it and your password can never be recovered.</p>
         <div id="register-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">Error creating account</div>
         <button id="btn-submit-register" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">CREATE ACCOUNT</button>
         <div class="auth-links" style="display: flex; justify-content: center; font-size: 0.8rem; margin-top: 5px;">
@@ -238,15 +231,12 @@
       <button id="close-forgot-btn" class="hub-interactive auth-close-btn" style="position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--accent-color); font-size: 2rem; cursor: pointer; line-height: 1;">&times;</button>
       <h2 style="color: var(--accent-color); font-family: 'Orbitron', sans-serif; margin: 0 0 20px 0; text-align: center; letter-spacing: 2px;">RECOVERY</h2>
       <div class="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
-        <p style="color: #aaa; font-size: 0.85rem; margin: 0; text-align: center; line-height: 1.4;">Enter your username to reset your password.</p>
-        <input type="text" id="forgot-username" placeholder="Username" maxlength="16" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <p style="color: #aaa; font-size: 0.85rem; margin: 0; text-align: center; line-height: 1.4;">Enter the email address on your account and we'll send you a reset link.</p>
+        <input type="email" id="forgot-email" placeholder="Email address" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
+        <p style="color: #888; font-size: 0.75rem; margin: -6px 0 0 0; text-align: center; line-height: 1.4;">Accounts created without an email can't be reset. Ask an admin for help.</p>
         <div id="forgot-error" class="auth-error hidden" style="color: #e74c3c; font-size: 0.85rem; font-weight: bold; text-align: center;">User not found</div>
         <div id="forgot-success" class="auth-success hidden" style="color: #2ecc71; font-size: 0.85rem; font-weight: bold; text-align: center;">Password reset sent!</div>
-        <div id="forgot-step-2" class="hidden" style="display: flex; flex-direction: column; gap: 12px;">
-          <div id="forgot-question-text" style="color: #aaa; font-size: 0.85rem; text-align: center; line-height: 1.5;"></div>
-          <input type="text" id="forgot-security-answer" placeholder="Your answer" class="auth-input" autocomplete="off" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #3a1c61; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Roboto', sans-serif; font-size: 1rem; outline: none;">
-        </div>
-        <button id="btn-submit-forgot" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">CONTINUE</button>
+        <button id="btn-submit-forgot" class="hub-interactive auth-submit-btn" style="background: var(--accent-color); color: #000; border: none; padding: 12px; border-radius: 8px; font-family: 'Orbitron', sans-serif; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 210, 255, 0.3);">SEND RESET LINK</button>
         <div class="auth-links" style="display: flex; justify-content: center; font-size: 0.8rem; margin-top: 5px;">
           <span id="link-back-to-login" class="hub-interactive auth-link" style="color: #aaa; cursor: pointer;">Back to Sign In</span>
         </div>
@@ -401,7 +391,11 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-    import { getDatabase, ref, onValue, update, get, remove } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    import { getDatabase, ref, onValue, update, get, remove, set } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    import {
+      getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+      signOut, onAuthStateChanged, sendPasswordResetEmail
+    } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
@@ -422,6 +416,16 @@
     window.dbUpdate = update;
     window.dbGet = get;
     window.dbRemove = remove;
+    window.dbSet = set;
+
+    // Firebase Authentication — SystemAuth polls for these (module scripts run
+    // after the classic scripts below).
+    window.fbAuth               = getAuth(app);
+    window.fbCreateUser         = createUserWithEmailAndPassword;
+    window.fbSignIn             = signInWithEmailAndPassword;
+    window.fbSignOut            = signOut;
+    window.fbOnAuthStateChanged = onAuthStateChanged;
+    window.fbSendPasswordReset  = sendPasswordResetEmail;
 
     // Signal that Firebase is ready so hub_app.js scanner can start immediately
     window.hubFirebaseReady = true;
