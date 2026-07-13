@@ -29,7 +29,7 @@ Read it before you write anything. It is 2,000 lines and it does roughly:
 | Store / cosmetics UI | `src/hub/StorePanel.tsx` |
 | Achievements + stats panels | `src/hub/StatsPanel.tsx` |
 | Global chat | Phase 4 — leave a placeholder, wire it there |
-| Dev-only tools (`isDev` + `forerunner` check, `hub_app.js:125`) | `src/hub/DevPanel.tsx`, same gate, no wider |
+| Dev-only tools (gated on `admins/<uid>`, cached as `profile.isDev`) | `src/hub/DevPanel.tsx`, same gate, no wider |
 
 Two deletions in that table are worth pausing on, because they're the payoff for dropping the iframe:
 **the launch panel** and **the `hubFirebaseReady` polling handshake** both simply cease to exist.
@@ -94,9 +94,12 @@ white-screen the arcade.
 - [ ] Clicking a `'legacy'` card navigates to the standalone game page, which plays normally.
 - [ ] Player bar shows live bankroll/XP/level from the Phase 2 store, and updates on change without
       a reload.
-- [ ] Login/register/logout work. Guest mode works.
+- [ ] Login/register/logout work (Firebase Auth — username *and* email login paths). Guest mode works.
+      **Auth resolves asynchronously**: the hub must not flash a signed-out state before
+      `onAuthStateChanged` fires. Handle `loading` explicitly.
 - [ ] Store purchases and loadout equipping work; equipped cosmetics persist across reload.
-- [ ] Dev panel appears **only** for `isDev` + `forerunner`, exactly as before.
+- [ ] Dev panel appears **only** for users in `admins/<uid>` — hiding the button is cosmetic; the
+      database rule is the real gate.
 - [ ] Legacy `index.html`, `hub_app.js`, `hub-style.css` are **deleted from the repo root**
       (the copies under `public/legacy/` stay until Phase 7).
 - [ ] `public/legacy/` still unmodified.

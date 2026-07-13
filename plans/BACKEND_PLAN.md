@@ -3,26 +3,37 @@
 **Status:** Blocked — do not start until `plans/MIGRATION_PLAN.md` is complete (Phase 7 merged).
 **Last updated:** 2026-07-13
 
-Replace Firebase (RTDB + its ad-hoc auth) with a **Node/Express + SQLite** API. This is a **separate
+Move the **game data and the economy** to a **Node/Express + SQLite** API. This is a **separate
 project from the React/TS migration** and runs after it, so that a bug ever only has one possible
 cause.
+
+> **Keep Firebase Authentication.** As of commit `ec39072` (2026-07-13) auth is real Firebase Auth —
+> passwords are never stored or readable by us, and `database.rules.json` locks `users/<uid>` to its
+> owner. That is *good*, working, security-reviewed code. **Do not rip it out to hand-roll JWTs.**
+> The server verifies the Firebase ID token with the Admin SDK and trusts the `uid`. You get a
+> referee without rebuilding identity.
 
 ---
 
 ## Why this is worth doing (and why not yet)
 
-Today every rule that matters is enforced **on the client**, and the database is a public JSON tree.
-That means, concretely:
+The RTDB rules now protect *identity* and *ownership* — but nothing protects the **truth of the
+numbers**, because the client is still the only thing computing them. Read `database.rules.json`
+and it's plain:
 
-- A player can open devtools and set their bankroll to 10,000,000. Nothing stops them.
-- Battleship writes your ship positions, Clue your hand, Hold'em your hole cards — into a node the
-  other player's client can read. **Hidden information isn't hidden**, it's just not displayed.
-  (Phase 6 of the migration is told to catalogue every instance of this rather than try to fix it —
-  because you *can't* fix it without a server.)
-- "Global leaderboard" can't mean anything, because the scores are self-reported.
-- Two clients can race for the same seat; there's no authority to arbitrate.
+- **A player can still set their own bankroll.** `users/<uid>` is writable by its owner — which is
+  correct for a rules-only system, and useless as an anti-cheat. Devtools → 10,000,000 chips.
+- **The leaderboard is self-reported.** `leaderboard/<uid>` is publicly readable and written by the
+  player it describes. The rules validate that `bankroll` is *a number* — not that it's *the truth*.
+- **Hidden information isn't hidden.** Room nodes (`$room.matches(/(_rooms|_hands|_hand_incoming)$/)`)
+  are `.read: true, .write: true` — **world-readable and world-writable**. Battleship's ship
+  positions, Clue's hand, Hold'em's hole cards all live there. Any player can read their opponent's
+  cards, or write into anyone's room. (Migration Phase 6 is told to catalogue every instance rather
+  than fix it — because you *can't* fix it without a server.)
+- **Two clients can race for the same seat**; there's no authority to arbitrate.
 
-A server fixes all four, because they're all the same bug: **there is no referee.**
+A server fixes all four, because they're all the same bug: **there is no referee.** Rules can say
+*who* may write. Only a server can say *what is true.*
 
 **But it fixes nothing about the frontend**, which is why it doesn't belong in the migration. And it
 has real costs, stated honestly:
@@ -56,14 +67,16 @@ Two decisions in the React migration exist specifically to make this phase cheap
 ## Architecture
 
 ```
-GitHub Pages (static, free)          App host (paid)
-┌──────────────────────┐            ┌────────────────────────────────┐
-│  React SPA           │  HTTPS +   │  game-api  (Node/Express)      │
-│  src/system/repo/api │ ─ JWT ───► │    SQLite (better-sqlite3)     │
-│                      │            │    streaming off-box backup    │
-│                      │  WSS       │                                │
+                    Firebase Auth  ← identity stays here. Not rebuilt.
+                          │ ID token
+GitHub Pages (static)     ▼          App host (paid)
+┌──────────────────────┐            ┌──────────────────────────────────┐
+│  React SPA           │  HTTPS +   │  game-api  (Node/Express)        │
+│  src/system/repo/api │ ─ token ─► │    verifies token (Admin SDK)    │
+│                      │            │    SQLite (better-sqlite3)       │
+│                      │  WSS       │    streaming off-box backup      │
 │  useMatch / useChat  │ ◄────────► │  rooms (WebSocket, authoritative)│
-└──────────────────────┘            └────────────────────────────────┘
+└──────────────────────┘            └──────────────────────────────────┘
               │
               └──► packages/game-logic  ← the SAME pure TS rules run on both sides
 ```
@@ -74,8 +87,9 @@ per domain, and splitting it would buy nothing but latency and ops.
 ### Schema sketch
 
 ```sql
-users(id, username UNIQUE, password_hash, created_at, is_dev)
-profiles(user_id PK, bankroll, xp, level, loadout_json, updated_at)
+-- No password_hash column: Firebase Auth owns credentials. `uid` is the Firebase uid.
+users(uid PK, username UNIQUE, created_at, is_admin)
+profiles(uid PK, bankroll, xp, level, loadout_json, updated_at)
 stats(user_id, game_id, wins, losses, wagered, PRIMARY KEY(user_id, game_id))
 achievements(user_id, achievement_id, unlocked_at)
 purchases(user_id, item_id, purchased_at)
@@ -98,8 +112,10 @@ Same rules as the migration: **one phase per conversation**, never break `main`,
 ### Phase 8 — The API service + read-only shadow
 **Goal:** stand up `game-api` and prove it agrees with Firebase, without trusting it yet.
 
-- New workspace `game-api/`: Express + `better-sqlite3`, JWT auth, the schema above.
-- One-time export script: Firebase `users/<username>` → SQLite `users` + `profiles`.
+- New workspace `game-api/`: Express + `better-sqlite3`, the schema above. **Auth = verify the
+  Firebase ID token** with the Admin SDK; do not build a login system.
+- One-time export script: RTDB `users/<uid>` → SQLite `users` + `profiles` (join `usernames/` for
+  the display name).
 - Implement `src/system/repo/api/` against the interfaces from migration Phase 2.
 - **Shadow mode:** the client keeps writing to Firebase as the source of truth, *and* mirrors every
   write to the API. A comparison script diffs the two nightly.
@@ -107,8 +123,9 @@ Same rules as the migration: **one phase per conversation**, never break `main`,
 
 **Done when:** shadow diff is empty for a week of real play.
 
-### Phase 9 — Cut over profile, economy, stats, auth
-**Goal:** SQLite becomes the source of truth for everything that isn't realtime.
+### Phase 9 — Cut over profile, economy, stats
+**Goal:** SQLite becomes the source of truth for everything that isn't realtime. (Auth is *not* in
+scope — it already works.)
 
 - Flip the repo wiring: `api` implementations become primary, Firebase becomes the mirror.
 - Move bankroll mutations **server-side**: the client requests `POST /bet`, `POST /settle`; the
@@ -118,11 +135,11 @@ Same rules as the migration: **one phase per conversation**, never break `main`,
 - Streaming off-box backups + a tested restore drill — and actually run the drill; a backup you
   haven't restored is a rumor.
 
-**Done when:** editing `localStorage` in devtools changes nothing durable, and RTDB is no longer
-read for profile/stats.
+**Done when:** editing `localStorage` *or* `users/<uid>` in devtools changes nothing durable, and the
+leaderboard reflects server-computed numbers rather than self-reported ones.
 
 ### Phase 10 — Realtime rooms over WebSocket
-**Goal:** retire RTDB entirely. This is the biggest phase — budget accordingly.
+**Goal:** retire the RTDB **database** (Auth stays). This is the biggest phase — budget accordingly.
 
 - WebSocket server owns rooms: create, join, seat assignment (**server-arbitrated → the seat-2 race
   from migration Phase 4 is fixed for free**), presence, disconnect cleanup.
@@ -131,7 +148,8 @@ read for profile/stats.
 - Real-time games (Pong, Pool, Bowman) need attention: their sync model is continuous, not turn-based.
   Read what migration Phase 6 recorded about them.
 
-**Done when:** Firebase is removed from `package.json`.
+**Done when:** the world-writable `*_rooms` / `*_hands` / `*_hand_incoming` nodes are gone from
+`database.rules.json`, and RTDB is no longer read or written at all.
 
 ### Phase 11 — Server-authoritative game state
 **Goal:** the referee actually referees. Only worth doing for games where it matters.

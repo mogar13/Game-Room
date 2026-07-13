@@ -24,7 +24,12 @@ project. They agree on the **data schema**, not on the code.
 ```
 React shell  ──> src/system/profile.ts  ──┐
                                           ├──> localStorage["casino_player_profile"]
-legacy page  ──> legacy/system/…js      ──┘    Firebase: users/<username>, <roomPath>/<id>
+legacy page  ──> legacy/system/…js      ──┘    Firebase Auth (uid) + RTDB:
+                                                 users/<uid>          owner-only
+                                                 usernames/<name>     → uid index
+                                                 leaderboard/<uid>    public projection
+                                                 admins/<uid>         dev flag
+                                                 <roomPath>/<id>      open
 ```
 
 Which means the rule from `MIGRATION_PLAN.md` is now load-bearing and literal:
@@ -67,7 +72,7 @@ Read each legacy file before porting it. The LOC counts tell you where the subst
 | Legacy | LOC | → New | Notes |
 |---|---|---|---|
 | `system_profile.js` | 221 | `src/system/profile.ts` | Source of truth: bankroll, XP, level, loadout. Zustand store. |
-| `system_auth.js` | **718** | `src/system/auth.ts` | The big one. `users/<username>` RTDB + `casino_users` localStorage mirror, prefers cloud when online. |
+| `system_auth.js` | **718** | `src/system/auth.ts` | ⚠️ **Rewritten 2026-07-13** — see below. Real Firebase Auth now; the port is *easier* than it looks. |
 | `system_ui.js` | **1088** | ⚠️ **split — see below** | Not a module. Three things in a trenchcoat. |
 | `system_rewards.js` | 218 | `src/system/rewards.ts` | |
 | `system_betting.js` | 182 | `src/system/betting.ts` | Bet math + economy guard. **Pure → unit test it.** |
@@ -79,6 +84,35 @@ Read each legacy file before porting it. The LOC counts tell you where the subst
 | `system_lobby.js` | 333 | → **Phase 4** | Leave it. |
 | `system_match.js` | 307 | → **Phase 4** | Leave it. |
 | `system_chat.js` | 266 | → **Phase 4** | Leave it. |
+
+### ⚠️ Auth was rewritten on 2026-07-13 — the old descriptions are dead
+
+Commit `ec39072` ("Replace homegrown auth with Firebase Authentication") replaced the
+browser-verified, `btoa`-"hashed" auth with **real Firebase Authentication**. Anything you read
+elsewhere — including `CLAUDE.md`, which is now stale — describing `users/<username>` records with
+passwords in them is **describing code that no longer exists**. Read `system/system_auth.js` fresh.
+
+The model as it actually is now:
+
+| Node | Rule | Purpose |
+|---|---|---|
+| Firebase Auth | — | Owns credentials. Passwords never stored or readable by us. |
+| `users/<uid>` | owner-or-admin read/write | The player's game data (profile, stats, loadout). |
+| `usernames/<name>` | public read, owner write | Username → uid index, so username login still works. |
+| `leaderboard/<uid>` | **public read**, owner write | Projection: name/avatar/bankroll/xp/level/wins only. |
+| `admins/<uid>` | self-read | **The dev flag.** Replaced the hardcoded username check. |
+| `<roomPath>/<id>` | open read/write | Multiplayer rooms (`*_rooms`, `*_hands`, `*_hand_incoming`). |
+
+Consequences for this phase:
+- **`AuthRepo` wraps Firebase Auth, not just RTDB.** So `firebase/auth` joins `firebase/database`
+  in the allowed-imports list for `src/system/repo/firebase/` — the ESLint guard must permit it there
+  and nowhere else.
+- **Identity is a `uid`, not a username.** Everything keyed by username in the old code is keyed by
+  uid now. Type it as a distinct `Uid` branded type if you want the compiler's help.
+- **`onAuthStateChanged` is async and fires after first paint.** The store needs a genuine
+  `loading | signed-in | guest` state. Don't render the hub assuming auth has resolved.
+- The port is now **smaller and safer** than the 718 LOC suggests — a lot of it is Firebase Auth
+  plumbing that maps onto the SDK directly.
 
 ### Breaking up `system_ui.js` (1,088 lines)
 
@@ -139,10 +173,12 @@ one dies when its game is ported in Phase 6.
 
 ## Gotchas
 
-- **Port auth verbatim first, refactor second.** 718 lines with an online/offline fallback. Get a
-  faithful port committed, *then* clean it up in a follow-up commit, so the diff stays reviewable.
-- **`isDev` gating.** `profile.isDev` + the explicit `forerunner` username check
-  (`hub_app.js:125`) gates dev-only UI. Port the gate faithfully; do not accidentally widen it.
+- **Port auth verbatim first, refactor second.** Get a faithful port committed, *then* clean it up in
+  a follow-up commit, so the diff stays reviewable.
+- **`isDev` gating changed.** There is **no more hardcoded `forerunner` username check** — dev rights
+  now come from `admins/<uid>` in the database rules, and `profile.isDev` is just a cached reflection
+  of that. The rule is the gate; the UI flag is cosmetic. **Never grant dev powers from the client
+  flag alone** — anything that actually matters must be enforced by the RTDB rule.
 - **Audio mute caching.** `system_audio.js:11` documents a real bug fix about a cached mute boolean
   going stale. Read the comment. Don't regress it. (Its *cause* — the iframe — is gone, which may
   mean the fix simplifies. Verify before deleting it.)

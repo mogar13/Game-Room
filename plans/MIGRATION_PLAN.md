@@ -25,6 +25,13 @@ This is a well-worn pattern: standalone apps folded into one shell as `React.laz
 
 Goal state: adding a game = write a component against a documented SDK + add one registry entry.
 
+> ⚠️ **`CLAUDE.md` is stale — do not trust it.** It still describes homegrown auth with
+> `users/<username>` records, and the "no build step, no package manager" rule that Phase 1 deletes.
+> Auth was replaced with **real Firebase Authentication** on 2026-07-13 (commit `ec39072`): identity
+> is now a `uid`, game data lives at `users/<uid>` locked to its owner, dev rights come from
+> `admins/<uid>`, and there's a public `leaderboard/<uid>` projection. Phase 2 documents the real
+> model; Phase 7 rewrites `CLAUDE.md`. Until then, **read the code, not the docs.**
+
 ## Architecture: one SPA, many routes. **No iframes.**
 
 The iframe is being **removed, not preserved**. Alternatives considered and rejected:
