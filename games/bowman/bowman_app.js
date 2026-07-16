@@ -1561,6 +1561,8 @@ function opponentLeft(msg) {
         SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
     } else {
         if (roomListener) { roomListener(); roomListener = null; }
+        SystemMatch.setSeats([]); // room is gone — skip the ghost seat write
+        SystemMatch.cleanup();    // clears _roomId so a later unload can't resurrect the room
         SystemUI.stopChat(); chatStarted = false;
         currentRoomId = null; myId = 1; isHost = true;
         lastActionTs = 0; lastSyncTime = 0;

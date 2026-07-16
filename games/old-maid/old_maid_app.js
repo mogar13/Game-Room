@@ -86,6 +86,11 @@ function initOldMaid() {
         playerCount = parseInt(e.target.value); localStorage.setItem("oldmaid_pcount", playerCount); resetGame();
     });
 
+    document.getElementById("sys-om-diff").value = aiDifficulty;
+    document.getElementById("sys-om-diff").addEventListener("change", (e) => {
+        aiDifficulty = e.target.value; localStorage.setItem("oldmaid_diff", aiDifficulty);
+    });
+
     resetGame();
 }
 
@@ -196,10 +201,14 @@ async function executeStealAsync(thiefIdx, targetIdx, cardIdx) {
     const stolenCard = hands[targetIdx].splice(cardIdx, 1)[0];
     hands[thiefIdx].push(stolenCard);
     
-    // Shuffle the thief's hand so nobody knows where the new card landed
-    for (let i = hands[thiefIdx].length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [hands[thiefIdx][i], hands[thiefIdx][j]] = [hands[thiefIdx][j], hands[thiefIdx][i]];
+    // Shuffle the thief's hand so nobody knows where the new card landed.
+    // Only the authoritative side shuffles — joiners take the ordering from
+    // the host's pushed state, or every client would shuffle differently.
+    if (gameMode !== "online" || isHost) {
+        for (let i = hands[thiefIdx].length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [hands[thiefIdx][i], hands[thiefIdx][j]] = [hands[thiefIdx][j], hands[thiefIdx][i]];
+        }
     }
 
     playCustomSound('draw');
@@ -520,6 +529,12 @@ function pushGameState() {
 
 function exitOnlineToLocal() {
     if (roomListener) { roomListener(); roomListener = null; }
+    if (window.SystemMatch) {
+        // Blank stale seats first so a joiner's cleanup()/unload can't write a
+        // seat-release into the deleted room and recreate it as a ghost node.
+        if (!isHost) SystemMatch.setSeats([]);
+        SystemMatch.cleanup();
+    }
     SystemUI.stopChat(); chatStarted = false;
     SystemUI.v2Lobby.hide();
     gameMode = "ai"; myId = 1; isHost = true; currentRoomId = null; onlineDealt = false;

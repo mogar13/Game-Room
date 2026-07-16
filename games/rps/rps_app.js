@@ -156,6 +156,16 @@ function enterOnlineUI() {
     refreshAIUI();
 }
 
+// SystemBetting keeps its own running total for the "BET: $" HUD and never
+// hears about round resolution — zero it whenever our local bet resets.
+// (Not clearBet(): that fires onClear, which would refund the bet again.)
+function resetBetRack() {
+    if (window.SystemBetting) {
+        SystemBetting.currentBet = 0;
+        SystemBetting.updateDisplay();
+    }
+}
+
 // ── 5. AI MODE ───────────────────────────────────────────────
 document.getElementById("sys-reset-game-btn")?.addEventListener("click", () => {
     if (confirm("Reset your RPS win streak?")) {
@@ -236,6 +246,7 @@ function resolveAIRound(playerChoice) {
 
     resultOverlay.classList.remove("hidden");
     currentBet  = 0;
+    resetBetRack();
     isAnimating = false;
 
     localStorage.setItem("rps_streak", winStreak);
@@ -324,7 +335,10 @@ SystemMatch.setup({
             SystemUI.money += currentBet;
             currentBet = 0;
         }
+        resetBetRack();
         gameMode = "ai";
+        const modeEl = document.getElementById("sys-rps-mode");
+        if (modeEl) modeEl.value = "ai";
         if (roomListener) { roomListener(); roomListener = null; }
         clearTimeout(revealTimer); // don't let a pending round-reset write into a dead room
         chatStarted = false;
@@ -346,6 +360,10 @@ SystemMatch.setup({
                 SystemUI.money += currentBet;
                 currentBet = 0;
             }
+            resetBetRack();
+            if (roomListener) { roomListener(); roomListener = null; }
+            clearTimeout(revealTimer); // stale round-reset must not write into a dead room
+            currentRoomId = null;
             gameMode = "ai";
             const el = document.getElementById("sys-rps-mode");
             if (el) el.value = "ai";
@@ -425,6 +443,7 @@ function handleOpponentGone(message) {
         SystemUI.money += currentBet; // refund the locked-in bet
         currentBet = 0;
     }
+    resetBetRack();
     myOnlineChoice = null;
     isAnimating = false;
     lastSeenResultRound = 0;
@@ -587,6 +606,7 @@ function showOnlineResult(result, data) {
 
         resultOverlay.classList.remove("hidden");
         currentBet = 0;
+        resetBetRack();
         refreshAIUI();
 
         // The Host waits for the result to show, then resets the DB for the next round

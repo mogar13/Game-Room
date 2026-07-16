@@ -715,7 +715,7 @@ async function doRoll() {
         } else {
             cp.jailTurns++;
             if (cp.jailTurns >= 3) {
-                cp.money -= 50; cp.inJail = false; cp.jailTurns = 0;
+                await chargePlayer(cp, 50, null); cp.inJail = false; cp.jailTurns = 0;
                 logP(cp, `3rd failed jail roll — paid $50 bail, rolling ${sum}`, "bad");
             } else {
                 logP(cp, `rolled ${diceVal[0]}+${diceVal[1]} — still in jail (${cp.jailTurns}/3)`);
@@ -895,7 +895,7 @@ async function applyCard(player, card, diceTotal) {
             player.position = target;
             renderTokens(); await sleep(800);
             logP(player, `moved to nearest utility: ${BOARD[target].name}`);
-            handlePropertyLand(player, target, diceTotal, false);
+            await handlePropertyLand(player, target, diceTotal, false);
             break;
         }
         case "repairs": {
@@ -1070,10 +1070,15 @@ function startAuction(sid) {
 
         const bidUp  = document.getElementById("btn-bid-up");
         const bidOut = document.getElementById("btn-bid-out");
-        const humanId = players.find(p => !p.isAI)?.id;
+        // In hotseat there are several humans sharing one screen, so an
+        // un-attributed local click belongs to whoever's turn it is — not
+        // always the first human in the list.
+        const localBidderId = gameMode === "hotseat"
+            ? (currentPlayer()?.id ?? players.find(p => !p.isAI)?.id)
+            : players.find(p => !p.isAI)?.id;
 
         const onBid = (forcedBidderId) => {
-            const bId = typeof forcedBidderId === 'number' ? forcedBidderId : humanId;
+            const bId = typeof forcedBidderId === 'number' ? forcedBidderId : localBidderId;
             if (!bId || folded.includes(bId)) return;
             const human = players.find(p => p.id === bId);
             if (!human || human.money < bid + 10) return;
@@ -1084,10 +1089,16 @@ function startAuction(sid) {
         };
 
         const onFold = (forcedFolderId) => {
-            const fId = typeof forcedFolderId === 'number' ? forcedFolderId : humanId;
+            const fId = typeof forcedFolderId === 'number' ? forcedFolderId : localBidderId;
             if (fId && !folded.includes(fId)) {
                 folded.push(fId);
                 updateFoldedDisplay();
+                // A folding leader forfeits the lead — otherwise they'd still
+                // win the auction when the timer expires.
+                if (leaderId === fId) {
+                    leaderId = null;
+                    document.getElementById("auction-leader-name").textContent = "No bid yet";
+                }
             }
             const active = activePlayers().filter(p => !folded.includes(p.id));
             if (active.length === 0 && isAuctionHost) { clearInterval(timer); finish(); }
@@ -1095,6 +1106,34 @@ function startAuction(sid) {
 
         window._currentAuctionOnBid = onBid;
         window._currentAuctionOnFold = onFold;
+
+        // Hotseat: several humans share the screen — give each their own
+        // BID/FOLD pair so the charged player is the one who actually bid.
+        const hotseatHumans = gameMode === "hotseat" ? activePlayers().filter(p => !p.isAI) : [];
+        let seatRow = null;
+        if (hotseatHumans.length > 1) {
+            bidUp.style.display = "none";
+            bidOut.style.display = "none";
+            seatRow = document.createElement("div");
+            seatRow.style.cssText = "display:flex;flex-direction:column;gap:6px;width:100%;";
+            hotseatHumans.forEach(p => {
+                const row = document.createElement("div");
+                row.style.cssText = "display:flex;gap:6px;width:100%;";
+                const b = document.createElement("button");
+                b.className = "act-btn primary";
+                b.style.flex = "1";
+                b.style.borderColor = p.hex;
+                b.textContent = `${p.name.toUpperCase()} — BID +$10`;
+                b.addEventListener("click", () => onBid(p.id));
+                const f = document.createElement("button");
+                f.className = "act-btn secondary";
+                f.textContent = "FOLD";
+                f.addEventListener("click", () => { onFold(p.id); b.disabled = true; f.disabled = true; });
+                row.appendChild(b); row.appendChild(f);
+                seatRow.appendChild(row);
+            });
+            bidUp.parentElement.appendChild(seatRow);
+        }
 
         function updateFoldedDisplay() {
             const names = folded.map(id => players.find(p => p.id === id)?.name).filter(Boolean);
@@ -1107,6 +1146,7 @@ function startAuction(sid) {
             window._currentAuctionOnFold = null;
             bidUp.removeEventListener("click", onBid);
             bidOut.removeEventListener("click", onFold);
+            if (seatRow) { seatRow.remove(); bidUp.style.display = ""; bidOut.style.display = ""; }
             document.getElementById("auction-modal").classList.add("hidden");
             if (gameMode === "online" && isAuctionHost) {
                 window.onlineAuctionState = { active: false, ts: Date.now() + 50 };
@@ -1303,11 +1343,14 @@ function openManageModal() {
             const sp  = BOARD[sid];
             const p   = currentPlayer();
             if (p.hotels[sid]) {
+                // Breaking a hotel down puts 4 houses back onto the property,
+                // which must be drawn FROM the bank's house supply.
+                if (bankHouses < 4) { log("Not enough houses in the bank to break down the hotel!", "bad"); return; }
                 p.hotels[sid] = false; bankHotels++;
+                bankHouses -= 4;
                 p.houses[sid] = 4;
-                p.houses[sid]--; bankHouses++;
                 p.money += Math.floor(sp.houseCost / 2);
-                logP(p, `sold hotel on ${sp.name} → 3 houses`);
+                logP(p, `sold hotel on ${sp.name} → 4 houses`);
             } else if ((p.houses[sid] || 0) > 0) {
                 p.houses[sid]--; bankHouses++;
                 if (p.houses[sid] === 0) delete p.houses[sid];
@@ -1433,7 +1476,7 @@ async function aiDoTurn(player) {
             player.inJail = false; player.jailTurns = 0;
             logP(player, "used Get Out of Jail Free card", "good");
         } else if (player.money >= 150 && (player.jailTurns >= 1 || aiDifficulty === "hard")) {
-            player.money -= 50;
+            await chargePlayer(player, 50, null);
             player.inJail = false; player.jailTurns = 0;
             logP(player, "paid $50 bail");
         }
@@ -1505,9 +1548,13 @@ function aiConsiderTrade(player) {
     if (aiDifficulty === "easy") {
         if (Math.random() > 0.25) return null;
         if (player.properties.length === 0) return null;
-        const target   = others[Math.floor(Math.random() * others.length)];
-        const offerSid = player.properties[Math.floor(Math.random() * player.properties.length)];
-        const wantSid  = target.properties[Math.floor(Math.random() * target.properties.length)];
+        const target    = others[Math.floor(Math.random() * others.length)];
+        // Improved properties can't be traded (same rule the trade UI enforces).
+        const offerable = player.properties.filter(sid => !isImproved(sid));
+        const wantable  = target.properties.filter(sid => !isImproved(sid));
+        if (offerable.length === 0 || wantable.length === 0) return null;
+        const offerSid = offerable[Math.floor(Math.random() * offerable.length)];
+        const wantSid  = wantable[Math.floor(Math.random() * wantable.length)];
         if (offerSid === undefined || wantSid === undefined) return null;
         const offerPrice = BOARD[offerSid].price || 0;
         const wantPrice  = BOARD[wantSid].price  || 0;
@@ -1706,9 +1753,15 @@ document.getElementById("btn-load-game")?.addEventListener("click", () => {
 
         renderAll();
         if (phase === "moving" || phase === "landed") phase = "roll";
-        
+
         log("SYSTEM: Game state loaded.", "highlight");
-        if (phase === "roll") startTurn();
+        if (phase === "roll") {
+            startTurn();
+        } else if (phase === "build" && players[turnIdx] && players[turnIdx].isAI) {
+            // The save was taken mid-build on an AI's turn; the "roll" branch
+            // won't fire, so resume the AI's turn or it soft-locks forever.
+            aiEndTurn(players[turnIdx]);
+        }
     } catch (e) {
         alert("Error loading game.");
         console.error(e);
@@ -1748,6 +1801,12 @@ function openTradeModal() {
     document.getElementById("trade-modal").classList.remove("hidden");
 }
 
+// A property carrying houses/a hotel cannot be traded — its buildings must be
+// sold back to the bank first. Used to disable such props in the trade UI.
+function isImproved(sid) {
+    return players.some(p => ((p.houses && p.houses[sid] > 0) || (p.hotels && p.hotels[sid])));
+}
+
 function populateTradeCols(proposer, target) {
     tradeState.offerSids = [];
     tradeState.wantSids  = [];
@@ -1763,6 +1822,12 @@ function populateTradeCols(proposer, target) {
         const btn = document.createElement("button");
         btn.className = "trade-prop-btn";
         btn.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${hex};display:inline-block;flex-shrink:0"></span>${sp.name}`;
+        if (isImproved(sid)) {
+            btn.disabled = true;
+            btn.title = "Sell buildings before trading this property";
+            btn.style.opacity = "0.4";
+            return btn;
+        }
         btn.addEventListener("click", () => {
             btn.classList.toggle("selected");
             if (btn.classList.contains("selected")) {
@@ -1904,6 +1969,13 @@ document.getElementById("trade-counter-btn")?.addEventListener("click", () => {
         const btn = document.createElement("button");
         btn.className = "trade-prop-btn selected";
         btn.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${hex};display:inline-block;flex-shrink:0"></span>${sp.name}`;
+        if (isImproved(sid)) {
+            btn.className = "trade-prop-btn";
+            btn.disabled = true;
+            btn.title = "Sell buildings before trading this property";
+            btn.style.opacity = "0.4";
+            return btn;
+        }
         btn.addEventListener("click", () => {
             btn.classList.toggle("selected");
             if (btn.classList.contains("selected")) {
@@ -1951,16 +2023,22 @@ document.getElementById("trade-counter-btn")?.addEventListener("click", () => {
 });
 
 function executeTrade(proposer, target, offerSids, wantSids, offerCash, wantCash) {
+    // Improved properties are blocked from selection everywhere; if one slips
+    // through, return its buildings to the bank supply rather than vaporizing them.
+    const releaseBuildings = (owner, sid) => {
+        if (owner.houses[sid]) { bankHouses += owner.houses[sid]; delete owner.houses[sid]; }
+        if (owner.hotels[sid]) { bankHotels++; delete owner.hotels[sid]; }
+    };
     offerSids.forEach(sid => {
         proposer.properties = proposer.properties.filter(s => s !== sid);
         target.properties.push(sid);
-        delete proposer.houses[sid]; delete proposer.hotels[sid];
+        releaseBuildings(proposer, sid);
         proposer.mortgaged = proposer.mortgaged.filter(s => s !== sid);
     });
     wantSids.forEach(sid => {
         target.properties = target.properties.filter(s => s !== sid);
         proposer.properties.push(sid);
-        delete target.houses[sid]; delete target.hotels[sid];
+        releaseBuildings(target, sid);
         target.mortgaged = target.mortgaged.filter(s => s !== sid);
     });
     proposer.money -= offerCash; target.money  += offerCash;
@@ -1971,6 +2049,14 @@ function executeTrade(proposer, target, offerSids, wantSids, offerCash, wantCash
 document.getElementById("trade-btn")?.addEventListener("click", openTradeModal);
 document.getElementById("trade-cancel-btn")?.addEventListener("click", () => {
     document.getElementById("trade-modal").classList.add("hidden");
+    // If we're cancelling a counter to an AI's proposal, resolve the AI's
+    // pending trade as a rejection so its turn doesn't hang forever.
+    if (pendingTrade?.onResolve) {
+        const onResolve = pendingTrade.onResolve;
+        log("Trade cancelled.", "bad");
+        pendingTrade = null;
+        onResolve();
+    }
 });
 
 // ── MISSING EVENT LISTENERS ───────────────

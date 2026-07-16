@@ -89,6 +89,7 @@ let grid        = [];   // grid[r][c] = 0|1|2
 let currentTurn = 1;    // 1 or 2
 let gameActive  = false;
 let dropping    = false; // block input while chip is animating
+let gameEnded   = false; // one-shot: post-game room writes must not replay endGame
 
 const statusDisplay = document.getElementById("status-display");
 const boardEl       = document.getElementById("c4-board");
@@ -494,6 +495,7 @@ function initGame() {
     currentTurn = 1;
     gameActive  = true;
     dropping    = false;
+    gameEnded   = false;
 
     buildBoard();
     updateStatus();
@@ -605,6 +607,17 @@ function listenToRoom() {
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
 
+        // Joiner vanished mid-game (abandoned flag or SystemMatch's seat-open
+        // fallback): host hands the seat to a drop-in AI instead of waiting forever.
+        if (isHost && onlineGameStarted && gameActive &&
+            (data.status === "abandoned" || (seats[1] && seats[1].type === "open"))) {
+            seats[1] = { type: "ai", name: "AI (takeover)" };
+            statusDisplay.textContent = "OPPONENT LEFT — AI TAKES OVER";
+            setTimeout(updateStatus, 2500);
+            window.dbUpdate(window.dbRef(window.db, "c4_rooms/" + currentRoomId), { status: "playing", seats: seats });
+            return; // the echo of this write re-enters syncGameState with the AI seat
+        }
+
         if (data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true;
             SystemUI.v2Lobby.hide();
@@ -637,16 +650,20 @@ function listenToRoom() {
 function syncGameState(data, newGrid) {
     grid = newGrid;
     currentTurn = data.turn;
-    gameActive = true;
 
     syncBoardFromGrid();
 
     if (data.winner !== undefined && data.winner !== null) {
-        const winCells = data.winCells || null;
-        endGame(data.winner, winCells);
+        if (!gameEnded) {
+            gameEnded = true;
+            gameActive = true;
+            endGame(data.winner, data.winCells || null);
+        }
         return;
     }
 
+    gameEnded = false; // joiner: host restarted (initGame writes winner: null)
+    gameActive = true;
     updateStatus();
     
     // V2 Drop-In AI: If a sync happens and it's an AI turn, host takes over!
@@ -722,3 +739,10 @@ function firebaseToGrid(flat) {
             g[r][c] = arr[r * COLS + c] || 0;
     return g;
 }
+
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && currentRoomId && window.db && !isHost && chatStarted && gameActive) {
+        // Joiner vanished mid-game: flag it so the host doesn't wait forever
+        window.dbUpdate(window.dbRef(window.db, "c4_rooms/" + currentRoomId), { status: "abandoned" });
+    }
+});

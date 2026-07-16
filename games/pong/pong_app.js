@@ -58,7 +58,8 @@ let rallyHits    = 0;
 let myPaddleY    = 0;   // mouse/touch controlled paddle Y (center)
 let keysDown     = {};
 let lastPushedPaddleY = 0;
-let lastPushTime  = 0;
+let lastPushTime  = 0;   // paddle-move throttle
+let lastStatePush = 0;   // host ball-state push throttle (must stay separate)
 
 // Online
 let ballTarget   = { x: 0, y: 0, vx: 0, vy: 0 }; // interpolation target for joiner
@@ -164,11 +165,11 @@ function resetGame() {
     lastTime   = 0;
 }
 
-function startCountdown() {
+function startCountdown(lastScorer = 0) {
     gamePhase      = 'countdown';
     countdownVal   = 3;
     countdownTimer = 1.0;
-    resetBall(0);
+    resetBall(lastScorer);
 }
 
 function resetBall(lastScorer) {
@@ -222,15 +223,13 @@ function updateTouchY(e) {
 }
 
 function applyKeyInput(dt) {
-    const myIdx = getMyPaddleIdx();
     const spd = 500;
-    // Player 0: W/S
-    if (keysDown['w'] || keysDown['W']) paddles[0].y -= spd * dt;
-    if (keysDown['s'] || keysDown['S']) paddles[0].y += spd * dt;
-    // Player 1 (local 2P or own side in online): arrow keys
-    const p1Idx = gameMode === 'online' ? myIdx : 1;
-    if (keysDown['ArrowUp'])   paddles[p1Idx].y -= spd * dt;
-    if (keysDown['ArrowDown']) paddles[p1Idx].y += spd * dt;
+    // Keys drive the local player's paddle via myPaddleY so they compose with
+    // mouse/touch instead of being clobbered by it — and never touch the
+    // opponent's (AI/remote) paddle.
+    if (keysDown['w'] || keysDown['W'] || keysDown['ArrowUp'])   myPaddleY -= spd * dt;
+    if (keysDown['s'] || keysDown['S'] || keysDown['ArrowDown']) myPaddleY += spd * dt;
+    myPaddleY = Math.max(0, Math.min(H, myPaddleY));
 }
 
 // ── GAME LOOP ─────────────────────────────────
@@ -338,8 +337,8 @@ function update(dt, ts) {
     // ── Push state to joiner ──────────────────
     if (gameMode === 'online' && isHost) {
         const now = ts;
-        if (now - lastPushTime > PUSH_INTERVAL) {
-            lastPushTime = now;
+        if (now - lastStatePush > PUSH_INTERVAL) {
+            lastStatePush = now;
             pushBallState();
         }
     }
@@ -408,10 +407,9 @@ function scorePoint(scorerIdx) {
         return;
     }
 
-    // Reset and countdown again
+    // Reset and countdown again — serve toward whoever just got scored on
     setTimeout(() => {
-        resetBall(scorerIdx);
-        startCountdown();
+        startCountdown(scorerIdx);
         if (gameMode === 'online' && isHost) pushFullState();
     }, 1000);
 }
@@ -742,14 +740,14 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1;
-        lastSyncTime = 0; lastPushTime = 0; lastPushedPaddleY = 0; // fresh room — drop stale timestamps
+        lastSyncTime = 0; lastPushTime = 0; lastStatePush = 0; lastPushedPaddleY = 0; // fresh room — drop stale timestamps
         playerNames[0] = SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'P1';
         listenToRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; myId = 2;
-        lastSyncTime = 0; lastPushTime = 0; lastPushedPaddleY = 0; // fresh room — drop stale timestamps
+        lastSyncTime = 0; lastPushTime = 0; lastStatePush = 0; lastPushedPaddleY = 0; // fresh room — drop stale timestamps
         const seats = SystemMatch.getSeats();
         playerNames[0] = (seats[0] && seats[0].name) || 'P1';
         playerNames[1] = SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'P2';
@@ -759,6 +757,8 @@ SystemMatch.setup({
         if (roomListener) { roomListener(); roomListener = null; }
         chatStarted = false;
         myId = 1; isHost = true; gameMode = 'ai';
+        const modeEl = document.getElementById('pong-mode');
+        if (modeEl) modeEl.value = 'ai';
         resetGame(); startCountdown();
     },
     onStart: () => {

@@ -966,6 +966,7 @@ function confirmExchange() {
     cancelExchange(); renderRack(); updateBagCount();
     consecutivePasses++;
     addLogEntry(players[currentTurn].name, "", 0, true);
+    if (gameMode === "online") pushOnlineState();
     if (checkGameOver()) return;
     nextTurn();
 }
@@ -1241,6 +1242,7 @@ function aiExchange(rack) {
     shuffleArr(tileBag);
     players[currentTurn].rack.push(...drawTiles(toExchange.length));
     consecutivePasses++; addLogEntry(players[currentTurn].name, "", 0, true); updateBagCount();
+    if (gameMode === "online") pushOnlineState();
     if (checkGameOver()) return;
     nextTurn();
 }
@@ -1426,7 +1428,9 @@ function listenToRoom() {
             }
             if (isHost) initGame("online", aiDifficulty, seats.length);
             else {
-                document.getElementById("start-screen").classList.add("hidden");
+                // Always re-init: a prior local game this session leaves stale
+                // players/score panel behind; the sync below overwrites state.
+                initGame("online", aiDifficulty, seats.length);
                 if (data.gameState) syncOnlineState(data.gameState);
             }
             return;
@@ -1548,6 +1552,27 @@ document.getElementById("start-btn").addEventListener("click", () => {
     new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
     if (gameMode === "online") return;
     initGame(gameMode, aiDifficulty, lobbyPlayerCount);
+});
+
+document.getElementById("btn-play-again").addEventListener("click", () => {
+    new Audio('../../system/audio/click1.mp3').play().catch(e=>{});
+    document.getElementById("game-over-modal").classList.add("hidden");
+    if (gameMode === "online") {
+        // No rematch infra — leave the room and drop back to the start screen in local mode.
+        leaveCurrentRoom();
+        gamePhase = "idle";
+        gameMode = "ai";
+        localStorage.setItem("scrabble_mode", gameMode);
+        const modeEl = document.getElementById("sys-scrabble-mode");
+        if (modeEl) modeEl.value = "ai";
+        document.querySelectorAll("#opponent-row .opp-btn").forEach(b => {
+            b.classList.toggle("active", b.dataset.mode === "ai");
+        });
+        document.getElementById("start-screen").classList.remove("hidden");
+        applyModeUI();
+    } else {
+        initGame(gameMode, aiDifficulty, lobbyPlayerCount);
+    }
 });
 
 window.addEventListener("resize", () => { if (gamePhase === "playing") buildBoard(); });

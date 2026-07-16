@@ -113,7 +113,18 @@ function initUno() {
     if (modeEl) {
         modeEl.value = gameMode;
         modeEl.addEventListener("change", (e) => {
-            gameMode = e.target.value;
+            const newMode = e.target.value;
+            // Leaving an in-progress online game as a joiner: hand our seat to an
+            // AI (like the beforeunload/onLeave paths) BEFORE tearing down the
+            // match, so the host's AI driver keeps the table alive instead of
+            // hanging forever on an 'open' seat. Then blank SystemMatch's seat
+            // copy so cleanup() doesn't re-open the seat we just handed off
+            // (mirrors TTT's exitOnline).
+            if (gameMode === "online" && newMode !== "online" && !isHost) {
+                releaseMySeat();
+                if (window.SystemMatch) SystemMatch.setSeats([]);
+            }
+            gameMode = newMode;
             localStorage.setItem("uno_mode", gameMode);
             document.getElementById("sys-modal").classList.add("sys-hidden");
             

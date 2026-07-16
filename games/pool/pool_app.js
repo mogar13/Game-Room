@@ -101,7 +101,7 @@ let aiAimPullback = 0;
 // ── SYSTEM UI ─────────────────────────────────
 SystemUI.init({
     gameName: '8-BALL POOL',
-    rules: 'Drag the cue back to set power, release to shoot. Use the spin pad to add english (top/back/side spin). Pot all your balls (solids 1–7 or stripes 9–15) then legally pot the 8-ball to win. Scratching, hitting the wrong ball, or potting the 8 early gives ball-in-hand to your opponent.',
+    rules: 'Drag the cue back to set power, release to shoot. Use the spin pad to add english (top/back/side spin). Pot all your balls (solids 1–7 or stripes 9–15) then legally pot the 8-ball to win. Scratching or hitting the wrong ball gives ball-in-hand to your opponent — potting the 8-ball early loses the game.',
     hudDropdowns: [
         { id: 'pool-mode', options: [{ value: 'ai', label: '🤖 vs AI' }, { value: 'online', label: '🌐 Online' }] },
         { id: 'pool-diff', label: 'AI', options: [{ value: 'easy', label: 'Easy' }, { value: 'normal', label: 'Normal' }, { value: 'hard', label: 'Hard' }] }
@@ -629,6 +629,15 @@ function resolveTurn() {
     const myBalls   = getBallsOfType(myType);
     const earlyPot  = pottedThisTurn.filter(id => id !== 8);
 
+    // Legality is judged from PRE-SHOT state: balls potted this shot are
+    // already flagged pocketed, so add back this shot's suit pots when
+    // deciding whether the 8 was the required target.
+    const pottedMine = myType === null ? 0 : pottedThisTurn.filter(id => {
+        const t = BALL_CFG[id]?.type;
+        return myType === 'solids' ? t === 'solid' : t === 'stripe';
+    }).length;
+    const hadSuitBallsPreShot = myBalls.length + pottedMine > 0;
+
     let foul = false;
     let foulReason = '';
     let scratched = cueBallPottedThisTurn;
@@ -651,7 +660,7 @@ function resolveTurn() {
     if (!foul && myType !== null && firstContact !== null) {
         const hitType = BALL_CFG[firstContact]?.type;
         const mustHit = myType === 'solids' ? 'solid' : 'stripe';
-        if (myBalls.length === 0) {
+        if (!hadSuitBallsPreShot) {
             if (hitType !== 'eight') { foul = true; foulReason = '⚠️ Foul: must hit 8-ball'; }
         } else if (hitType !== mustHit) {
             foul = true; foulReason = `⚠️ Foul: hit wrong ball first`;

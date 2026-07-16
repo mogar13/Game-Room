@@ -60,6 +60,7 @@ function getDicePrefix() {
 function resetGame() {
     gameIsActive = false;
     dieCounts = [5, 5, 5, 5];
+    hands = [[], [], [], []];
     currentBid = { qty: 0, face: 0, bidder: -1 };
     
     if (gameMode !== "online") {
@@ -96,8 +97,12 @@ function startRound() {
     activeTurn = 0;
     while (dieCounts[activeTurn] <= 0) activeTurn = (activeTurn + 1) % playerCount;
 
-    setStatus("Round Started! Your bid.");
+    setStatus(activeTurn === (myId - 1) ? "Round Started! Your bid." : `Round Started! ${playerNames[activeTurn]}'s Turn...`);
     renderTable();
+
+    if (activeTurn !== (myId - 1) && gameMode === "ai") {
+        setTimeout(aiAction, 1500);
+    }
 }
 
 function renderTable() {
@@ -249,7 +254,10 @@ function handleBid() {
     const qty = stagedQty;
     const face = stagedFace;
 
-    if (qty < currentBid.qty || (qty === currentBid.qty && face <= currentBid.face && face !== 1)) {
+    const faceOrder = [2, 3, 4, 5, 6, 1];
+    const faceIdx = faceOrder.indexOf(face);
+    const curFaceIdx = faceOrder.indexOf(currentBid.face);
+    if (qty < currentBid.qty || (qty === currentBid.qty && faceIdx <= curFaceIdx)) {
         alert("Bid must be higher quantity, or same quantity with a higher face value!");
         return;
     }

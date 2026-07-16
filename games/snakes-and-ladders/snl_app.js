@@ -62,6 +62,10 @@ setTimeout(() => {
 }, 10);
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
+    if (gameMode === "online") {
+        alert("Leave the room to reset the game.");
+        return;
+    }
     if(confirm("Reset the game?")) {
         resetGame();
         document.getElementById("sys-modal").classList.add("sys-hidden");
@@ -295,7 +299,9 @@ const snakes = {
 };
 
 const ladders = {
-    1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100
+    // 2 (not 1): pieces start ON cell 1 and ladders only fire on landing,
+    // so a ladder starting at 1 could never trigger. (4 is already a ladder.)
+    2: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100
 };
 
 function createBoard() {

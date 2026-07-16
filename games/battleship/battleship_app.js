@@ -37,6 +37,7 @@ const sfxHit = new Audio('../../system/audio/hit.mp3');
 const sfxSplash = new Audio('../../system/audio/splash.mp3');
 
 function playCombatSound(type) {
+    if (SystemUI.isMuted) return;
     let snd = type === 'hit' ? sfxHit : sfxSplash;
     snd.pause(); 
     snd.currentTime = 0; 
@@ -79,6 +80,11 @@ document.getElementById("sys-bs-diff").addEventListener("change", function(e) {
 });
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
+    if (gameMode === "online") {
+        document.getElementById("sys-modal").classList.add("sys-hidden");
+        document.getElementById("status-display").innerText = "ONLINE MATCH — LEAVE THE ROOM TO RESTART";
+        return;
+    }
     if(confirm("Wipe the board and restart the game?")) {
         resetGame();
         document.getElementById("sys-modal").classList.add("sys-hidden");
@@ -278,6 +284,14 @@ function listenToRoom() {
             return;
         }
         seats = data.seats || [];
+        // Joiner tab-close releases seat 2 back to 'open'; mid-game the host
+        // adopts it as an AI so the match can finish instead of stalling forever.
+        if (isHost && gameState === "playing" && seats[1] && seats[1].type === 'open') {
+            seats[1] = { type: 'ai', name: 'AI (takeover)' };
+            SystemMatch.setSeats(seats);
+            window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), { seats: seats });
+            document.getElementById("status-display").innerText = "OPPONENT LEFT — AI TOOK OVER THEIR FLEET";
+        }
         SystemUI.v2Lobby.renderSeats(seats);
         if(data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true; SystemUI.v2Lobby.hide();
@@ -390,6 +404,15 @@ document.getElementById("fire-btn").addEventListener("click", () => {
         updates[myId === 1 ? 'player1Ships' : 'player2Ships'] = shipCoords;
         // Push the actual board (with the 1s) — hits and wins are judged from it.
         updates[myId === 1 ? 'player1Board' : 'player2Board'] = playerBoard;
+        // Seat 2 is an AI: nothing else ever writes its board/ready flag, so the
+        // host places its fleet now or the match never leaves setup.
+        if (isHost && seats[1] && seats[1].type === 'ai') {
+            const aiBoard = Array(100).fill(0);
+            autoPlaceShips(aiBoard, false); // also fills opponentShipCoords
+            updates['player2Board'] = aiBoard;
+            updates['player2Ships'] = opponentShipCoords;
+            updates['ready2'] = true;
+        }
         window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), updates);
         rollBtn.disabled = true;
     } else {
@@ -511,5 +534,11 @@ function resetGame() {
     initBoards();
 }
 
-document.getElementById("restart-btn").addEventListener("click", resetGame);
+document.getElementById("restart-btn").addEventListener("click", () => {
+    if (gameMode === "online") {
+        document.getElementById("status-display").innerText = "ONLINE MATCH — LEAVE THE ROOM TO RESTART";
+        return;
+    }
+    resetGame();
+});
 initBoards();

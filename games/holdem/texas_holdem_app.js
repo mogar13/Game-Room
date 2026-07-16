@@ -46,6 +46,9 @@ let currentBetToMatch = 0;
 let playersActed = 0;
 let joinerBoughtIn = false;
 let lastActionTs = 0;
+let handWinners = [];        // seat indices that won the last hand (synced for the joiner)
+let joinerSawResult = false; // joiner: played the win/lose sound for this hand already
+let matchOverHandled = false;
 
 // --- CUSTOM AUDIO ---
 const sfxDraw = new Audio('../../system/audio/card-draw.ogg');
@@ -199,6 +202,15 @@ SystemUI.setupBetting("os-betting-rack", {
         document.getElementById("btn-raise").innerText = "Raise";
     }
 });
+
+// Clear any chip selection + reset the raise button (stale "Raise $X" labels
+// otherwise persist across streets/turns).
+function resetBetSelector() {
+    selectedBet = 0;
+    SystemUI.updateBetDisplay(0);
+    const raiseBtn = document.getElementById("btn-raise");
+    if (raiseBtn) { raiseBtn.disabled = true; raiseBtn.innerText = "Raise"; }
+}
 
 // ── 3. CARD & HAND LOGIC ──────────────────────
 const SUITS = ['s', 'h', 'd', 'c'];
@@ -395,13 +407,15 @@ function getNextActive(currentIndex) {
         next = (next + 1) % playerCount;
         safeguard++;
         if(safeguard > 10) return next;
-    } while (folded[next] || (stacks[next] === 0 && !isAllIn[next]));
+    } while (folded[next] || isAllIn[next] || stacks[next] === 0);
     return next;
 }
 
 function startNewHand() {
     buildDeck(); hands = [[],[],[],[]]; bets = [0,0,0,0]; folded = [false,false,false,false]; isAllIn = [false,false,false,false];
     communityCards = []; pot = 0; currentPhase = "preflop"; isGameOver = false; playersActed = 0;
+    handWinners = [];
+    resetBetSelector();
     
     for (let i=0; i<playerCount; i++) {
         if (stacks[i] > 0) hands[i] = [deck.pop(), deck.pop()];
@@ -409,10 +423,12 @@ function startNewHand() {
     }
 
     dealerButton = (dealerButton + 1) % playerCount;
-    let sbIdx = getNextActive(dealerButton);
-    let bbIdx = getNextActive(sbIdx);
-    
-    postBet(sbIdx, SMALL_BLIND); 
+    // Heads-up: the dealer posts the small blind and acts first preflop.
+    let sbIdx, bbIdx;
+    if (playerCount === 2) { sbIdx = dealerButton; bbIdx = getNextActive(dealerButton); }
+    else { sbIdx = getNextActive(dealerButton); bbIdx = getNextActive(sbIdx); }
+
+    postBet(sbIdx, SMALL_BLIND);
     postBet(bbIdx, BIG_BLIND);
     
     currentBetToMatch = BIG_BLIND; 
@@ -425,8 +441,19 @@ function startNewHand() {
     if (gameMode === "online") {
         allCommunityCards = [deck.pop(), deck.pop(), deck.pop(), deck.pop(), deck.pop()];
     }
-    
-    checkAITurn(); 
+
+    // Blinds can put every player all-in — run the board out instead of waiting on a turn.
+    let canAct = 0;
+    for (let i = 0; i < playerCount; i++) if (!folded[i] && !isAllIn[i]) canAct++;
+    if (canAct === 0) {
+        activeTurn = -1;
+        renderTable();
+        if (gameMode === "online" && isHost) pushHostState();
+        setTimeout(advancePhase, 1500);
+        return;
+    }
+
+    checkAITurn();
     if (gameMode === "online" && isHost) pushHostState();
 }
 
@@ -439,6 +466,7 @@ function postBet(pIdx, amt) {
 
 function handleAction(type, amount = 0) {
     if (activeTurn !== (myId - 1) || isGameOver) return;
+    resetBetSelector();
     if (gameMode === "online" && !isHost) { sendJoinerAction(type, amount); return; }
     applyAction(myId - 1, type, amount);
 }
@@ -448,6 +476,14 @@ function handleAction(type, amount = 0) {
 function applyAction(pIdx, type, amount = 0) {
     if (isGameOver || activeTurn !== pIdx) return;
 
+    // Reject raises below the minimum legal raise (call amount + big blind,
+    // i.e. stale/undersized selections) unless it's an all-in for less.
+    if (type === 'raise') {
+        const callAmt = currentBetToMatch - bets[pIdx];
+        const minRaise = callAmt + BIG_BLIND;
+        if (amount < minRaise && amount < stacks[pIdx]) return;
+    }
+
     playersActed++;
     if (type === 'fold') { folded[pIdx] = true; playCustomSound('card'); }
     else if (type === 'check-call') {
@@ -455,8 +491,9 @@ function applyAction(pIdx, type, amount = 0) {
         if (diff > 0) { postBet(pIdx, diff); playCustomSound('play'); } else playCustomSound('click');
     } else if (type === 'raise') {
         postBet(pIdx, amount);
-        currentBetToMatch = bets[pIdx];
-        playersActed = 1;
+        // Only ratchet the bet upward — an all-in for less than the current
+        // bet is a call-short, not a re-open of the action.
+        if (bets[pIdx] > currentBetToMatch) { currentBetToMatch = bets[pIdx]; playersActed = 1; }
         playCustomSound('play');
     }
     advanceTurn();
@@ -465,18 +502,22 @@ function applyAction(pIdx, type, amount = 0) {
 function advanceTurn() {
     let unfolded = folded.filter(f => !f);
     if (unfolded.length === 1) {
-        isGameOver = true; 
+        isGameOver = true;
         let winIdx = folded.findIndex(f => !f);
         stacks[winIdx] += (pot + bets.reduce((a,b)=>a+b,0));
+        handWinners = [winIdx];
         setStatus(playerNames[winIdx] + " wins (Everyone folded).");
         if (gameMode === "online" && isHost) pushHostState();
-        setTimeout(startNewHand, 2500); return;
+        setTimeout(() => { if (!checkMatchOver()) startNewHand(); }, 2500); return;
     }
 
-    let activeIndices = []; 
+    let activeIndices = [];
     for (let i=0; i<playerCount; i++) if(!folded[i] && !isAllIn[i]) activeIndices.push(i);
-    
-    if (activeIndices.length <= 1 || (playersActed >= activeIndices.length && activeIndices.every(i => bets[i] === currentBetToMatch))) {
+
+    // Round closes only when every live, non-all-in player has matched the bet
+    // (an all-in raise must still be called/folded by the remaining players).
+    const betsSettled = activeIndices.every(i => bets[i] === currentBetToMatch);
+    if (activeIndices.length === 0 || (betsSettled && (activeIndices.length === 1 || playersActed >= activeIndices.length))) {
         advancePhase();
     } else { 
         activeTurn = (activeTurn + 1) % playerCount; 
@@ -488,8 +529,20 @@ function advanceTurn() {
 }
 
 function advancePhase() {
-    bets.forEach((b,i) => { pot += b; bets[i] = 0; }); 
-    currentBetToMatch = 0; 
+    // Return uncalled excess: any bet above the highest amount another player put in.
+    for (let i = 0; i < playerCount; i++) {
+        if (bets[i] > 0) {
+            let maxOther = 0;
+            for (let j = 0; j < playerCount; j++) if (j !== i) maxOther = Math.max(maxOther, bets[j]);
+            if (bets[i] > maxOther) {
+                stacks[i] += bets[i] - maxOther;
+                bets[i] = maxOther;
+                if (stacks[i] > 0) isAllIn[i] = false;
+            }
+        }
+    }
+    bets.forEach((b,i) => { pot += b; bets[i] = 0; });
+    currentBetToMatch = 0;
     playersActed = 0;
     
     if (currentPhase === "preflop") { 
@@ -506,11 +559,22 @@ function advancePhase() {
     }
     else { showdown(); return; }
 
-    playCustomSound('card'); 
+    playCustomSound('card');
+    // All-in runout: fewer than two players can still act — just deal the next street.
+    let canAct = 0;
+    for (let i = 0; i < playerCount; i++) if (!folded[i] && !isAllIn[i]) canAct++;
+    if (canAct <= 1) {
+        activeTurn = -1; // no one to act; blocks clicks/AI until the next street
+        setStatus(currentPhase.toUpperCase());
+        renderTable();
+        if (gameMode === "online" && isHost) pushHostState();
+        setTimeout(advancePhase, 1500);
+        return;
+    }
     activeTurn = getNextActive(dealerButton);
-    setStatus(currentPhase.toUpperCase()); 
-    renderTable(); 
-    checkAITurn(); 
+    setStatus(currentPhase.toUpperCase());
+    renderTable();
+    checkAITurn();
     if (gameMode === "online" && isHost) pushHostState();
 }
 
@@ -524,15 +588,58 @@ function showdown() {
     }
     
     let label = evaluateHand([...hands[winners[0]], ...communityCards]).label;
-    winners.forEach(w => stacks[w] += Math.floor(pot/winners.length)); 
-    pot = 0; 
+    winners.forEach(w => stacks[w] += Math.floor(pot/winners.length));
+    pot = 0;
+    handWinners = winners.slice();
     renderTable();
-    
+
     setStatus(winners.length === 1 ? playerNames[winners[0]] + " wins with " + label : "Split Pot (" + label + ")");
     if (winners.includes(myId-1)) playCustomSound('win'); else playCustomSound('lose');
-    
-    if (gameMode === "online" && isHost) pushHostState(); 
-    setTimeout(startNewHand, 3500);
+
+    if (gameMode === "online" && isHost) pushHostState();
+    setTimeout(() => { if (!checkMatchOver()) startNewHand(); }, 3500);
+}
+
+// A busted stack ends the game — otherwise heads-up loops blinds off a $0 stack forever.
+function checkMatchOver() {
+    if (!gameIsActive) return true;
+    let alive = [];
+    for (let i = 0; i < playerCount; i++) if (stacks[i] > 0) alive.push(i);
+    if (alive.length <= 1) { endMatch(alive.length ? alive[0] : 0); return true; }
+    // Local play: the human busting ends it too (chip leader takes the table) —
+    // no point watching the AIs trade blinds with no stake in the outcome.
+    if (gameMode !== "online" && stacks[myId - 1] === 0) {
+        endMatch(alive.reduce((a, b) => stacks[a] >= stacks[b] ? a : b));
+        return true;
+    }
+    return false;
+}
+
+function endMatch(winIdx) {
+    gameIsActive = false;
+    isGameOver = true;
+    handWinners = [winIdx];
+    const iWon = (winIdx === myId - 1);
+    setStatus(playerNames[winIdx] + " WINS THE TABLE!");
+    if (typeof SystemStats !== 'undefined') {
+        if (iWon) SystemStats.recordWin("poker"); else SystemStats.recordLoss("poker");
+    }
+    if (iWon && stacks[winIdx] > 0) {
+        SystemUI.money += stacks[winIdx];
+        stacks[winIdx] = 0;
+        SystemUI.updateMoneyDisplay();
+    }
+    playCustomSound(iWon ? 'win' : 'lose');
+    renderTable();
+    if (gameMode === "online" && isHost && currentRoomId && window.db) {
+        pushHostState();
+        // Leave "playing" so the room listener doesn't restart the game on the next snapshot.
+        window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "finished" });
+    }
+    setTimeout(() => {
+        if (gameMode === "online") exitOnlineToLocal(false);
+        else resetGame();
+    }, 3500);
 }
 
 function setStatus(msg) { document.getElementById("game-status-text").innerText = msg; }
@@ -566,14 +673,36 @@ function checkAITurn() {
     }, 1200);
 }
 
+// Preflop tiering (0 = trash, 1 = playable, 2 = strong, 3 = premium) — the
+// 5-card evaluator can't rate 2 cards, and padding with fake deuces rated
+// every hand as trips.
+function preflopRank(hand) {
+    if (!hand || hand.length < 2) return 0;
+    const v1 = getRankValue(hand[0].rank), v2 = getRankValue(hand[1].rank);
+    const hi = Math.max(v1, v2), lo = Math.min(v1, v2);
+    const suited = hand[0].suit === hand[1].suit;
+    if (v1 === v2) return hi >= 10 ? 3 : 2;           // pocket pair
+    if (hi === 14 && lo >= 12) return 3;              // AK / AQ
+    if (hi >= 12 && lo >= 10) return 2;               // two broadway cards
+    if (suited && hi - lo === 1 && lo >= 8) return 2; // high suited connectors
+    if (hi >= 11 && (suited || lo >= 9)) return 1;
+    if (suited && hi - lo === 1) return 1;            // suited connectors
+    return 0;
+}
+
 function aiAction() {
     if (isGameOver || activeTurn === (myId-1)) return;
     const pIdx = activeTurn;
     const diff = currentBetToMatch - bets[pIdx];
     const canCheck = (diff === 0);
-    
-    let currentBest = evaluateHand([...hands[pIdx], ...communityCards]);
-    let handRank = Math.floor(currentBest.score / 10000000000);
+
+    let handRank;
+    if (communityCards.length === 0) {
+        handRank = preflopRank(hands[pIdx]);
+    } else {
+        let currentBest = evaluateHand([...hands[pIdx], ...communityCards]);
+        handRank = Math.floor(currentBest.score / 10000000000);
+    }
     
     let action = "check-call";
     let raiseAmt = 0;
@@ -655,6 +784,7 @@ function setupOnlineMode() {
             currentRoomId = roomId;
             isHost = true; myId = 1;
             lastSyncTime = 0; lastActionTs = 0; joinerBoughtIn = false;
+            matchOverHandled = false; joinerSawResult = false;
             seats = SystemMatch.getSeats();
             listenToRoom();
         },
@@ -662,6 +792,7 @@ function setupOnlineMode() {
             currentRoomId = roomId;
             isHost = false;
             lastSyncTime = 0; lastActionTs = 0; joinerBoughtIn = false;
+            matchOverHandled = false; joinerSawResult = false;
             myId = SystemMatch.getMyId();
             seats = SystemMatch.getSeats();
             listenToRoom();
@@ -709,6 +840,7 @@ function exitOnlineToLocal(hostGone) {
     currentRoomId = null;
     joinerBoughtIn = false;
     lastSyncTime = 0; lastActionTs = 0;
+    joinerSawResult = false;
     gameMode = "ai"; isHost = true; myId = 1;
     localStorage.setItem("poker_mode", "ai");
     const modeEl = document.getElementById("sys-poker-mode");
@@ -749,6 +881,15 @@ function listenToRoom() {
             }
             return;
         }
+        if (data.status === "finished") {
+            // Match over (someone busted): show the joiner the final state, then exit.
+            if (!isHost && !matchOverHandled && data.gameState) {
+                matchOverHandled = true;
+                applyHostState(data.gameState);
+                setTimeout(() => exitOnlineToLocal(false), 3500);
+            }
+            return;
+        }
         seats = data.seats || []; SystemUI.v2Lobby.renderSeats(seats); playerNames = seats.map(s => s.name);
         playerCount = seats.length;
         // Keep SystemMatch's seat snapshot fresh — _releaseSeat writes the whole
@@ -771,7 +912,7 @@ function pushHostState() {
     // JSON string payload: RTDB deletes empty arrays ([] communityCards/hands at preflop),
     // which crashed the joiner's renderTable. A string round-trips them intact.
     window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), {
-        gameState: JSON.stringify({ hands, allCommunityCards, communityCards, pot, bets, stacks, folded, isAllIn, activeTurn, currentPhase, dealerButton, isGameOver, gameIsActive, currentBetToMatch, ts: Date.now() })
+        gameState: JSON.stringify({ hands, allCommunityCards, communityCards, pot, bets, stacks, folded, isAllIn, activeTurn, currentPhase, dealerButton, isGameOver, gameIsActive, currentBetToMatch, handWinners, statusMsg: document.getElementById("game-status-text").innerText, ts: Date.now() })
     });
 }
 
@@ -810,6 +951,17 @@ function applyHostState(stateJson) {
     // Joiner economy: pay the buy-in once, when we're dealt into our first hand
     // (mirrors the host's deduction in startGame). Cash-out credits the stack later.
     if (!isHost && !joinerBoughtIn && gameIsActive && hands[myId - 1] && hands[myId - 1].length > 0) {
+        if (SystemUI.money < BUY_IN) {
+            // Can't afford the stack we were just dealt — flag the room and bail
+            // instead of minting chips off setMoney's zero-clamp.
+            showToast("Insufficient Funds", "You need $" + BUY_IN + " to buy in!");
+            if (currentRoomId && window.db && window.dbUpdate) {
+                try { window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "abandoned" }); } catch (e) {}
+            }
+            gameIsActive = false; // stop onLeave/exit paths crediting a stack we never paid for
+            exitOnlineToLocal(false);
+            return;
+        }
         joinerBoughtIn = true;
         SystemUI.money -= BUY_IN;
         SystemUI.updateMoneyDisplay();
@@ -821,7 +973,30 @@ function applyHostState(stateJson) {
     }
 
     renderTable();
-    setStatus(activeTurn === (myId - 1) ? "YOUR TURN" : (playerNames[activeTurn] || ("Player " + (activeTurn + 1))).toUpperCase() + "'S TURN");
+    if (isGameOver) {
+        // Hand/game over: show the host's result message instead of turn text.
+        if (s.statusMsg) setStatus(s.statusMsg);
+        if (!joinerSawResult) {
+            joinerSawResult = true;
+            playCustomSound((s.handWinners || []).includes(myId - 1) ? 'win' : 'lose');
+        }
+        // Match over (someone busted): settle the joiner's stats and cash-out once.
+        if (!gameIsActive && joinerBoughtIn) {
+            joinerBoughtIn = false;
+            const iWon = stacks[myId - 1] > 0;
+            if (typeof SystemStats !== 'undefined') {
+                if (iWon) SystemStats.recordWin("poker"); else SystemStats.recordLoss("poker");
+            }
+            if (iWon) {
+                SystemUI.money += stacks[myId - 1];
+                stacks[myId - 1] = 0;
+                SystemUI.updateMoneyDisplay();
+            }
+        }
+    } else {
+        joinerSawResult = false;
+        setStatus(activeTurn === (myId - 1) ? "YOUR TURN" : activeTurn < 0 ? (s.statusMsg || "DEALING...") : (playerNames[activeTurn] || ("Player " + (activeTurn + 1))).toUpperCase() + "'S TURN");
+    }
 }
 
 setupOnlineMode();

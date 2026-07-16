@@ -13,6 +13,19 @@ const OS_UPDATE = {
     ]
 };
 
+// --- 0. HTML ESCAPE ---
+// Escapes user-controlled strings before they go into innerHTML. Firebase
+// nodes like global_chat / leaderboard are world-writable, so any field that
+// originates from another user (name, avatar, chat text) must pass through this.
+function escapeHtml(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
 // --- 1. HUB AUDIO ENGINE ---
 // Click sounds removed by request — only celebratory sounds remain.
 // playHubSound('click') calls elsewhere become silent no-ops via the guard below.
@@ -35,10 +48,11 @@ if (window.SystemRewards) {
         if (originalCheck) originalCheck.apply(this, arguments);
     };
     
-    // Catch any secondary modal popups Claude might have used
-    if (typeof window.SystemRewards.showModal === 'function') {
-        const originalShow = window.SystemRewards.showModal;
-        window.SystemRewards.showModal = function() {
+    // Catch the secondary reward-modal popup for guests. The rewards module's
+    // method is showRewardModal (not showModal), so guard the real name.
+    if (typeof window.SystemRewards.showRewardModal === 'function') {
+        const originalShow = window.SystemRewards.showRewardModal;
+        window.SystemRewards.showRewardModal = function() {
             if (window.SystemAuth && !window.SystemAuth.isLoggedIn()) return;
             if (originalShow) originalShow.apply(this, arguments);
         };
@@ -751,22 +765,27 @@ function wireGlobalChat() {
                     const nameClass = msg.isDev ? "chat-username dev-name" : "chat-username";
                     
                     // FIX: Allow Dev accounts to use custom glowing colors. Only fallback to Gold if they use default white.
+                    // chatColor lands inside a style="" attribute, so it MUST be whitelisted —
+                    // global_chat is world-writable, so an attacker can set any value.
+                    const colorSafe = (window.SystemChat && SystemChat._isSafeChatColor(msg.chatColor)) ? msg.chatColor : null;
                     let nameStyle = '';
-                    if (msg.chatColor && msg.chatColor !== '#ffffff') {
-                        nameStyle = `color: ${msg.chatColor};`;
+                    if (colorSafe && colorSafe !== '#ffffff') {
+                        nameStyle = `color: ${colorSafe};`;
                     } else if (!msg.isDev) {
                         nameStyle = `color: #ffffff;`;
                     }
-                    
-                    // Basic sanitize to prevent code injection
-                    const safeText = msg.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                    
+
+                    // Escape every attacker-controlled field (world-writable node → stored XSS).
+                    const safeText = escapeHtml(msg.text);
+                    const safeName = escapeHtml(msg.username || 'Player');
+                    const safeAvatar = escapeHtml(msg.avatar || '👤');
+
                     return `
                         <div class="chat-msg">
-                            <div class="chat-avatar">${msg.avatar || '👤'}</div>
+                            <div class="chat-avatar">${safeAvatar}</div>
                             <div class="chat-content">
                                 <div class="chat-meta">
-                                    <span class="${nameClass}" style="${nameStyle}">${msg.username}</span>
+                                    <span class="${nameClass}" style="${nameStyle}">${safeName}</span>
                                     <span class="chat-time">${timeStr}</span>
                                 </div>
                                 <div class="chat-text">${safeText}</div>
@@ -831,8 +850,8 @@ function wireLeaderboards() {
                 statText = `${winsAmt} Wins`;
             }
 
-            const name = u.profile?.name || "Unknown";
-            const avatar = u.profile?.avatar || "👤";
+            const name = escapeHtml(u.profile?.name || "Unknown");
+            const avatar = escapeHtml(u.profile?.avatar || "👤");
 
             const row = document.createElement("div");
             row.className = "lb-row";
@@ -1101,10 +1120,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const logoutBtnHTML = `<button id="sys-logout-btn" class="sys-btn-logout dev-only">LOGOUT</button>`;
         bannerActions.insertAdjacentHTML('afterbegin', logoutBtnHTML);
         bannerActions.insertAdjacentHTML('afterbegin', devBtnHTML);
-
-        document.getElementById("sys-dev-btn").addEventListener("click", openDevMenu);
-        document.getElementById("sys-logout-btn").addEventListener("click", systemLogout);
     }
+
+    // Wire the handlers regardless of whether the buttons were injected above or
+    // already exist statically in index.html — otherwise LOGOUT/DEV do nothing.
+    const devBtnEl = document.getElementById("sys-dev-btn");
+    const logoutBtnEl = document.getElementById("sys-logout-btn");
+    if (devBtnEl) devBtnEl.addEventListener("click", openDevMenu);
+    if (logoutBtnEl) logoutBtnEl.addEventListener("click", systemLogout);
 
     const confirmLogoutBtn = document.getElementById("btn-confirm-logout");
     const cancelLogoutBtn = document.getElementById("btn-cancel-logout");

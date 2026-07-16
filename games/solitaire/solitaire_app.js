@@ -107,6 +107,7 @@ let dragOrigin = null;
 let startX = 0, startY = 0;
 let lastTap = 0; 
 let isDrawingAnim = false; // Flag for drawing animation
+let isDealing = false; // Input lock during the deal animation
 
 // ==========================================
 // 2. TIMERS & DECK LOGIC
@@ -179,6 +180,8 @@ document.getElementById("deal-btn").addEventListener("click", () => {
 
     playSFX(sfxShuffle);
     buildDeck();
+    historyStack = [];
+    isDealing = true;
     document.getElementById("deal-btn").classList.add("hidden");
     document.getElementById("restart-btn").classList.remove("hidden");
     document.getElementById("undo-btn").classList.remove("hidden");
@@ -225,6 +228,7 @@ document.getElementById("deal-btn").addEventListener("click", () => {
             }
         }
         document.getElementById("stock-back").classList.remove("hidden");
+        isDealing = false;
         renderBoard();
     }, delay + 100);
 });
@@ -233,6 +237,7 @@ document.getElementById("deal-btn").addEventListener("click", () => {
 // 3. STOCK & WASTE LOGIC (WITH ANIMATIONS)
 // ==========================================
 document.getElementById("stock").addEventListener("click", () => {
+    if (deck.length === 0 || isDealing) return;
     if (!isPlaying && moves === 0) { isPlaying = true; startTimer(); }
     saveState();
     
@@ -532,6 +537,7 @@ function checkWinCondition() {
         // AUDIT: Safely track win via OS 2.0
         if (typeof SystemStats !== 'undefined') SystemStats.recordWin("solitaire", 0);
 
+        isPlaying = false;
         if(timerInterval) clearInterval(timerInterval);
         setTimeout(() => {
             playSFX(sfxWin);

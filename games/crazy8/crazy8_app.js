@@ -95,7 +95,22 @@ function initCrazy8() {
     if (countEl) {
         countEl.value = playerCount;
         countEl.addEventListener("change", (e) => {
+            if (gameMode === "online") {
+                // Mid-match reset would empty hands and desync — seats rule online games.
+                localStorage.setItem("crazy8_pcount", e.target.value);
+                e.target.value = playerCount;
+                showToast("Online Match", "Player count is set in the lobby.");
+                return;
+            }
             playerCount = parseInt(e.target.value); localStorage.setItem("crazy8_pcount", playerCount); resetGame();
+        });
+    }
+
+    const diffEl = document.getElementById("sys-c8-diff");
+    if (diffEl) {
+        diffEl.value = aiDifficulty;
+        diffEl.addEventListener("change", (e) => {
+            aiDifficulty = e.target.value; localStorage.setItem("crazy8_diff", aiDifficulty);
         });
     }
 

@@ -13,6 +13,7 @@ let chatStarted = false;
 let seats = [];
 let roomListener = null;
 let isThinking = false;
+let resultRecorded = false; // one-shot latch so online stats/sounds fire once per game
 
 SystemUI.init({
     gameName: "TIC-TAC-TOE",
@@ -182,7 +183,9 @@ function listenToRoom() {
 
         board = data.board || ["", "", "", "", "", "", "", "", ""];
         currentPlayer = data.turn;
-        gameActive = true; 
+        gameActive = true;
+        // Fresh/blank board = a new game: re-arm the result latch.
+        if (board.every(c => c === "")) resultRecorded = false;
         
         updateVisualBoard();
         checkResult(true); 
@@ -432,14 +435,18 @@ function checkResult(isFromNetwork) {
 
     if (roundWon) {
         if (gameMode === "online") {
-            let winner = currentPlayer === "X" ? "O" : "X"; 
+            let winner = currentPlayer === "X" ? "O" : "X";
             statusDisplay.innerText = winner === mySymbol ? "YOU WIN!" : "OPPONENT WINS!";
-            if(!isFromNetwork) SystemUI.playSound(winner === mySymbol ? 'win' : 'lose');
 
-            // AUDIT: Track online win/loss
-            if (typeof SystemStats !== 'undefined') {
-                if (winner === mySymbol) SystemStats.recordWin("ttt", 0);
-                else SystemStats.recordLoss("ttt");
+            // One-shot on the transition to final: play the end sound and record
+            // stats exactly once, even though snapshots keep re-running checkResult.
+            if (!resultRecorded) {
+                resultRecorded = true;
+                SystemUI.playSound(winner === mySymbol ? 'win' : 'lose');
+                if (typeof SystemStats !== 'undefined') {
+                    if (winner === mySymbol) SystemStats.recordWin("ttt", 0);
+                    else SystemStats.recordLoss("ttt");
+                }
             }
         } else if (gameMode === "ai" && currentPlayer === "O") {
             statusDisplay.innerText = "Computer Wins!";
@@ -459,7 +466,9 @@ function checkResult(isFromNetwork) {
 
     if (!board.includes("")) {
         statusDisplay.innerText = "It's a draw!";
-        if(!isFromNetwork) SystemUI.playSound('tie');
+        if (gameMode === "online") {
+            if (!resultRecorded) { resultRecorded = true; SystemUI.playSound('tie'); }
+        } else if(!isFromNetwork) SystemUI.playSound('tie');
         gameActive = false; return;
     }
 
@@ -495,6 +504,7 @@ function restartGame() {
     board = ["", "", "", "", "", "", "", "", ""];
     currentPlayer = "X";
     gameActive = true;
+    resultRecorded = false;
     if(statusDisplay) statusDisplay.innerText = `It's ${currentPlayer}'s turn`;
     document.querySelectorAll('.cell').forEach(cell => {
         cell.innerText = "";
