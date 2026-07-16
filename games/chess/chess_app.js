@@ -13,6 +13,7 @@ let chatStarted = false;
 let currentRoomId = null;
 let myId = 1;
 let isHost = true;
+let roomListener = null;
 
 let p1Name = "PLAYER 1";
 let p2Name = "PLAYER 2";
@@ -61,9 +62,10 @@ document.getElementById("sys-chess-mode").addEventListener("change", e => {
         SystemUI.v2Lobby.hide();
         SystemUI.stopChat();
         chatStarted = false;
-        
-        myId = 1; 
-        isHost = true; 
+
+        myId = 1;
+        isHost = true;
+        if (roomListener) { roomListener(); roomListener = null; }
         newGame();
     }
 });
@@ -1141,6 +1143,7 @@ SystemMatch.setup({
         myId = 1;
         isHost = true;
         chatStarted = false;
+        if (roomListener) { roomListener(); roomListener = null; }
         newGame();
     },
     onStart: () => {
@@ -1163,9 +1166,29 @@ SystemMatch.setup({
 
 function listenToRoom() {
     let onlineGameStarted=false;
-    window.dbOnValue(window.dbRef(window.db,'chess_rooms/'+currentRoomId), snap=>{
-        const data=snap.val(); if(!data) return;
-        
+    if (roomListener) roomListener();
+    roomListener = window.dbOnValue(window.dbRef(window.db,'chess_rooms/'+currentRoomId), snap=>{
+        const data=snap.val();
+        if(!data) {
+            // Host deleted the room — free the joiner instead of freezing.
+            if (gameMode === "online" && !isHost) {
+                if (roomListener) { roomListener(); roomListener = null; }
+                SystemMatch.setSeats([]); // room is gone — skip the ghost seat write
+                SystemMatch.cleanup();
+                chatStarted = false;
+                SystemUI.v2Lobby.hide();
+                showDiffToast("HOST LEFT THE GAME", false);
+                gameMode = "ai";
+                document.getElementById("sys-chess-mode").value = "ai";
+                localStorage.setItem("chess_mode", "ai");
+                syncDiffVisibility();
+                myId = 1;
+                isHost = true;
+                newGame();
+            }
+            return;
+        }
+
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
 

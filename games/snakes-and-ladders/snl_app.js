@@ -4,10 +4,13 @@
 let gameMode = "ai"; // FIX: ALWAYS default to vs AI on launch
 localStorage.setItem("snl_mode", "ai"); // Clear any cached online state
 
-let myId = 1; 
-let currentRoomId = null; 
+let myId = 1;
+let currentRoomId = null;
 let isHost = true; // Default to host so local roll buttons work
 let chatStarted = false;
+let roomListener = null;      // onValue unsubscribe fn — detach on exit
+let onlineWinHandled = false; // guards stats/announce firing once per finished game
+let lastSeenRoll = 0;         // last die value received over the wire
 
 SystemUI.init({
     gameName: "SNAKES & LADDERS PRO",
@@ -45,9 +48,10 @@ setTimeout(() => {
                 document.getElementById("multiplayer-lobby").classList.remove("hidden");
             } else {
                 document.getElementById("multiplayer-lobby").classList.add("hidden");
+                cleanupOnlineRoom();
                 SystemUI.stopChat();
                 chatStarted = false;
-                
+
                 // Reset host privileges so local buttons work
                 myId = 1;
                 isHost = true;
@@ -139,9 +143,24 @@ btnJoinRoom.addEventListener("click", () => {
 });
 
 function listenToRoom() {
-    window.dbOnValue(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), (snapshot) => {
+    if (roomListener) roomListener();
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if (!data) return;
+        if (!data) {
+            // Room node removed — the host quit. Don't freeze the joiner.
+            if (gameMode === "online" && currentRoomId && !isHost) {
+                exitOnlineToLocal("HOST LEFT THE GAME");
+            }
+            return;
+        }
+
+        if (data.status === "abandoned") {
+            // Joiner closed their tab mid-game
+            if (gameMode === "online" && currentRoomId && isHost) {
+                exitOnlineToLocal("OPPONENT LEFT THE GAME");
+            }
+            return;
+        }
 
         if (data.status === "playing" && !chatStarted) {
             chatStarted = true;
@@ -154,18 +173,100 @@ function listenToRoom() {
         playerPositions[1] = data.pos2 || 1;
         currentPlayer = data.turn || 1;
 
-        renderPlayers();
-        updateTurnUI();
-
-        if (playerPositions[0] === 100) {
-            showWinner(myId === 1 ? "YOU WIN!" : "OPPONENT WINS!");
-        } else if (playerPositions[1] === 100) {
-            showWinner(myId === 2 ? "YOU WIN!" : "OPPONENT WINS!");
+        // Show the opponent's die roll as it arrives
+        if (data.lastRoll && data.lastRoll !== lastSeenRoll) {
+            lastSeenRoll = data.lastRoll;
+            dieImg.src = `../../system/images/dice/${diceFaces[data.lastRoll - 1]}`;
+        } else if (!data.lastRoll) {
+            lastSeenRoll = 0;
         }
 
+        renderPlayers();
+
+        if (data.status === "finished") {
+            handleOnlineWin(data);
+            return;
+        }
+        onlineWinHandled = false;
+
+        updateTurnUI();
         rollBtn.disabled = (currentPlayer !== myId || isMoving);
     });
 }
+
+// Announce + record the finished game exactly once, then the HOST pushes a
+// fresh board so both clients get a clean rematch instead of re-firing the
+// win off the stale pos=100 room state.
+function handleOnlineWin(data) {
+    rollBtn.disabled = true;
+    if (onlineWinHandled) return;
+    onlineWinHandled = true;
+
+    const iWon = data.winner === myId;
+    turnIndicator.innerText = iWon ? "YOU WIN!" : "OPPONENT WINS!";
+    turnIndicator.style.color = "#f1c40f";
+    SystemUI.playSound(iWon ? 'win' : 'lose');
+
+    if (typeof SystemStats !== 'undefined') {
+        if (iWon) SystemStats.recordWin("snl", 0);
+        else SystemStats.recordLoss("snl");
+    }
+
+    if (isHost) {
+        setTimeout(() => {
+            if (gameMode === "online" && currentRoomId) {
+                window.dbUpdate(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), {
+                    pos1: 1, pos2: 1, turn: 1, status: "playing",
+                    winner: null, lastRoll: null
+                });
+            }
+        }, 3000);
+    }
+}
+
+// Detach the listener and (host only) delete the room node.
+function cleanupOnlineRoom() {
+    if (roomListener) { roomListener(); roomListener = null; }
+    if (isHost && currentRoomId && window.db && window.dbSet) {
+        try { window.dbSet(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), null); } catch (e) {}
+    }
+    currentRoomId = null;
+    onlineWinHandled = false;
+    lastSeenRoll = 0;
+    document.getElementById("room-code-display").classList.add("hidden");
+    btnCreateRoom.disabled = false;
+}
+
+// The opponent vanished — clean up and drop back to vs-AI mode with a notice.
+function exitOnlineToLocal(message) {
+    cleanupOnlineRoom();
+    SystemUI.stopChat();
+    chatStarted = false;
+    gameMode = "ai";
+    const modeEl = document.getElementById("sys-snl-mode");
+    if (modeEl) modeEl.value = "ai";
+    localStorage.setItem("snl_mode", "ai");
+    lobbyUI.classList.add("hidden");
+    myId = 1;
+    isHost = true;
+    resetGame();
+    turnIndicator.innerText = message;
+    turnIndicator.style.color = "#e67e22";
+    setTimeout(() => { if (gameMode !== "online") updateTurnUI(); }, 2500);
+}
+
+// Host closing the tab removes the room; joiner closing mid-game flags it
+// abandoned so the host's listener can react instead of waiting forever.
+window.addEventListener("beforeunload", () => {
+    if (!currentRoomId || !window.db) return;
+    try {
+        if (isHost) {
+            window.dbSet(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), null);
+        } else if (chatStarted) {
+            window.dbUpdate(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), { status: "abandoned" });
+        }
+    } catch (e) {}
+});
 
 // ==========================================
 // 3. BOARD & GAME LOGIC
@@ -376,11 +477,19 @@ async function rollDice() {
 
     if (gameMode === "online") {
         const newPos = calculateNewPos(playerPositions[currentPlayer - 1], roll);
-        window.dbUpdate(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), {
+        lastSeenRoll = roll; // we already animated our own roll locally
+        const update = {
             lastRoll: roll,
             turn: currentPlayer === 1 ? 2 : 1,
             [`pos${currentPlayer}`]: newPos
-        });
+        };
+        // The winner's client marks the game finished — clients announce off
+        // the status flag, never off raw positions.
+        if (newPos === 100) {
+            update.status = "finished";
+            update.winner = myId;
+        }
+        window.dbUpdate(window.dbRef(window.db, 'snl_rooms/' + currentRoomId), update);
         isMoving = false;
     } else {
         await movePlayer(currentPlayer - 1, roll);
@@ -490,9 +599,10 @@ document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     document.getElementById("sys-snl-mode").value = "ai";
     localStorage.setItem("snl_mode", "ai");
     document.getElementById("multiplayer-lobby").classList.add("hidden");
+    cleanupOnlineRoom();
     SystemUI.stopChat();
     chatStarted = false;
-    
+
     myId = 1;
     isHost = true;
     resetGame();

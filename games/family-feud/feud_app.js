@@ -21,6 +21,9 @@ let roomListener = null;
 
 let lastPushTime = 0;
 let lastSyncTime = 0;
+let stateSeq = 0;            // Monotonic state counter — wall clocks aren't comparable across machines
+let gameOverHandled = false; // Guards double stat-recording / double gameover modals
+let onlineGameStarted = false;
 
 let p1Name = "TEAM 1"; // Host
 let p2Name = "TEAM 2"; // Guest / AI
@@ -99,12 +102,14 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0; gameOverHandled = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; myId = 2; chatStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0; gameOverHandled = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
@@ -115,6 +120,9 @@ SystemMatch.setup({
         localStorage.setItem("feud_mode", "ai");
         chatStarted = false;
         myId = 1; isHost = true;
+        currentRoomId = null;
+        onlineGameStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0; gameOverHandled = false;
         if (roomListener) { roomListener(); roomListener = null; }
         resetGame();
         toggleGameVisibility(true);
@@ -226,11 +234,23 @@ function syncDiffVisibility() {
 }
 
 function listenToRoom() {
-    let onlineGameStarted = false;
+    onlineGameStarted = false;
     if(roomListener) roomListener();
     roomListener = window.dbOnValue(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), snapshot => {
         const data = snapshot.val();
-        if (!data) return;
+        if (!data) {
+            // Room node deleted = the host left. Don't leave the guest frozen.
+            if (!isHost && currentRoomId && !gameOverHandled) exitOnlineToLocal("Host left the game");
+            return;
+        }
+
+        // Guest closed their tab mid-game.
+        if (data.status === "abandoned") {
+            if (onlineGameStarted && !gameOverHandled) {
+                exitOnlineToLocal(`${data.abandonedBy || "Opponent"} left the game`);
+            }
+            return;
+        }
 
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
@@ -260,11 +280,51 @@ function listenToRoom() {
             }
         }
         
+        // Game over — the old {status:'finished'}-only write was ignored here,
+        // so the guest never saw the result. Sync the final state and announce.
+        if (data.status === "finished" && onlineGameStarted) {
+            if (data.gameState) syncFromFirebase(data.gameState);
+            if (!gameOverHandled) endGame(true);
+        }
+
         // BUZZ REFEREE LOGIC (HOST ONLY)
         if (isHost && data.buzzPulse && gamePhase === "faceoff" && !buzzProcessed) {
             handleBuzz(data.buzzPulse.playerId);
         }
     });
+}
+
+// ── LEAVE / DISCONNECT RECOVERY ───────────────
+function exitOnlineToLocal(msg) {
+    if (roomListener) { try { roomListener(); } catch (e) {} roomListener = null; }
+    SystemUI.stopChat(); chatStarted = false;
+    currentRoomId = null;
+    onlineGameStarted = false;
+    stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+    gameOverHandled = false;
+    myId = 1; isHost = true;
+    gameMode = "ai";
+    const modeEl = document.getElementById("sys-feud-mode");
+    if (modeEl) modeEl.value = "ai";
+    localStorage.setItem("feud_mode", "ai");
+    if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
+    SystemUI.v2Lobby.hide();
+    p1Name = SystemUI.getPlayerName();
+    p2Name = "AI";
+    updateNames();
+    resetGame();
+    toggleGameVisibility(true);
+    syncDiffVisibility();
+    if (msg) {
+        const emoji = document.getElementById("game-over-emoji");
+        if (emoji) emoji.textContent = "🚪";
+        const title = document.getElementById("game-over-title");
+        if (title) title.textContent = "GAME OVER";
+        const msgEl = document.getElementById("game-over-msg");
+        if (msgEl) msgEl.textContent = msg;
+        const modal = document.getElementById("game-over-modal");
+        if (modal) modal.classList.remove("hidden");
+    }
 }
 
 function onlineBuzz(playerId = myId) {
@@ -278,6 +338,7 @@ function pushGameState() {
     if (gameMode !== "online" || !window.db) return;
     const now = Date.now();
     lastPushTime = now;
+    stateSeq++;
     window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), {
         gameState: JSON.stringify({
             phase:               gamePhase,
@@ -291,6 +352,7 @@ function pushGameState() {
             revealedAnswers:     roundAnswers.map(a => a.revealed),
             scores:              scores,
             ts:                  now,
+            seq:                 stateSeq,
             pusher:              myId
         }),
         buzzPulse: null 
@@ -300,7 +362,17 @@ function pushGameState() {
 function syncFromFirebase(stateJson) {
     try {
         const data = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
-        if (!data.ts || (data.pusher === myId && data.ts === lastPushTime) || data.ts <= lastSyncTime) return;
+        if (!data.ts) return;
+        // Order by monotonic seq — both players push state, and comparing
+        // wall clocks dropped every packet from the machine whose clock ran
+        // behind. Equal seq must be ACCEPTED (only < is stale) since both
+        // writers can race.
+        if (data.seq) {
+            if (data.seq < stateSeq) return;
+            stateSeq = data.seq;
+        } else if (data.ts <= lastSyncTime) return;
+        // Skip ALL of our own echoes, not just the very last push
+        if (data.pusher === myId) { lastSyncTime = data.ts; return; }
         lastSyncTime = data.ts;
 
         if (data.totalRounds !== undefined) totalRounds = data.totalRounds;
@@ -345,9 +417,18 @@ function syncFromFirebase(stateJson) {
                 case "steal":
                     startSteal(); break;
                 case "roundover":
-                    hideGuessZone(); setPhaseTag(`${getPlayerName(activePlayer).toUpperCase()} WINS THE ROUND!`); break;
+                    hideGuessZone(); setPhaseTag(`${getPlayerName(activePlayer).toUpperCase()} WINS THE ROUND!`);
+                    // Host referees the round handshake: the guest ended this
+                    // round, so the host picks the next question and pushes it.
+                    if (isHost) {
+                        setTimeout(() => {
+                            if (gamePhase !== "roundover") return;
+                            if (currentRound >= totalRounds) endGame(); else startNextRound();
+                        }, 3200);
+                    }
+                    break;
                 case "gameover":
-                    endGame(); break;
+                    endGame(true); break;
             }
         }
 
@@ -777,6 +858,7 @@ function resetGame() {
 function startGame() {
     if (gameMode === "online" && !isHost) return;
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("feud");
+    gameOverHandled = false;
     currentRound  = 0;
     scores        = { p1: 0, p2: 0 };
     usedQuestions = [];
@@ -817,6 +899,7 @@ function startNextRound() {
 // ── FACE-OFF ─────────────────────────────────
 function startFaceoff() {
     gamePhase = "faceoff";
+    gameOverHandled = false; // fresh round on every client — re-arm the game-over guard
     setPhaseTag("FACE-OFF");
     hideGuessZone();
     const passBtn = document.getElementById("pass-btn");
@@ -894,7 +977,7 @@ function handleBuzz(player) {
         showFaceoffInput(player);
     }
     renderScores();
-    if (gameMode === "online" && isHost) pushGameState();
+    if (gameMode === "online") pushGameState();
 }
 
 function showFaceoffInput(player) {
@@ -934,7 +1017,9 @@ function handleFaceoffGuess(input) {
             activePlayer = faceoffWinner;
             startPlaying();
         }
-        if (gameMode === "online" && isHost) pushGameState();
+        // Any client that performs a legal transition pushes it — the guest's
+        // faceoff miss never reached the host when this was isHost-gated.
+        if (gameMode === "online") pushGameState();
     }
 }
 
@@ -969,21 +1054,21 @@ function goToPlayOrPass() {
             (remaining > 2) ? choosePlay() : (Math.random() < 0.35 ? choosePass() : choosePlay());
         }, 1200);
     }
-    if (gameMode === "online" && isHost) pushGameState();
+    if (gameMode === "online") pushGameState();
 }
 
 function choosePlay() {
     activePlayer = faceoffWinner;
     restoreAfterPlayOrPass();
     startPlaying();
-    if (gameMode === "online" && isHost) pushGameState();
+    if (gameMode === "online") pushGameState();
 }
 
 function choosePass() {
     activePlayer = otherPlayer(faceoffWinner);
     restoreAfterPlayOrPass();
     startPlaying();
-    if (gameMode === "online" && isHost) pushGameState();
+    if (gameMode === "online") pushGameState();
 }
 
 function restoreAfterPlayOrPass() {
@@ -1042,7 +1127,13 @@ function handleGuess(input) {
         if(inputEl) inputEl.value = "";
         
         const allRevealed = roundAnswers.every(a => a.revealed);
-        if (allRevealed) { setTimeout(() => endRound(activePlayer), 800); return; }
+        if (allRevealed) {
+            // Share the final reveal right away — endRound pushes the
+            // roundover transition itself 800ms later.
+            if (gameMode === "online") pushGameState();
+            setTimeout(() => endRound(activePlayer), 800);
+            return;
+        }
         
         if (gameMode === "online") pushGameState();
         if (isBotTurn(activePlayer)) scheduleAiGuess(activePlayer);
@@ -1055,7 +1146,14 @@ function handleGuess(input) {
         const inputEl = document.getElementById("guess-input");
         if(inputEl) inputEl.value = "";
         
-        if (strikes >= 3) { setTimeout(() => startSteal(), 1000); return; }
+        if (strikes >= 3) {
+            // Share the third strike right away — startSteal pushes the
+            // steal transition itself (previously isHost-gated, which
+            // deadlocked the game when the GUEST struck out).
+            if (gameMode === "online") pushGameState();
+            setTimeout(() => startSteal(), 1000);
+            return;
+        }
         
         if (gameMode === "online") pushGameState();
         if (isBotTurn(activePlayer)) scheduleAiGuess(activePlayer);
@@ -1078,7 +1176,7 @@ function startSteal() {
     setGuessInputActive(canSteal);
     if (!canSteal) setActiveBanner(`🤖 AI ATTEMPTING STEAL...`);
     renderScores();
-    if (gameMode === "online" && isHost) pushGameState();
+    if (gameMode === "online") pushGameState();
     if (isBotTurn(stealer)) {
         setGuessInputActive(false);
         const stats = getAiStats();
@@ -1121,12 +1219,22 @@ function endRound(winner) {
     setActiveBanner(`+${boardPoints} POINTS FOR ${wName}!`);
     hideGuessZone();
     SystemUI.playSound('win');
-    if (gameMode === "online" && isHost) pushGameState();
-    setTimeout(() => { if (currentRound >= totalRounds) endGame(); else startNextRound(); }, 3200);
+    // The acting client pushes the roundover transition (guest included) …
+    if (gameMode === "online") pushGameState();
+    // … but only the HOST advances: it alone picks the next question. The
+    // guest's stale questionIndex used to get pushed here and desync rounds.
+    // When the guest ends the round, the host schedules the advance from its
+    // sync handler (case "roundover").
+    setTimeout(() => {
+        if (gameMode === "online" && !isHost) return;
+        if (currentRound >= totalRounds) endGame(); else startNextRound();
+    }, 3200);
 }
 
-function endGame() {
+function endGame(fromSync = false) {
     gamePhase = "gameover";
+    if (gameOverHandled) return; // announce + record stats only once
+    gameOverHandled = true;
     const winner = scores.p1 > scores.p2 ? 1 : scores.p2 > scores.p1 ? 2 : 0;
     const wName  = winner === 0 ? "TIE" : getPlayerName(winner);
     const emoji = document.getElementById("game-over-emoji");
@@ -1137,11 +1245,14 @@ function endGame() {
     if(msg) msg.textContent   = `${p1Name}: ${scores.p1} pts  —  ${p2Name}: ${scores.p2} pts`;
     const modal = document.getElementById("game-over-modal");
     if(modal) modal.classList.remove("hidden");
-    SystemUI.playSound(winner === 1 ? 'win' : 'lose');
+    SystemUI.playSound(winner === myId ? 'win' : 'lose');
     if (typeof SystemStats !== 'undefined') {
-        if (winner === 1) SystemStats.recordWin("feud", 0); else if (winner === 2) SystemStats.recordLoss("feud");
+        if (winner === myId) SystemStats.recordWin("feud", 0); else if (winner !== 0) SystemStats.recordLoss("feud");
     }
-    if (gameMode === "online" && isHost && window.db) {
+    // Always broadcast the final state (either client can end the game) —
+    // a bare isHost-gated status write never reached the other side.
+    if (gameMode === "online" && window.db && !fromSync) {
+        pushGameState();
         window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), { status: "finished", winner: wName });
     }
 }
@@ -1211,4 +1322,16 @@ document.addEventListener("keydown", e => {
     if (e.key === "Enter" && gameMode === "hotseat") { if (document.activeElement.tagName === "BUTTON") return; e.preventDefault(); handleBuzz(2); }
 });
 
-window.addEventListener("beforeunload", () => { if (isHost && currentRoomId && gameMode === "online") window.dbSet(window.dbRef(window.db, `feud_rooms/${currentRoomId}`), null); });
+window.addEventListener("beforeunload", () => {
+    if (!currentRoomId || gameMode !== "online" || !window.db) return;
+    try {
+        if (isHost) {
+            window.dbSet(window.dbRef(window.db, `feud_rooms/${currentRoomId}`), null);
+        } else if (onlineGameStarted && !gameOverHandled) {
+            // Guest closed the tab mid-game — flag it so the host isn't stranded.
+            window.dbUpdate(window.dbRef(window.db, `feud_rooms/${currentRoomId}`), {
+                status: "abandoned", abandonedBy: SystemUI.getPlayerName()
+            });
+        }
+    } catch (e) {}
+});

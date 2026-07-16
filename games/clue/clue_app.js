@@ -40,6 +40,7 @@ document.getElementById("sys-clue-mode").addEventListener("change", e => {
         document.getElementById("multiplayer-lobby").classList.remove("hidden");
     } else {
         document.getElementById("multiplayer-lobby").classList.add("hidden");
+        if (currentRoomId) leaveOnlineRoom();
         SystemUI.stopChat();
         chatStarted = false;
     }
@@ -266,7 +267,9 @@ let diceRoll     = 0;
 let stepsLeft    = 0;
 let gamePhase    = "idle"; // idle | rolling | moving | suggesting | showing | accusing | gameover
 let pendingSuggestion = null; // { suspect, weapon, room, byPlayer, checkingPlayer }
+let suggestionResult  = null; // { suggesterIdx, showerIdx, cardId|null, ts } — synced resolution record
 let notesData    = {}; // notes[playerIdx][itemId] = '' | 'x' | 'check' | '?'
+let gameOverHandled = false; // guards endGame against repeated sync deliveries
 
 // Suggestion/accusation selections
 let selectedSuspect = null;
@@ -507,18 +510,33 @@ function useSecretPassage(playerIdx) {
 }
 
 // ── 10. GAME SETUP ───────────────────────────
-function initGame(count) {
+function initGame(count, roomData) {
     numPlayers = count;
     players    = [];
     notesData  = {};
+    gameOverHandled  = false;
+    suggestionResult = null;
 
-    // Build player list
+    // Build player list.
+    // Online (host only): every seat that a real player joined is human —
+    // seat names come from the room node (hostName / p2Name / ...).
+    // Only genuinely empty seats would be AI, and AI turns run on the host.
     SUSPECTS.slice(0, count).forEach((s, i) => {
-        const isHuman = (gameMode === "hotseat") ? true
-                      : (gameMode === "online")  ? (i === myPlayerIndex)
-                      : (i === 0);
+        let name, isHuman;
+        if (gameMode === "online") {
+            const seatName = i === 0 ? (roomData && roomData.hostName)
+                                     : (roomData && roomData[`p${i+1}Name`]);
+            isHuman = !!seatName || i === 0;
+            name    = seatName || (i === 0 ? SystemUI.getPlayerName() : s.name);
+        } else if (gameMode === "hotseat") {
+            isHuman = true;
+            name    = i === 0 ? SystemUI.getPlayerName() : `Player ${i+1}`;
+        } else {
+            isHuman = (i === 0);
+            name    = i === 0 ? SystemUI.getPlayerName() : s.name;
+        }
         players.push({
-            name:       i === 0 ? SystemUI.getPlayerName() : (gameMode === "hotseat" ? `Player ${i+1}` : s.name),
+            name:       name,
             suspectId:  s.id,
             color:      s.color,
             icon:       s.icon,
@@ -533,6 +551,7 @@ function initGame(count) {
     });
 
     // Deal cards
+    buildCardInfo();
     dealCards();
 
     // Init notepad (mark own cards as safe)
@@ -580,13 +599,55 @@ function dealCards() {
         players[playerIdx % numPlayers].hand.push(card.id);
         playerIdx++;
     });
+}
 
-    // Store full card info for rendering
+// Card catalog for rendering — needed by every client, dealing or not
+function buildCardInfo() {
     window.cardInfo = {};
     [...SUSPECTS, ...WEAPONS, ...ROOMS].forEach(item => {
         const type = SUSPECTS.includes(item) ? "suspect" : WEAPONS.includes(item) ? "weapon" : "room";
         window.cardInfo[item.id] = { ...item, type };
     });
+}
+
+// Joiner-side init: the host dealt and pushed the state — build the local
+// game from it instead of re-dealing.
+function initGameFromState(data) {
+    const state = JSON.parse(data.gameState);
+
+    buildCardInfo();
+    gameOverHandled  = false;
+    suggestionResult = null;
+    stateSeq         = state.seq || 0;
+    seenAnnounceTs   = (state.announceMsg && state.announceMsg.ts) || 0;
+    seenResultTs     = (state.suggestionResult && state.suggestionResult.ts) || 0;
+
+    players           = state.players;
+    envelope          = state.envelope;
+    currentTurn       = state.currentTurn;
+    gamePhase         = state.gamePhase;
+    pendingSuggestion = state.pendingSuggestion || null;
+    numPlayers        = players.length;
+
+    notesData = {};
+    players.forEach((p, i) => notesData[i] = {});
+    players[myPlayerIndex].hand.forEach(cardId => {
+        notesData[myPlayerIndex][cardId] = 'check';
+    });
+
+    renderBoard();
+    renderPlayerList();
+    renderHand();
+    buildNotepad();
+    updateTurnUI();
+    updateActionButtons();
+
+    document.getElementById("start-screen").classList.add("hidden");
+
+    if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("clue");
+
+    // In case we synced straight into a pending suggestion
+    if (gamePhase === "showing" && pendingSuggestion) resolveSuggestionStep();
 }
 
 function shuffleArr(arr) {
@@ -602,6 +663,20 @@ function isMyTurn() {
     if (gameMode === "online")  return currentTurn === myPlayerIndex;
     if (gameMode === "hotseat") return true;
     return !players[currentTurn].isAI;
+}
+
+// Which client is responsible for acting on behalf of a seat?
+// Offline everything is local; online each human acts on their own client
+// and the host acts for AI seats (e.g. a seat abandoned mid-game).
+function ownsSeat(idx) {
+    if (gameMode !== "online") return true;
+    const p = players[idx];
+    if (!p) return false;
+    return p.isAI ? isHost : idx === myPlayerIndex;
+}
+
+function shouldDriveAI() {
+    return gameMode !== "online" || isHost;
 }
 
 function rollDice() {
@@ -660,9 +735,9 @@ function endTurn() {
 
     if (gameMode === "online") pushGameState();
 
-    // AI turn
-    if (players[currentTurn].isAI && gamePhase === "rolling") {
-        setTimeout(aiTakeTurn, 1200);
+    // AI turn (online: only the host drives AI seats)
+    if (players[currentTurn].isAI && gamePhase === "rolling" && shouldDriveAI()) {
+        scheduleAITurn();
     }
 }
 
@@ -758,6 +833,7 @@ function buildNotepad() {
 
     sections.forEach(({ id, items }) => {
         const grid = document.getElementById(id);
+        grid.innerHTML = "";
         const cols = 1 + numPlayers;
         grid.style.gridTemplateColumns = `minmax(90px,1fr) ${Array(numPlayers).fill("30px").join(" ")}`;
 
@@ -894,50 +970,96 @@ function makeSuggestion(byPlayer, suspectId, weaponId, roomId) {
         byPlayer,
         checkingPlayer: (byPlayer + 1) % numPlayers
     };
+    suggestionResult = null;
 
     gamePhase = "showing";
     setTurnAction(`${getSuspectName(suspectId)} with the ${getWeaponName(weaponId)} in the ${getRoomName(roomId)}`);
 
     if (gameMode === "online") pushGameState();
-    checkNextPlayerForCard();
+    resolveSuggestionStep();
 }
 
-function checkNextPlayerForCard() {
+// Advance the disproof round. Runs on every client after each synced step;
+// only the client that owns the current checking seat actually acts.
+function resolveSuggestionStep() {
+    if (!pendingSuggestion || suggestionResult) return;
     const { byPlayer, checkingPlayer, suspect, weapon, room } = pendingSuggestion;
 
     if (checkingPlayer === byPlayer) {
-        // Gone full circle — nobody could disprove
-        showResultModal(null, null);
+        // Gone full circle — nobody could disprove. The suggester publishes it.
+        if (ownsSeat(byPlayer)) publishSuggestionResult(null, null);
         return;
     }
+
+    if (!ownsSeat(checkingPlayer)) return; // another client will act
 
     const checker = players[checkingPlayer];
     const matchingCards = [suspect, weapon, room].filter(id => checker.hand.includes(id));
 
-    if (gameMode === "hotseat" || (gameMode === "online" && checkingPlayer === myPlayerIndex)) {
-        // Human player must choose a card to show
-        openShowCardModal(checkingPlayer, matchingCards, byPlayer, suspect, weapon, room);
-    } else if (gameMode === "ai" || checker.isAI) {
-        // AI: automatically shows the first matching card (lowest-info reveal)
+    if (gameMode === "ai" || checker.isAI) {
+        // AI (and everyone in vs-AI mode): auto-show first matching card
         setTimeout(() => {
+            if (!pendingSuggestion || suggestionResult) return;
+            if (pendingSuggestion.checkingPlayer !== checkingPlayer) return;
             if (matchingCards.length > 0) {
-                const cardToShow = matchingCards[0];
-                processCardShown(checkingPlayer, cardToShow, byPlayer);
+                publishSuggestionResult(checkingPlayer, matchingCards[0]);
             } else {
-                // Pass to next player
-                pendingSuggestion.checkingPlayer = (checkingPlayer + 1) % numPlayers;
-                checkNextPlayerForCard();
+                passSuggestion();
             }
         }, 900);
     } else {
-        // Online: wait for the checking player to submit their card
-        if (matchingCards.length === 0) {
-            // Auto-pass
-            pendingSuggestion.checkingPlayer = (checkingPlayer + 1) % numPlayers;
-            pushGameState();
-            checkNextPlayerForCard();
-        }
-        // Otherwise the other client will fire openShowCardModal
+        // Human player must choose a card to show (or pass)
+        if (!document.getElementById("show-card-modal").classList.contains("hidden")) return;
+        openShowCardModal(checkingPlayer, matchingCards, byPlayer, suspect, weapon, room);
+    }
+}
+
+function passSuggestion() {
+    if (!pendingSuggestion) return;
+    pendingSuggestion.checkingPlayer = (pendingSuggestion.checkingPlayer + 1) % numPlayers;
+    if (gameMode === "online") pushGameState();
+    resolveSuggestionStep();
+}
+
+// The shower (or the suggester, on "nobody could disprove") publishes the
+// resolution so every client transitions out of "showing" via synced state.
+function publishSuggestionResult(showerIdx, cardId) {
+    if (!pendingSuggestion) return;
+    suggestionResult = {
+        suggesterIdx: pendingSuggestion.byPlayer,
+        showerIdx:    showerIdx,
+        cardId:       cardId,
+        ts:           Date.now()
+    };
+    seenResultTs      = suggestionResult.ts;
+    pendingSuggestion = null;
+    if (gameMode === "online") pushGameState();
+    applySuggestionResult();
+}
+
+// Display/consume the resolution record. The card face is only revealed to
+// the suggester; everyone else just learns that a card changed hands.
+function applySuggestionResult() {
+    const res = suggestionResult;
+    if (!res) return;
+    suggestionResult = null;
+
+    if (res.showerIdx === null || res.showerIdx === undefined) {
+        showResultModal(null, null);
+        return;
+    }
+
+    if (res.cardId && (gameMode !== "online" || res.suggesterIdx === myPlayerIndex)) {
+        autoMarkNotepad(res.cardId, res.showerIdx, "check");
+    }
+    if (res.cardId && players[res.suggesterIdx].isAI && ownsSeat(res.suggesterIdx)) {
+        aiLearnCard(res.cardId);
+    }
+
+    if (res.suggesterIdx === myPlayerIndex) {
+        showResultModal(res.showerIdx, res.cardId);
+    } else {
+        showResultModal(res.showerIdx, null);
     }
 }
 
@@ -960,9 +1082,7 @@ function openShowCardModal(playerIdx, matchingCards, forPlayer, suspect, weapon,
         noneDiv.classList.remove("hidden");
         document.getElementById("show-card-pass").onclick = () => {
             modal.classList.add("hidden");
-            pendingSuggestion.checkingPlayer = (pendingSuggestion.checkingPlayer + 1) % numPlayers;
-            if (gameMode === "online") pushGameState();
-            checkNextPlayerForCard();
+            passSuggestion();
         };
     } else {
         noneDiv.classList.add("hidden");
@@ -975,33 +1095,13 @@ function openShowCardModal(playerIdx, matchingCards, forPlayer, suspect, weapon,
             btn.textContent = `${info.icon} ${info.name}`;
             btn.addEventListener("click", () => {
                 modal.classList.add("hidden");
-                processCardShown(playerIdx, cardId, forPlayer);
+                publishSuggestionResult(playerIdx, cardId);
             });
             optionsRow.appendChild(btn);
         });
     }
 
     modal.classList.remove("hidden");
-}
-
-function processCardShown(showingPlayer, cardId, toPlayer) {
-    // Update notes: mark card as safe for showing player
-    autoMarkNotepad(cardId, showingPlayer, "check");
-
-    if (cardId && players[toPlayer].isAI) {
-        aiLearnCard(cardId);
-    }
-
-    // Show result only to the suggestion maker
-    if (toPlayer === myPlayerIndex) {
-        showResultModal(showingPlayer, cardId);
-    } else {
-        // Other players just see "a card was shown"
-        showResultModal(showingPlayer, null);
-    }
-
-    pendingSuggestion = null;
-    if (gameMode === "online") pushGameState();
 }
 
 function showResultModal(showingPlayer, cardId) {
@@ -1028,10 +1128,15 @@ function showResultModal(showingPlayer, cardId) {
     }
 
     resultModalCallback = () => {
+        // Only the active seat's owner drives the phase change; other online
+        // clients receive it via the pushed state.
+        if (!ownsSeat(currentTurn)) return;
+
         gamePhase = "suggesting";
         updateActionButtons();
+        if (gameMode === "online") pushGameState();
 
-        if (players[currentTurn].isAI) {
+        if (players[currentTurn].isAI && shouldDriveAI()) {
             setTimeout(() => {
                 if (aiReadyToAccuse()) {
                     const acc = buildAIAccusation();
@@ -1095,6 +1200,12 @@ function resolveAccusation(playerIdx, suspectId, weaponId, roomId) {
         renderPlayerList();
         SystemUI.playSound('lose');
 
+        // Let the other online clients announce it too
+        if (gameMode === "online") {
+            setAnnounce("Wrong Accusation!",
+                `${players[playerIdx].name} accused wrongly and has been eliminated!`);
+        }
+
         // Show elimination result
         const modal = document.getElementById("result-modal");
         document.getElementById("result-modal-title").textContent = "Wrong Accusation!";
@@ -1121,6 +1232,8 @@ function resolveAccusation(playerIdx, suspectId, weaponId, roomId) {
 
 // ── 16. GAME END ─────────────────────────────
 function endGame(winnerIdx) {
+    if (gameOverHandled) return;
+    gameOverHandled = true;
     gamePhase = "gameover";
     clearHighlights();
     stopAllAI();
@@ -1147,7 +1260,7 @@ function endGame(winnerIdx) {
 
     document.getElementById("game-over-modal").classList.remove("hidden");
 
-    if (gameMode === "online") {
+    if (gameMode === "online" && currentRoomId) {
         window.dbUpdate(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), {
             status: "finished", winner: winnerIdx
         });
@@ -1169,7 +1282,19 @@ let aiWeaponsSeen  = {};
 let aiRoomsSeen    = {};
 let aiTimers       = [];
 
-function stopAllAI() { aiTimers.forEach(t => clearTimeout(t)); aiTimers = []; }
+function stopAllAI() { aiTimers.forEach(t => clearTimeout(t)); aiTimers = []; aiTurnPending = false; }
+
+// Schedule an AI turn without stacking timers (online syncs can re-fire)
+let aiTurnPending = false;
+function scheduleAITurn() {
+    if (aiTurnPending) return;
+    aiTurnPending = true;
+    const t = setTimeout(() => {
+        aiTurnPending = false;
+        aiTakeTurn();
+    }, 1200);
+    aiTimers.push(t);
+}
 
 function aiTakeTurn() {
     if (!players[currentTurn].isAI || gamePhase !== "rolling") return;
@@ -1315,7 +1440,11 @@ document.getElementById("start-btn").addEventListener("click", () => {
     const activeBtn = document.querySelector(".count-btn.active");
     const count     = activeBtn ? parseInt(activeBtn.dataset.count) : 4;
 
-    if (gameMode === "online" && !isHost) return;
+    // Online games start automatically when a player joins the room
+    if (gameMode === "online") {
+        lobbyUI.classList.remove("hidden");
+        return;
+    }
     initGame(count);
 });
 
@@ -1328,6 +1457,7 @@ document.querySelectorAll(".count-btn").forEach(btn => {
 });
 
 document.getElementById("btn-play-again").addEventListener("click", () => {
+    if (gameMode === "online") leaveOnlineRoom();
     document.getElementById("game-over-modal").classList.add("hidden");
     document.getElementById("start-screen").classList.remove("hidden");
 });
@@ -1339,11 +1469,62 @@ window.addEventListener("resize", () => {
 // ── 19. FIREBASE ONLINE ──────────────────────
 const lobbyUI = document.getElementById("multiplayer-lobby");
 
+let stateSeq          = 0;     // monotonic push counter (ordering guard)
+let seenResultTs      = 0;     // last suggestionResult applied
+let seenAnnounceTs    = 0;     // last synced announcement shown
+let announceMsg       = null;  // { title, body, byId, ts } — carried in every push
+let onlineGameStarted = false;
+let roomUnsub         = null;  // unsubscribe fn for the room listener
+const joinToken       = Math.random().toString(36).slice(2, 10); // claims a seat uniquely
+
 function generateRoomCode() {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let code = "";
     for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
     return code;
+}
+
+function setAnnounce(title, body) {
+    announceMsg    = { title, body, byId: myId, ts: Date.now() };
+    seenAnnounceTs = announceMsg.ts;
+}
+
+function showAnnounceModal(title, body) {
+    document.getElementById("result-modal-title").textContent = title;
+    document.getElementById("result-modal-body").innerHTML =
+        `<p style="text-align:center;color:var(--parchment);margin:12px 0;">${body}</p>`;
+    resultModalCallback = null;
+    document.getElementById("result-modal").classList.remove("hidden");
+}
+
+function removeRoom() {
+    if (!currentRoomId || !window.dbRemove) return;
+    window.dbRemove(window.dbRef(window.db, 'clue_rooms/' + currentRoomId));
+}
+
+// Detach the listener and release/abandon the room
+function leaveOnlineRoom() {
+    if (roomUnsub) { roomUnsub(); roomUnsub = null; }
+    if (currentRoomId) {
+        if (isHost) {
+            removeRoom();
+        } else if (gamePhase !== "gameover") {
+            window.dbUpdate(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), {
+                status: "abandoned", abandonedBy: myId
+            });
+        }
+    }
+    currentRoomId     = null;
+    onlineGameStarted = false;
+    isHost            = false;
+    myId              = 1;
+    myPlayerIndex     = 0;
+    SystemUI.stopChat();
+    chatStarted = false;
+    const codeDisplay = document.getElementById("room-code-display");
+    if (codeDisplay) codeDisplay.classList.add("hidden");
+    const createBtn = document.getElementById("btn-create-room");
+    if (createBtn) createBtn.disabled = false;
 }
 
 document.getElementById("btn-create-room")?.addEventListener("click", () => {
@@ -1364,64 +1545,162 @@ document.getElementById("btn-create-room")?.addEventListener("click", () => {
 document.getElementById("btn-join-room")?.addEventListener("click", () => {
     SystemUI.playSound('click');
     const code = document.getElementById("join-room-input").value.toUpperCase().trim();
+    const errEl = document.getElementById("lobby-error-msg");
+    errEl.textContent = "";
 
     window.dbGet(window.dbChild(window.dbRef(window.db), `clue_rooms/${code}`)).then(snapshot => {
-        if (snapshot.exists()) {
-            const data         = snapshot.val();
-            const playerCount  = data.players || 1;
-            currentRoomId      = code;
-            isHost             = false;
-            myId               = playerCount + 1;
-            myPlayerIndex      = playerCount;
-            chatStarted        = false;
+        if (!snapshot.exists()) {
+            errEl.textContent = "Room not found.";
+            return;
+        }
+        const data = snapshot.val();
+        if (data.status !== "waiting") {
+            errEl.textContent = "That game has already started.";
+            return;
+        }
 
-            window.dbUpdate(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), {
-                players: myId,
-                [`p${myId}Name`]: SystemUI.getPlayerName(),
-                status: myId >= 2 ? "playing" : "waiting"
-            });
+        const claimId = (data.players || 1) + 1;
+        const roomRef = window.dbRef(window.db, 'clue_rooms/' + code);
+
+        window.dbUpdate(roomRef, {
+            players: claimId,
+            [`p${claimId}Name`]:  SystemUI.getPlayerName(),
+            [`p${claimId}Token`]: joinToken,
+            status: claimId >= 2 ? "playing" : "waiting"
+        }).then(() =>
+            // Verify the claim stuck — two simultaneous joiners can race
+            window.dbGet(window.dbChild(window.dbRef(window.db), `clue_rooms/${code}`))
+        ).then(snap2 => {
+            const d2 = snap2.val() || {};
+            if (d2[`p${claimId}Token`] !== joinToken) {
+                errEl.textContent = "Someone else took that seat — the game already started.";
+                return;
+            }
+            currentRoomId = code;
+            isHost        = false;
+            myId          = claimId;
+            myPlayerIndex = claimId - 1;
+            chatStarted   = false;
             lobbyUI.classList.add("hidden");
             listenToRoom();
-        } else {
-            document.getElementById("lobby-error-msg").textContent = "Room not found.";
-        }
+        });
     });
 });
 
-function listenToRoom() {
-    let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), snapshot => {
-        const data = snapshot.val();
-        if (!data) return;
+function startRoomChat() {
+    if (chatStarted) return;
+    chatStarted = true;
+    SystemUI.playSound('win');
+    SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+}
 
-        if (data.status === "playing" && !onlineGameStarted) {
-            onlineGameStarted = true;
-            lobbyUI.classList.add("hidden");
-            if (!chatStarted) {
-                chatStarted = true;
-                SystemUI.playSound('win');
-                SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
-            }
+function listenToRoom() {
+    onlineGameStarted = false;
+    roomUnsub = window.dbOnValue(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), snapshot => {
+        const data = snapshot.val();
+
+        // Room node removed → the host left
+        if (!data) {
+            if (!isHost) handleHostLeft();
+            return;
+        }
+
+        // A joiner closed their tab
+        if (data.status === "abandoned") {
+            if (isHost) handleOpponentAbandoned(data);
+            return;
+        }
+
+        if (data.status !== "playing" && data.status !== "finished") return; // still waiting
+
+        if (!onlineGameStarted) {
             if (isHost) {
-                const count = data.players || 2;
-                initGame(count);
+                onlineGameStarted = true;
+                lobbyUI.classList.add("hidden");
+                startRoomChat();
+                initGame(data.players || 2, data);
                 pushGameState();
+            } else if (data.gameState) {
+                // Joiner: wait for the host's first push, then build the
+                // game from the synced state (the host is the dealer)
+                onlineGameStarted = true;
+                lobbyUI.classList.add("hidden");
+                startRoomChat();
+                initGameFromState(data);
             }
             return;
         }
-        if (onlineGameStarted) syncFromFirebase(data);
+        syncFromFirebase(data);
     });
+}
+
+function handleHostLeft() {
+    if (!currentRoomId) return;
+    const wasOver = gamePhase === "gameover";
+    currentRoomId = null; // the room node is already gone — nothing to write
+    leaveOnlineRoom();
+    stopAllAI();
+    if (wasOver) return; // keep the game-over screen up
+    gamePhase = "idle";
+    pendingSuggestion = null;
+    suggestionResult  = null;
+    document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
+    lobbyUI.classList.add("hidden");
+    // Announce first: the start screen sits above modals (z-index)
+    showAnnounceModal("Host Left", "The host has left the game.");
+    document.getElementById("result-modal-ok").addEventListener("click", () => {
+        document.getElementById("start-screen").classList.remove("hidden");
+    }, { once: true });
+}
+
+function handleOpponentAbandoned(data) {
+    if (gamePhase === "gameover") return;
+    const roomRef = window.dbRef(window.db, 'clue_rooms/' + currentRoomId);
+
+    if (!onlineGameStarted) {
+        // Left before the game began — reopen the room
+        window.dbUpdate(roomRef, {
+            status: "waiting", players: 1, abandonedBy: null,
+            [`p${data.abandonedBy}Name`]: null, [`p${data.abandonedBy}Token`]: null
+        });
+        return;
+    }
+
+    const idx = (data.abandonedBy || 2) - 1;
+    const p   = players[idx];
+    if (!p || p.isAI) return;
+
+    // Flip the empty seat to AI — the host already drives AI turns
+    p.isAI = true;
+    renderPlayerList();
+    updateTurnUI();
+    setAnnounce("Player Left", `${p.name} left the game — an AI takes over their seat.`);
+    showAnnounceModal("Player Left", `${p.name} left the game — an AI takes over their seat.`);
+    pushGameState(); // also restores status to "playing"
+
+    // Keep the game moving if the game was waiting on them
+    if (gamePhase === "showing" && pendingSuggestion) {
+        resolveSuggestionStep();
+    } else if (currentTurn === idx) {
+        if (gamePhase === "rolling") scheduleAITurn();
+        else endTurn();
+    }
 }
 
 function pushGameState() {
     if (gameMode !== "online" || !currentRoomId) return;
+    stateSeq++;
     window.dbUpdate(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), {
         gameState: JSON.stringify({
             players:           players.map(p => ({ ...p, hand: p.hand })),
             envelope:          envelope,
             currentTurn:       currentTurn,
             gamePhase:         gamePhase,
-            pendingSuggestion: pendingSuggestion
+            pendingSuggestion: pendingSuggestion,
+            suggestionResult:  suggestionResult,
+            announceMsg:       announceMsg,
+            seq:               stateSeq,
+            pusher:            myId
         }),
         status: gamePhase === "gameover" ? "finished" : "playing"
     });
@@ -1432,36 +1711,74 @@ function syncFromFirebase(data) {
     try {
         const state = JSON.parse(data.gameState);
 
-        players         = state.players;
-        envelope        = state.envelope;
-        currentTurn     = state.currentTurn;
-        gamePhase       = state.gamePhase;
-        pendingSuggestion = state.pendingSuggestion;
+        // Ordering guard: skip own echoes and stale/out-of-order pushes
+        if (typeof state.seq === "number") {
+            if (state.pusher === myId && state.seq <= stateSeq) return;
+            if (state.seq < stateSeq) return;
+            stateSeq = state.seq;
+        }
+
+        players           = state.players;
+        envelope          = state.envelope;
+        currentTurn       = state.currentTurn;
+        gamePhase         = state.gamePhase;
+        pendingSuggestion = state.pendingSuggestion || null;
 
         renderBoard();
         renderPlayerList();
+        renderHand();
         updateTurnUI();
         updateActionButtons();
 
-        // Trigger show-card modal for this player if needed
-        if (gamePhase === "showing" && pendingSuggestion) {
-            const { checkingPlayer, suspect, weapon, room, byPlayer } = pendingSuggestion;
-            if (checkingPlayer === myPlayerIndex) {
-                const matchingCards = [suspect, weapon, room].filter(id =>
-                    players[myPlayerIndex].hand.includes(id));
-                openShowCardModal(myPlayerIndex, matchingCards, byPlayer, suspect, weapon, room);
+        // Synced announcements (eliminations, player-left notices)
+        if (state.announceMsg && state.announceMsg.ts > seenAnnounceTs) {
+            seenAnnounceTs = state.announceMsg.ts;
+            if (state.announceMsg.byId !== myId) {
+                showAnnounceModal(state.announceMsg.title, state.announceMsg.body);
             }
         }
 
-        if (state.gamePhase === "gameover") endGame(data.winner ?? -1);
+        // Synced suggestion resolution ("X showed a card to Y")
+        if (state.suggestionResult && state.suggestionResult.ts > seenResultTs) {
+            seenResultTs     = state.suggestionResult.ts;
+            suggestionResult = state.suggestionResult;
+            applySuggestionResult();
+        }
+
+        // If the disproof round is waiting on this client, act
+        if (gamePhase === "showing" && pendingSuggestion) {
+            resolveSuggestionStep();
+        }
+
+        if (gamePhase === "gameover") {
+            endGame(data.winner ?? -1);
+            return;
+        }
+
+        // Host drives AI seats (e.g. after a player abandoned)
+        if (isHost && players[currentTurn] && players[currentTurn].isAI && gamePhase === "rolling") {
+            scheduleAITurn();
+        }
     } catch (e) { console.error("Sync error:", e); }
 }
 
+// Room cleanup on tab close: host removes the room, joiner flags it abandoned
+window.addEventListener("beforeunload", () => {
+    if (gameMode !== "online" || !currentRoomId) return;
+    if (isHost) {
+        removeRoom();
+    } else if (gamePhase !== "gameover") {
+        window.dbUpdate(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), {
+            status: "abandoned", abandonedBy: myId
+        });
+    }
+});
+
 document.getElementById("lobby-close-btn")?.addEventListener("click", () => lobbyUI.classList.add("hidden"));
 document.getElementById("btn-cancel-lobby")?.addEventListener("click", () => {
+    leaveOnlineRoom(); // removes a hosted room / abandons a joined one
     gameMode = "ai";
     document.getElementById("sys-clue-mode").value = "ai";
     localStorage.setItem("clue_mode", "ai");
     lobbyUI.classList.add("hidden");
-    SystemUI.stopChat(); chatStarted = false;
 });

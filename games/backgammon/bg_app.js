@@ -56,6 +56,7 @@ let myColor = 'white';
 let chatStarted = false; 
 let seats = [];
 let myId = 1;
+let roomListener = null;
 
 document.getElementById("sys-bg-mode").addEventListener("change", (e) => {
     gameMode = e.target.value;
@@ -70,6 +71,7 @@ document.getElementById("sys-bg-mode").addEventListener("change", (e) => {
         chatStarted = false;
         myId = 1;
         isHost = true;
+        if (roomListener) { roomListener(); roomListener = null; }
         resetGame();
     }
 });
@@ -121,6 +123,7 @@ SystemMatch.setup({
         localStorage.setItem("bg_mode", "ai");
         myId = 1; isHost = true;
         chatStarted = false;
+        if (roomListener) { roomListener(); roomListener = null; }
         resetGame();
     },
     onStart: () => {
@@ -132,12 +135,34 @@ SystemMatch.setup({
 
 function listenToRoom() {
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), (snapshot) => {
+    if (roomListener) roomListener();
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if(!data) return;
+        if(!data) {
+            // Host deleted the room — free the joiner instead of freezing.
+            if (gameMode === "online" && !isHost) {
+                if (roomListener) { roomListener(); roomListener = null; }
+                SystemMatch.setSeats([]); // room is gone — skip the ghost seat write
+                SystemMatch.cleanup();
+                chatStarted = false;
+                SystemUI.v2Lobby.hide();
+                showToast("Host Left", "The host left the game. Returning to AI mode.");
+                gameMode = "ai";
+                document.getElementById("sys-bg-mode").value = "ai";
+                localStorage.setItem("bg_mode", "ai");
+                myId = 1; isHost = true; myColor = 'white';
+                resetGame();
+            }
+            return;
+        }
 
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
+
+        if (data.status === "finished" && data.winner) {
+            if (currentPhase === "playing") handleOnlineFinish(data);
+            return;
+        }
 
         if (data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true;
@@ -168,6 +193,32 @@ function pushGameState() {
     });
 }
 
+// Both clients land here off the 'finished' room write — each announces and
+// records only its own outcome, then resets. currentPhase guards re-entry.
+function handleOnlineFinish(data) {
+    currentPhase = "idle";
+    board = data.board || board;
+    bar = data.bar || { white: 0, black: 0 };
+    off = data.off || off;
+    activeDice = [];
+    selectedIndex = null;
+    validMoves = [];
+    renderBoard();
+
+    const iWon = data.winner === myColor;
+    SystemUI.playSound(iWon ? 'win' : 'lose');
+    showToast(`${String(data.winner).toUpperCase()} WINS!`, `They bore off all 15 checkers.`);
+    if (iWon) { SystemUI.money += (BUY_IN * 2); SystemUI.updateMoneyDisplay(); }
+
+    // 2.0 STATS INTEGRATION - Wrapped for safety
+    if (typeof SystemStats !== 'undefined') {
+        if (iWon) SystemStats.recordWin("backgammon", BUY_IN * 2);
+        else SystemStats.recordLoss("backgammon");
+    }
+
+    setTimeout(resetGame, 1200);
+}
+
 function syncGameState(data) {
     board = data.board || board;
     bar = data.bar || {white:0, black:0};
@@ -175,8 +226,9 @@ function syncGameState(data) {
     currentTurn = data.currentTurn || 'white';
     activeDice = data.activeDice || [];
     
-    if (data.d1) document.getElementById("die-1").innerHTML = data.d1;
-    if (data.d2) document.getElementById("die-2").innerHTML = data.d2;
+    // Accept empty-string dice too, so a cleared roll clears the display.
+    if (data.d1 !== undefined) document.getElementById("die-1").innerHTML = data.d1 || "";
+    if (data.d2 !== undefined) document.getElementById("die-2").innerHTML = data.d2 || "";
     
     updateTurnIndicator(); 
     renderBoard();
@@ -437,6 +489,20 @@ function executeMove(fromIdx, toIdx, dieUsed) {
     renderBoard();
 
     if (off[currentTurn] === 15) {
+        if (gameMode === "online") {
+            // Push the finished state — both clients (including this one)
+            // announce and record via handleOnlineFinish in the listener.
+            window.dbUpdate(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), {
+                board: board,
+                bar: bar,
+                off: off,
+                activeDice: [],
+                currentTurn: currentTurn,
+                status: "finished",
+                winner: currentTurn
+            });
+            return;
+        }
         setTimeout(() => {
             let isMyWin = (currentTurn === myColor);
             if (gameMode === "ai" && currentTurn === "black") isMyWin = false;

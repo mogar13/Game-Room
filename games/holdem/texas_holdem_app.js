@@ -122,11 +122,12 @@ function initPoker() {
                 SystemUI.v2Lobby.show(); 
             } else { 
                 document.getElementById("action-zone").classList.remove("hidden");
-                SystemUI.v2Lobby.hide(); 
-                SystemUI.stopChat(); chatStarted = false; 
+                SystemUI.v2Lobby.hide();
+                SystemUI.stopChat(); chatStarted = false;
                 myId = 1; isHost = true;
-                if (roomListener) { roomListener(); roomListener = null; } 
-                resetGame(); 
+                joinerBoughtIn = false; lastSyncTime = 0;
+                if (roomListener) { roomListener(); roomListener = null; }
+                resetGame();
             }
         });
     }
@@ -358,7 +359,16 @@ function updateControls() {
 
 // ── 5. GAME LOGIC ─────────────────────────────
 function startGame() {
-    if (SystemUI.money < BUY_IN) { showToast("Error", "Need $" + BUY_IN + " to buy in!"); return; }
+    if (gameMode === "online" && !isHost) return; // joiners mirror host state; never self-start
+    if (SystemUI.money < BUY_IN) {
+        showToast("Error", "Need $" + BUY_IN + " to buy in!");
+        // Online: the room status may already be 'playing' — revert it so the room isn't bricked.
+        if (gameMode === "online" && isHost && currentRoomId && window.db) {
+            window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "waiting" });
+            SystemUI.v2Lobby.show();
+        }
+        return;
+    }
     SystemUI.money -= BUY_IN; SystemUI.updateMoneyDisplay();
     
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("poker");
@@ -425,16 +435,23 @@ function postBet(pIdx, amt) {
 function handleAction(type, amount = 0) {
     if (activeTurn !== (myId - 1) || isGameOver) return;
     if (gameMode === "online" && !isHost) { sendJoinerAction(type, amount); return; }
-    
+    applyAction(myId - 1, type, amount);
+}
+
+// Core action executor — used for the local player, AI seats, and joiner actions
+// relayed to the host. handleAction() keeps the "is it my seat" guard for clicks.
+function applyAction(pIdx, type, amount = 0) {
+    if (isGameOver || activeTurn !== pIdx) return;
+
     playersActed++;
-    if (type === 'fold') { folded[activeTurn] = true; playCustomSound('card'); }
+    if (type === 'fold') { folded[pIdx] = true; playCustomSound('card'); }
     else if (type === 'check-call') {
-        const diff = currentBetToMatch - bets[activeTurn];
-        if (diff > 0) { postBet(activeTurn, diff); playCustomSound('play'); } else playCustomSound('click');
+        const diff = currentBetToMatch - bets[pIdx];
+        if (diff > 0) { postBet(pIdx, diff); playCustomSound('play'); } else playCustomSound('click');
     } else if (type === 'raise') {
-        postBet(activeTurn, amount); 
-        currentBetToMatch = bets[activeTurn]; 
-        playersActed = 1; 
+        postBet(pIdx, amount);
+        currentBetToMatch = bets[pIdx];
+        playersActed = 1;
         playCustomSound('play');
     }
     advanceTurn();
@@ -525,9 +542,23 @@ function resetGame() {
 }
 
 // ── 6. AI LOGIC ───────────────────────────────
-function checkAITurn() { 
-    if (gameMode === "online" || isGameOver || activeTurn === (myId-1)) return; 
-    setTimeout(aiAction, 1200); 
+let aiActionToken = 0; // invalidates stale scheduled AI actions (guards double-fire)
+function checkAITurn() {
+    if (isGameOver || activeTurn === (myId-1)) return;
+    if (gameMode === "online") {
+        // SystemMatch fills unjoined seats with AI — the HOST must play them.
+        if (!isHost) return;
+        const seat = seats[activeTurn];
+        if (!seat || seat.type !== "ai") return;
+    }
+    const token = ++aiActionToken;
+    const turnAtSchedule = activeTurn;
+    const phaseAtSchedule = currentPhase;
+    setTimeout(() => {
+        if (token !== aiActionToken) return;
+        if (isGameOver || activeTurn !== turnAtSchedule || currentPhase !== phaseAtSchedule) return;
+        aiAction();
+    }, 1200);
 }
 
 function aiAction() {
@@ -562,9 +593,9 @@ function aiAction() {
     if (action === "raise" && raiseAmt > stacks[pIdx]) raiseAmt = stacks[pIdx];
     if (action === "raise" && raiseAmt === 0) action = "check-call";
 
-    if (action === "fold") handleAction('fold');
-    else if (action === "raise") handleAction('raise', raiseAmt);
-    else handleAction('check-call');
+    if (action === "fold") applyAction(pIdx, 'fold');
+    else if (action === "raise") applyAction(pIdx, 'raise', raiseAmt);
+    else applyAction(pIdx, 'check-call');
 }
 
 // ── 7. UI EVENTS ──────────────────────────────
@@ -618,24 +649,76 @@ function setupOnlineMode() {
         onHost: (roomId) => {
             currentRoomId = roomId;
             isHost = true; myId = 1;
+            lastSyncTime = 0; lastActionTs = 0; joinerBoughtIn = false;
             seats = SystemMatch.getSeats();
             listenToRoom();
         },
         onJoin: (roomId) => {
             currentRoomId = roomId;
             isHost = false;
+            lastSyncTime = 0; lastActionTs = 0; joinerBoughtIn = false;
             myId = SystemMatch.getMyId();
             seats = SystemMatch.getSeats();
             listenToRoom();
         },
-        onLeave: () => location.reload(),
+        onLeave: () => {
+            // Joiner leaving mid-hand: flag the room so the host doesn't wait on a dead seat,
+            // and cash their remaining stack back out before the reload wipes local state.
+            if (!isHost && currentRoomId && gameIsActive && window.db && window.dbUpdate) {
+                try { window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "abandoned" }); } catch (e) {}
+            }
+            if (!isHost && joinerBoughtIn && gameIsActive && stacks[myId - 1] > 0) {
+                SystemUI.money += stacks[myId - 1];
+                SystemUI.updateMoneyDisplay();
+            }
+            location.reload();
+        },
         onStart: () => {
+            if (SystemUI.money < BUY_IN) {
+                // SystemMatch already flipped status to 'playing' — revert it and say why.
+                showToast("Insufficient Funds", "You need $" + BUY_IN + " to buy in!");
+                if (currentRoomId && window.db) {
+                    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "waiting" });
+                }
+                return;
+            }
             if (currentRoomId && window.db) {
                 window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "playing", ts: Date.now() });
             }
         }
     });
 }
+
+// Exit online mode back to local play (host left / opponent abandoned).
+function exitOnlineToLocal(hostGone) {
+    // Cash the local player's live stack back out before wiping state.
+    const mySeat = myId - 1;
+    if (gameIsActive && stacks[mySeat] > 0 && (isHost || joinerBoughtIn)) {
+        SystemUI.money += stacks[mySeat];
+        SystemUI.updateMoneyDisplay();
+    }
+    if (roomListener) { roomListener(); roomListener = null; }
+    if (hostGone) SystemMatch._roomId = null; // node already deleted — stop cleanup() writing a ghost room
+    SystemMatch.cleanup();
+    chatStarted = false;
+    currentRoomId = null;
+    joinerBoughtIn = false;
+    lastSyncTime = 0; lastActionTs = 0;
+    gameMode = "ai"; isHost = true; myId = 1;
+    localStorage.setItem("poker_mode", "ai");
+    const modeEl = document.getElementById("sys-poker-mode");
+    if (modeEl) modeEl.value = "ai";
+    if (SystemUI.v2Lobby) SystemUI.v2Lobby.hide();
+    document.getElementById("action-zone").classList.remove("hidden");
+    resetGame();
+}
+
+// Joiner closing the tab mid-hand: tell the host instead of leaving a frozen human seat.
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && !isHost && currentRoomId && gameIsActive && window.db && window.dbUpdate) {
+        try { window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { status: "abandoned" }); } catch (e) {}
+    }
+});
 
 function updateLobbyPreview() {
     const slots = [{ type: "host", name: SystemUI.getPlayerName(), color: "#e74c3c" }];
@@ -645,7 +728,22 @@ function updateLobbyPreview() {
 
 function listenToRoom() {
     roomListener = window.dbOnValue(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), (snap) => {
-        const data = snap.val(); if (!data) return;
+        const data = snap.val();
+        if (!data) {
+            // Host left — SystemMatch deletes the room node. Don't leave the joiner frozen.
+            if (!isHost) {
+                showToast("Host Left", "The host closed the room.");
+                exitOnlineToLocal(true);
+            }
+            return;
+        }
+        if (data.status === "abandoned") {
+            if (isHost) {
+                showToast("Opponent Left", "A player abandoned the match.");
+                exitOnlineToLocal(false);
+            }
+            return;
+        }
         seats = data.seats || []; SystemUI.v2Lobby.renderSeats(seats); playerNames = seats.map(s => s.name);
         playerCount = seats.length;
         if (data.status === "playing") {
@@ -653,16 +751,19 @@ function listenToRoom() {
             if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
             if (isHost && !gameIsActive) startGame(); else if (!isHost && data.gameState) applyHostState(data.gameState);
         }
-        if (isHost && data.playerAction && data.playerAction.ts !== lastActionTs) { 
-            lastActionTs = data.playerAction.ts; processJoinerAction(data.playerAction); 
+        if (isHost && data.playerAction && data.playerAction.ts !== lastActionTs) {
+            lastActionTs = data.playerAction.ts; processJoinerAction(data.playerAction);
         }
     });
+    SystemMatch.setListener(roomListener);
 }
 
 function pushHostState() {
-    if (gameMode !== "online" || !isHost) return;
-    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), { 
-        gameState: { hands, allCommunityCards, communityCards, pot, bets, stacks, folded, isAllIn, activeTurn, currentPhase, dealerButton, isGameOver, gameIsActive, currentBetToMatch, ts: Date.now() } 
+    if (gameMode !== "online" || !isHost || !currentRoomId || !window.db) return;
+    // JSON string payload: RTDB deletes empty arrays ([] communityCards/hands at preflop),
+    // which crashed the joiner's renderTable. A string round-trips them intact.
+    window.dbUpdate(window.dbRef(window.db, 'holdem_rooms/' + currentRoomId), {
+        gameState: JSON.stringify({ hands, allCommunityCards, communityCards, pot, bets, stacks, folded, isAllIn, activeTurn, currentPhase, dealerButton, isGameOver, gameIsActive, currentBetToMatch, ts: Date.now() })
     });
 }
 
@@ -672,12 +773,47 @@ function sendJoinerAction(type, amount) {
     });
 }
 
-function processJoinerAction(p) { if (activeTurn === p.pIdx) handleAction(p.action, p.amount); }
+function processJoinerAction(p) { if (activeTurn === p.pIdx) applyAction(p.pIdx, p.action, p.amount); }
 
-function applyHostState(s) {
-    if (!s || s.ts <= lastSyncTime) return; lastSyncTime = s.ts;
-    hands=s.hands; allCommunityCards=s.allCommunityCards; communityCards=s.communityCards; pot=s.pot; bets=s.bets; stacks=s.stacks; folded=s.folded; isAllIn=s.isAllIn; activeTurn=s.activeTurn; currentPhase=s.currentPhase; dealerButton=s.dealerButton; isGameOver=s.isGameOver; gameIsActive=s.gameIsActive; currentBetToMatch=s.currentBetToMatch;
-    renderTable(); setStatus(activeTurn === (myId-1) ? "YOUR TURN" : playerNames[activeTurn].toUpperCase() + "'S TURN");
+function applyHostState(stateJson) {
+    let s;
+    try {
+        s = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
+    } catch (e) { console.error("Poker sync error:", e); return; }
+    if (!s || !s.ts || s.ts <= lastSyncTime) return; lastSyncTime = s.ts;
+
+    // Default every array — belt and braces against stripped keys from older payloads.
+    hands = s.hands || [[], [], [], []];
+    for (let i = 0; i < hands.length; i++) { if (!hands[i]) hands[i] = []; }
+    allCommunityCards = s.allCommunityCards || [];
+    communityCards = s.communityCards || [];
+    pot = s.pot || 0;
+    bets = s.bets || [0, 0, 0, 0];
+    stacks = s.stacks || [0, 0, 0, 0];
+    folded = s.folded || [false, false, false, false];
+    isAllIn = s.isAllIn || [false, false, false, false];
+    activeTurn = s.activeTurn || 0;
+    currentPhase = s.currentPhase || "preflop";
+    dealerButton = s.dealerButton || 0;
+    isGameOver = !!s.isGameOver;
+    gameIsActive = !!s.gameIsActive;
+    currentBetToMatch = s.currentBetToMatch || 0;
+
+    // Joiner economy: pay the buy-in once, when we're dealt into our first hand
+    // (mirrors the host's deduction in startGame). Cash-out credits the stack later.
+    if (!isHost && !joinerBoughtIn && gameIsActive && hands[myId - 1] && hands[myId - 1].length > 0) {
+        joinerBoughtIn = true;
+        SystemUI.money -= BUY_IN;
+        SystemUI.updateMoneyDisplay();
+        if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("poker");
+    }
+    if (!isHost && gameIsActive) {
+        document.getElementById("start-game-btn").classList.add("hidden");
+        document.getElementById("cash-out-btn").classList.add("hidden");
+    }
+
+    renderTable();
+    setStatus(activeTurn === (myId - 1) ? "YOUR TURN" : (playerNames[activeTurn] || ("Player " + (activeTurn + 1))).toUpperCase() + "'S TURN");
 }
 
 setupOnlineMode();

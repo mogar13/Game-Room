@@ -13,10 +13,8 @@ let currentRoomId = null;
 let seats    = [];
 let roomListener = null;
 
-// Online-round tracking — prevents the host from resolving the same round twice
-// if the Firebase listener fires multiple times for one update batch.
-let lastResolvedRound = 0;
-// Prevents the same result being shown twice on the client side.
+// Online-round tracking — prevents the same result being shown twice on the
+// client side. Reset on every host/join so a new room's round 1 still shows.
 let lastSeenResultRound = 0;
 let revealTimer = null;
 
@@ -301,12 +299,16 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
+        lastSeenResultRound = 0;   // fresh room — rounds restart at 1
+        clearTimeout(revealTimer); // stale round-reset timer must not hit this room
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; myId = 2; chatStarted = false;
+        lastSeenResultRound = 0;   // fresh room — rounds restart at 1
+        clearTimeout(revealTimer);
         seats = SystemMatch.getSeats();
         const guestName = p1Name || "Player 2";
         if (window.db && window.dbUpdate) {
@@ -322,6 +324,7 @@ SystemMatch.setup({
         }
         gameMode = "ai";
         if (roomListener) { roomListener(); roomListener = null; }
+        clearTimeout(revealTimer); // don't let a pending round-reset write into a dead room
         chatStarted = false;
         enterAIUI();
         refreshAIUI();
@@ -355,7 +358,16 @@ function listenToRoom() {
         window.dbRef(window.db, "rps_rooms/" + currentRoomId),
         snap => {
             const data = snap.val();
-            if (!data) return;
+            if (!data) {
+                // Room node removed — the host quit. Don't freeze the joiner.
+                if (currentRoomId && !isHost) handleOpponentGone("HOST LEFT THE GAME");
+                return;
+            }
+            if (data.status === "abandoned") {
+                // Joiner closed their tab mid-game
+                if (currentRoomId && isHost) handleOpponentGone("OPPONENT LEFT THE GAME");
+                return;
+            }
 
             seats = data.seats || [];
             SystemUI.v2Lobby.renderSeats(seats);
@@ -393,6 +405,50 @@ function listenToRoom() {
         }
     );
 }
+
+// The opponent vanished — refund any locked-in bet, clean up, and drop back
+// to vs-CPU mode with a notice (mirrors the refund in onLeave/onClose).
+function handleOpponentGone(message) {
+    if (roomListener) { roomListener(); roomListener = null; }
+    clearTimeout(revealTimer);
+    if (window.SystemMatch) {
+        // Room is already gone when the host left — blank the seats first so
+        // cleanup() doesn't write a ghost seat-release into a deleted room.
+        if (!isHost) SystemMatch.setSeats([]);
+        SystemMatch.cleanup(); // host: removes room node; both: stops chat
+    }
+    currentRoomId = null;
+    chatStarted = false;
+    if (currentBet > 0) {
+        SystemUI.money += currentBet; // refund the locked-in bet
+        currentBet = 0;
+    }
+    myOnlineChoice = null;
+    isAnimating = false;
+    lastSeenResultRound = 0;
+    isHost = false; myId = 1;
+    gameMode = "ai";
+    const modeEl = document.getElementById("sys-rps-mode");
+    if (modeEl) modeEl.value = "ai";
+    SystemUI.v2Lobby.hide();
+    enterAIUI();
+    refreshAIUI();
+    statusText.innerText = message;
+    resultOverlay.classList.remove("hidden");
+    setTimeout(() => {
+        if (gameMode === "ai" && currentBet === 0 && !isAnimating) {
+            statusText.innerText = "PLACE BET";
+        }
+    }, 2500);
+}
+
+// Joiner closing the tab mid-game flags the room abandoned so the host's
+// listener can react. (Host tab-close removal is handled by SystemMatch.)
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && currentRoomId && !isHost && chatStarted && window.db && window.dbUpdate) {
+        try { window.dbUpdate(window.dbRef(window.db, "rps_rooms/" + currentRoomId), { status: "abandoned" }); } catch (e) {}
+    }
+});
 
 function lockInOnlineChoice(choice) {
     myOnlineChoice = choice;

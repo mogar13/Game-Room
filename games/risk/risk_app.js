@@ -20,6 +20,11 @@ let myPlayerIndex = 0;
 let seats = [];
 let selectedColorIdx = 0;
 let realMapLoaded = false; // Flag to prevent fallback drawing if real SVG loads
+let stateSeq = 0;           // Monotonic state counter — wall clocks aren't comparable across machines
+let gameWinner = null;      // Winner index, carried in the pushed state so guests see game over
+let gameOverHandled = false; // Guards double stat-recording / double modals
+let onlineGameStarted = false;
+let roomListener = null;    // Unsubscribe handle for the room onValue listener
 
 SystemUI.init({
     gameName: "RISK",
@@ -779,6 +784,8 @@ function initGame(count, setup) {
 
     numPlayers = gameMode === "online" ? seats.length : count;
     setupMode  = setup;
+    gameOverHandled = false;
+    gameWinner = null;
     players    = [];
     territories = {};
     cardDeck   = [];
@@ -928,8 +935,10 @@ function placeSetupTroop(id, playerIdx) {
         return;
     }
 
-    if (gameMode === "online") pushGameState();
+    // Advance the turn BEFORE pushing so the other clients receive whose turn it is
+    // (pushing first froze manual setup — the turn change never synced).
     nextSetupTurn();
+    if (gameMode === "online") pushGameState();
 }
 
 function nextSetupTurn() {
@@ -1706,8 +1715,11 @@ function checkWinCondition() {
     if (alive.length === 1) endGame(players.indexOf(alive[0]));
 }
 
-function endGame(winnerIdx) {
+function endGame(winnerIdx, fromSync = false) {
     gamePhase = "gameover";
+    gameWinner = winnerIdx;
+    if (gameOverHandled) return; // announce + record stats only once
+    gameOverHandled = true;
     const winner = players[winnerIdx];
     document.getElementById("game-over-emoji").textContent = winnerIdx === myPlayerIndex ? "🏆" : "🌍";
     document.getElementById("game-over-title").textContent = "WORLD DOMINATION!";
@@ -1724,10 +1736,10 @@ function endGame(winnerIdx) {
         else SystemStats.recordLoss("risk");
     }
 
-    if (gameMode === "online" && window.db) {
-        window.dbUpdate(window.dbRef(window.db, 'risk_rooms/' + currentRoomId), {
-            status: "finished", winner: winnerIdx
-        });
+    // Push the final gameState (gamePhase 'gameover' + winner) so every client
+    // sees the end — the old {status,winner}-only write never reached guests.
+    if (gameMode === "online" && window.db && !fromSync) {
+        pushGameState();
     }
 }
 
@@ -2367,23 +2379,31 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1; myPlayerIndex = 0; chatStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+        gameOverHandled = false; gameWinner = null;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; chatStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+        gameOverHandled = false; gameWinner = null;
         myId = SystemMatch.getMyId();
         myPlayerIndex = myId - 1;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
     onLeave: () => {
+        if (roomListener) { try { roomListener(); } catch (e) {} roomListener = null; }
         gameMode = "ai";
         const modeEl = document.getElementById("sys-risk-mode");
         if (modeEl) modeEl.value = "ai";
         localStorage.setItem("risk_mode", "ai");
         chatStarted = false;
+        currentRoomId = null;
+        onlineGameStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
         myId = 1; isHost = true; myPlayerIndex = 0;
     },
     onStart: () => {
@@ -2405,11 +2425,25 @@ SystemMatch.setup({
 });
 
 function listenToRoom() {
-    let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), snap => {
+    onlineGameStarted = false;
+    if (roomListener) { try { roomListener(); } catch (e) {} roomListener = null; }
+    roomListener = window.dbOnValue(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), snap => {
         const data = snap.val();
-        if (!data) return;
-        
+        if (!data) {
+            // Room node deleted = the host left. Don't leave joiners frozen
+            // on a dead board.
+            if (!isHost && currentRoomId && !gameOverHandled) exitOnlineToLocal("Host left the game");
+            return;
+        }
+
+        // A player closed their tab mid-game.
+        if (data.status === "abandoned") {
+            if (onlineGameStarted && !gameOverHandled) {
+                exitOnlineToLocal(`${data.abandonedBy || "A player"} left the game`);
+            }
+            return;
+        }
+
         if (data.seats) { 
             seats = data.seats; 
             SystemUI.v2Lobby.renderSeats(seats); 
@@ -2451,7 +2485,39 @@ function listenToRoom() {
             return;
         }
         if (onlineGameStarted && data.gameState) syncFromFirebase(data.gameState);
+
+        // Fallback for a bare {status:'finished', winner} write (older clients):
+        // still announce the result exactly once.
+        if (onlineGameStarted && data.status === "finished" && !gameOverHandled && players.length > 0) {
+            endGame(typeof data.winner === "number" ? data.winner : 0, true);
+        }
     });
+}
+
+// ── LEAVE / DISCONNECT RECOVERY ───────────────
+function exitOnlineToLocal(msg) {
+    if (roomListener) { try { roomListener(); } catch (e) {} roomListener = null; }
+    SystemUI.stopChat(); chatStarted = false;
+    currentRoomId = null;
+    onlineGameStarted = false;
+    stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+    gameOverHandled = false; gameWinner = null;
+    myId = 1; isHost = true; myPlayerIndex = 0;
+    gameMode = "ai";
+    gamePhase = "idle";
+    const modeEl = document.getElementById("sys-risk-mode");
+    if (modeEl) modeEl.value = "ai";
+    localStorage.setItem("risk_mode", "ai");
+    SystemUI.v2Lobby.hide();
+    document.getElementById("setup-panel").style.display = "";
+    document.getElementById("start-btn").style.display = "";
+    document.getElementById("start-screen").classList.remove("hidden");
+    if (msg) {
+        document.getElementById("game-over-emoji").textContent = "🚪";
+        document.getElementById("game-over-title").textContent = "GAME OVER";
+        document.getElementById("game-over-msg").textContent = msg;
+        document.getElementById("game-over-modal").classList.remove("hidden");
+    }
 }
 
 let lastPushTime = 0;
@@ -2459,7 +2525,8 @@ function pushGameState() {
     if (gameMode !== "online" || !currentRoomId) return;
     const now = Date.now();
     lastPushTime = now;
-    
+    stateSeq++;
+
     const serializedPlayers = players.map(p => ({
         ...p,
         territories: [...p.territories]
@@ -2474,21 +2541,24 @@ function pushGameState() {
         });
     }
 
-    window.dbUpdate(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), {
+    const rootUpdate = {
         gameState: JSON.stringify({
-            territories, 
-            players: serializedPlayers, 
-            currentTurn, 
-            gamePhase, 
+            territories,
+            players: serializedPlayers,
+            currentTurn,
+            gamePhase,
             setupRemaining,
             draftRemaining,
-            setsTraded, 
+            setsTraded,
             cardDeck,
             gameLog: serializedLog,
-            ts: now, pusher: myId
+            winner: gameWinner,
+            ts: now, seq: stateSeq, pusher: myId
         }),
         status: gamePhase === "gameover" ? "finished" : "playing"
-    });
+    };
+    if (gamePhase === "gameover") rootUpdate.winner = gameWinner;
+    window.dbUpdate(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), rootUpdate);
 }
 
 let lastSyncTime = 0;
@@ -2497,9 +2567,17 @@ function syncFromFirebase(stateJson) {
     try {
         const state = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
         
-        if (!state.ts) return; 
-        if (state.pusher === myId && state.ts === lastPushTime) return; 
-        if (state.ts <= lastSyncTime) return; 
+        if (!state.ts) return;
+        // Order by monotonic seq — up to 6 clients push state, and comparing
+        // their wall clocks dropped every packet from a machine whose clock
+        // ran behind, permanently freezing that player. Equal seq must be
+        // ACCEPTED (only < is stale) since multiple writers can race.
+        if (state.seq) {
+            if (state.seq < stateSeq) return;
+            stateSeq = state.seq;
+        } else if (state.ts <= lastSyncTime) return;
+        // Skip our own echoes
+        if (state.pusher === myId) { lastSyncTime = state.ts; return; }
 
         lastSyncTime = state.ts;
 
@@ -2575,12 +2653,20 @@ function syncFromFirebase(stateJson) {
             else if (gamePhase === "draft") setTimeout(aiDraftPhase, 1500);
         }
 
-        if (gamePhase === "gameover") endGame(state.winner ?? 0);
+        if (gamePhase === "gameover") endGame(state.winner ?? 0, true);
     } catch (e) { console.error("Sync error:", e); }
 }
 
 window.addEventListener("beforeunload", () => {
-    if (isHost && currentRoomId && gameMode === "online") {
-        window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), null);
-    }
+    if (!currentRoomId || gameMode !== "online" || !window.db) return;
+    try {
+        if (isHost) {
+            window.dbSet(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), null);
+        } else if (onlineGameStarted && !gameOverHandled) {
+            // Joiner closed the tab mid-game — flag it so nobody waits on a ghost.
+            window.dbUpdate(window.dbRef(window.db, `risk_rooms/${currentRoomId}`), {
+                status: "abandoned", abandonedBy: SystemUI.getPlayerName()
+            });
+        }
+    } catch (e) {}
 });

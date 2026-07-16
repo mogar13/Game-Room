@@ -205,7 +205,26 @@ function listenToRoom() {
     let onlineGameStarted = false;
     roomListenerUnsub = window.dbOnValue(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if (!data) return;
+        if (!data) {
+            // Host deleted the room — free the joiner instead of freezing.
+            if (gameMode === "online" && !isHost) {
+                if (roomListenerUnsub) { roomListenerUnsub(); roomListenerUnsub = null; }
+                SystemMatch.setSeats([]); // room is gone — skip the ghost seat write
+                SystemMatch.cleanup();
+                chatStarted = false;
+                SystemUI.v2Lobby.hide();
+                showToast("Host Left", "The host left the game. Returning to AI mode.");
+                gameMode = "ai";
+                const modeEl = document.getElementById("sys-mem-mode");
+                if (modeEl) modeEl.value = "ai";
+                localStorage.setItem("mem_mode", "ai");
+                myId = 1; isHost = true;
+                updateAiDiffVisibility();
+                updatePlayerLabels();
+                resetGame();
+            }
+            return;
+        }
 
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
@@ -223,7 +242,20 @@ function listenToRoom() {
             return;
         }
 
-        if (gameState !== "playing") return;
+        if (gameState !== "playing") {
+            // Rematch: after a game ends locally, a fresh host write (untouched
+            // matched array, zeroed scores/flips) restarts the joiner's board.
+            const matchedArr = data.matched ? Object.values(data.matched) : [];
+            const isFreshGame = data.status === "playing" && data.cards &&
+                matchedArr.length > 0 && !matchedArr.some(m => m) &&
+                (data.flipStage || 0) === 0 &&
+                (data.score1 || 0) === 0 && (data.score2 || 0) === 0;
+            if (isFreshGame) {
+                SystemUI.playSound('shuffle');
+                startOnlineGame(data);
+            }
+            return;
+        }
         syncOnlineState(data);
     });
 }
@@ -576,6 +608,11 @@ function syncOnlineState(data) {
         flipCardVisual(f2, true); firstIdx = f1; secondIdx = f2; rememberCard(f2, cards[f2]);
         isLocking = true;
 
+        // Count a move only when a real second flip lands, not on every snapshot.
+        moves++;
+        const mc = document.getElementById("move-count");
+        if(mc) mc.innerText = moves;
+
         setTimeout(() => {
             const isMatch = cards[f1] === cards[f2];
             if (!isMatch) {
@@ -609,9 +646,6 @@ function syncOnlineState(data) {
         }, 800);
     }
 
-    moves++;
-    const mc = document.getElementById("move-count");
-    if(mc) mc.innerText = moves;
     updateTurnBanner();
     updatePlayerLabels();
 

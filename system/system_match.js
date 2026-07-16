@@ -227,6 +227,20 @@ window.SystemMatch = {
         window.dbUpdate(window.dbRef(window.db, this._roomPath + '/' + this._roomId), { seats: newSeats });
     },
 
+    // A joiner leaving must free their seat, or the host stares at a ghost
+    // "human" seat whose turn never comes. Best-effort write.
+    _releaseSeat: function() {
+        if (this._isHost || !this._roomId || !this._roomPath) return;
+        if (!window.db || !window.dbUpdate) return;
+        const idx = this._myId - 1;
+        if (idx < 1 || !this._seats[idx] || this._seats[idx].type !== 'human') return;
+        const seats = this._seats.slice();
+        seats[idx] = Object.assign({}, seats[idx], { type: 'open', name: 'Open' });
+        try {
+            window.dbUpdate(window.dbRef(window.db, this._roomPath + '/' + this._roomId), { seats: seats });
+        } catch (e) {}
+    },
+
     // ── CLEANUP ───────────────────────────────────
     // Tears down the Firebase listener and removes waiting room.
     cleanup: function() {
@@ -235,6 +249,7 @@ window.SystemMatch = {
             this._roomListener = null;
         }
         const wasHost = this._isHost;
+        if (!wasHost) this._releaseSeat();
         if (wasHost && this._roomId && window.db) {
             // Prefer dbRemove if the page imported it; otherwise fall back to
             // dbSet(null) which has the same effect and is universally
@@ -293,14 +308,19 @@ window.SystemMatch = {
 // the per-game beforeunload that UNO has had for a while.
 window.addEventListener('beforeunload', function() {
     const m = window.SystemMatch;
-    if (!m || !m._isHost || !m._roomId || !m._roomPath) return;
+    if (!m || !m._roomId || !m._roomPath) return;
     if (!window.db || !window.dbRef) return;
     try {
-        const ref = window.dbRef(window.db, m._roomPath + '/' + m._roomId);
-        if (typeof window.dbRemove === 'function') {
-            window.dbRemove(ref);
-        } else if (typeof window.dbSet === 'function') {
-            window.dbSet(ref, null);
+        if (m._isHost) {
+            const ref = window.dbRef(window.db, m._roomPath + '/' + m._roomId);
+            if (typeof window.dbRemove === 'function') {
+                window.dbRemove(ref);
+            } else if (typeof window.dbSet === 'function') {
+                window.dbSet(ref, null);
+            }
+        } else {
+            // Joiner tab close: free the seat so the room stays usable.
+            m._releaseSeat();
         }
     } catch (e) {
         // beforeunload is best-effort — never block the unload

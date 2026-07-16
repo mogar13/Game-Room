@@ -14,9 +14,10 @@ const OS_UPDATE = {
 };
 
 // --- 1. HUB AUDIO ENGINE ---
+// Click sounds removed by request — only celebratory sounds remain.
+// playHubSound('click') calls elsewhere become silent no-ops via the guard below.
 const hubAudio = {
-    click: new Audio('system/audio/click1.mp3'),
-    win: new Audio('system/audio/win.ogg') 
+    win: new Audio('system/audio/win.ogg')
 };
 
 function playHubSound(type) {
@@ -24,11 +25,6 @@ function playHubSound(type) {
     hubAudio[type].currentTime = 0;
     hubAudio[type].play().catch(e => console.log("Audio blocked by browser."));
 }
-
-// Wire hub sounds to all static interactive elements (cards wired after fetch)
-document.querySelectorAll('.hub-interactive').forEach(el => {
-    el.addEventListener('click', () => playHubSound('click'));
-});
 
 // --- 1.5 REWARDS BUG FIX (GUEST BLOCKER) ---
 // Intercepts the rewards module to prevent it from auto-firing for guests
@@ -1534,9 +1530,9 @@ function openProfilePanel() {
     if (window.SystemAchievements.loadData) window.SystemAchievements.loadData();
 
     const profile = SystemProfile.getProfile();
-    const globalStats = SystemStats.getStats();
-    const unlockedAchs = SystemAchievements.data.unlocked;
-    const achList = SystemAchievements.list;
+    const globalStats = SystemStats.getStats() || {};
+    const unlockedAchs = (SystemAchievements.data && SystemAchievements.data.unlocked) || [];
+    const achList = SystemAchievements.list || {};
 
     // Header
     document.getElementById('pp-name').innerText = profile.name;
@@ -1564,10 +1560,10 @@ function openProfilePanel() {
     document.getElementById('pp-xp-fill').style.width = pct + '%';
     document.getElementById('pp-xp-text').innerText = profile.level >= 6 ? 'MAX' : `${profile.xp} / ${nextXP} XP`;
 
-    // Career stats
-    const played = globalStats ? globalStats.gamesPlayed : 0;
-    const wins   = globalStats ? globalStats.wins : 0;
-    const losses = globalStats ? globalStats.losses : 0;
+    // Career stats — never render undefined, whatever shape came back
+    const played = globalStats.gamesPlayed || 0;
+    const wins   = globalStats.wins || 0;
+    const losses = globalStats.losses || 0;
     const wr     = played > 0 ? Math.round((wins / played) * 100) + '%' : '—';
     document.getElementById('pp-played').innerText  = played;
     document.getElementById('pp-wins').innerText    = wins;
@@ -1590,7 +1586,7 @@ function openProfilePanel() {
         `${unlockedAchs.length} / ${Object.keys(achList).length} unlocked`;
 
     // Top games by wins
-    const gamesData = SystemStats.data.games;
+    const gamesData = (SystemStats.data && SystemStats.data.games) || {};
     const topGames = Object.entries(gamesData)
         .filter(([, s]) => s.gamesPlayed > 0)
         .sort(([, a], [, b]) => b.wins - a.wins)

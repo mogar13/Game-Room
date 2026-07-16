@@ -47,11 +47,26 @@ let pendingGameState = null;
 let sessionScore   = [0, 0];
 let playerNames    = ['', ''];
 
+// ── VIRTUAL COORDINATES ───────────────────────
+// All physics and every coordinate that crosses the wire live in a FIXED
+// virtual space, letterbox-scaled to each client's canvas. Previously the
+// table was sized from the local window, so two players with different
+// screens simulated different tables and every shot desynced.
+const VW = 1100, VH = 600;
+
 let canvas, ctx, spinCanvas, spinCtx;
-let W = 0, H = 0;
+let W = VW, H = VH;
+let viewScale = 1, viewOffX = 0, viewOffY = 0, viewDpr = 1;
 let table = { x: 0, y: 0, w: 0, h: 0 };
 let pockets = [];
 let headStringX = 0;   // x-coord of the kitchen line
+
+// Monotonic ordering for state pushes (wall clocks differ between machines
+// and silently dropped the other player's moves).
+let stateSeq = 0;
+let pendingAction = null;   // remote shot deferred while our sim is running
+let remoteAim = null;       // opponent's live aim {angle, pull, ts}
+let lastAimPush = 0;
 
 let balls = [];
 let gamePhase   = 'idle';   // idle | break | playing | shooting | ball_in_hand | ai_thinking | ended | awaiting_host
@@ -181,23 +196,16 @@ function initPool() {
 }
 
 // ── RESIZE / LAYOUT ───────────────────────────
-function resizeCanvas() {
-    const outer = document.getElementById('game-outer');
-    const action = document.getElementById('action-zone');
-    W = outer.clientWidth;
-    H = outer.clientHeight - (action ? action.offsetHeight : 0);
-    canvas.width  = W;
-    canvas.height = H;
-
-    // Fit a 2:1 table inside the available area
-    const maxW = W - 16;
-    const maxH = H - 12;
+// Table geometry is FIXED in virtual space — identical on every client.
+function computeTableLayout() {
+    const maxW = VW - 16;
+    const maxH = VH - 12;
     let tw = maxW - RAIL_W * 2;
     let th = tw / 2;
     if (th > maxH - RAIL_W * 2) { th = maxH - RAIL_W * 2; tw = th * 2; }
     tw = Math.floor(tw); th = Math.floor(th);
-    const tx = Math.floor((W - tw - RAIL_W * 2) / 2) + RAIL_W;
-    const ty = Math.floor((H - th - RAIL_W * 2) / 2) + RAIL_W;
+    const tx = Math.floor((VW - tw - RAIL_W * 2) / 2) + RAIL_W;
+    const ty = Math.floor((VH - th - RAIL_W * 2) / 2) + RAIL_W;
 
     table = { x: tx, y: ty, w: tw, h: th };
     headStringX = tx + tw * 0.25;
@@ -212,8 +220,23 @@ function resizeCanvas() {
         { x: tx + tw / 2,    y: ty,             r: POCKET_R_SIDE,   kind: 'TM' },
         { x: tx + tw / 2,    y: ty + th,        r: POCKET_R_SIDE,   kind: 'BM' }
     ];
+}
+computeTableLayout();
 
-    if (gamePhase === 'idle' || gamePhase === 'break') buildRack();
+function resizeCanvas() {
+    const outer = document.getElementById('game-outer');
+    const action = document.getElementById('action-zone');
+    const cssW = outer.clientWidth;
+    const cssH = outer.clientHeight - (action ? action.offsetHeight : 0);
+
+    viewDpr = window.devicePixelRatio || 1;
+    canvas.width  = cssW * viewDpr;
+    canvas.height = cssH * viewDpr;
+    canvas.style.width  = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    viewScale = Math.min(cssW / VW, cssH / VH);
+    viewOffX  = (cssW - VW * viewScale) / 2;
+    viewOffY  = (cssH - VH * viewScale) / 2;
 }
 
 // ── BALL SETUP ────────────────────────────────
@@ -319,10 +342,12 @@ function getCueBall() { return balls[0]; }
 // ── INPUT ─────────────────────────────────────
 function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
-    const sx   = canvas.width  / rect.width;
-    const sy   = canvas.height / rect.height;
     const src  = e.touches ? e.touches[0] : e;
-    return { x: (src.clientX - rect.left) * sx, y: (src.clientY - rect.top) * sy };
+    // Map CSS pixels into the fixed virtual table space
+    return {
+        x: (src.clientX - rect.left - viewOffX) / viewScale,
+        y: (src.clientY - rect.top  - viewOffY) / viewScale
+    };
 }
 
 function onCanvasDown(e) {
@@ -363,6 +388,7 @@ function onCanvasMove(e) {
     if (cb && (gamePhase === 'playing' || gamePhase === 'break') && !isDragging && isMyTurn()) {
         // Hover aim
         aimAngle = Math.atan2(pos.y - cb.y, pos.x - cb.x);
+        pushAimState();
         return;
     }
 
@@ -378,6 +404,21 @@ function onCanvasMove(e) {
     const pull = Math.max(0, dx * pullDirX + dy * pullDirY);
     shotPower = Math.min(pull / MAX_PULL * MAX_POWER, MAX_POWER);
     updatePowerBar(shotPower / MAX_POWER);
+    pushAimState();
+}
+
+// Throttled broadcast of the shooter's aim so the opponent can watch the
+// shot being lined up instead of staring at a frozen table.
+function pushAimState() {
+    if (gameMode !== 'online' || !currentRoomId || !window.db) return;
+    const now = performance.now();
+    if (now - lastAimPush < 130) return;
+    lastAimPush = now;
+    try {
+        window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
+            aimState: { angle: aimAngle, pull: shotPower / MAX_POWER, pusher: myId, ts: Date.now() }
+        });
+    } catch (e) {}
 }
 
 function onCanvasUp() {
@@ -573,6 +614,7 @@ function update(dt) {
                 pendingGameState = null;
                 applyGameState(ps);
             }
+            tryPendingAction();
         }
     }
 }
@@ -728,7 +770,10 @@ function startNewRack() {
 
 // ── RENDERING ─────────────────────────────────
 function render() {
-    ctx.clearRect(0, 0, W, H);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#0a0a10';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(viewDpr * viewScale, 0, 0, viewDpr * viewScale, viewDpr * viewOffX, viewDpr * viewOffY);
     drawTable();
     drawPockets();
     drawHeadStringIfNeeded();
@@ -967,25 +1012,33 @@ function drawCue() {
     const showMine     = isMyTurn() && gameMode !== 'ai';
     const showAI       = gameMode === 'ai' && activeTurn === 1;
     const showLocalAi  = gameMode === 'ai' && activeTurn === 0;
-    if (!showMine && !showAI && !showLocalAi) return;
-    if (gameMode === 'online' && !isMyTurn()) return;
+    const showRemote   = gameMode === 'online' && !isMyTurn();
+    if (!showMine && !showAI && !showLocalAi && !showRemote) return;
 
     const CUE_LEN  = 150;
     const CUE_W_TIP = 3;
     const CUE_W_BUTT = 10;
     const MIN_GAP  = 5;
+    let cueAngle = aimAngle;
     let pullback = 0;
-    if (isDragging) pullback = (shotPower / MAX_POWER) * 28;
-    if (showAI)      pullback = aiAimPullback * 28;
+    if (showRemote) {
+        // Opponent's live aim, streamed while they line up the shot
+        if (!remoteAim || Date.now() - (remoteAim.ts || 0) > 8000) return;
+        cueAngle = remoteAim.angle;
+        pullback = (remoteAim.pull || 0) * 28;
+    } else {
+        if (isDragging) pullback = (shotPower / MAX_POWER) * 28;
+        if (showAI)     pullback = aiAimPullback * 28;
+    }
     const gap      = MIN_GAP + pullback;
 
-    const tipX   = cb.x - Math.cos(aimAngle) * (cb.r + gap);
-    const tipY   = cb.y - Math.sin(aimAngle) * (cb.r + gap);
-    const buttX  = tipX  - Math.cos(aimAngle) * CUE_LEN;
-    const buttY  = tipY  - Math.sin(aimAngle) * CUE_LEN;
+    const tipX   = cb.x - Math.cos(cueAngle) * (cb.r + gap);
+    const tipY   = cb.y - Math.sin(cueAngle) * (cb.r + gap);
+    const buttX  = tipX  - Math.cos(cueAngle) * CUE_LEN;
+    const buttY  = tipY  - Math.sin(cueAngle) * CUE_LEN;
 
     ctx.save();
-    const angle = aimAngle;
+    const angle = cueAngle;
     const perp  = angle + Math.PI / 2;
     const px = Math.cos(perp);
     const py = Math.sin(perp);
@@ -1356,6 +1409,8 @@ SystemUI.v2Lobby.setup({
     onHost: () => {
         currentRoomId = Math.random().toString(36).substr(2, 4).toUpperCase();
         isHost = true; myId = 1;
+        lastActionTs = 0; lastSyncTime = 0; lastRematchTs = 0; stateSeq = 0;
+        pendingGameState = null; pendingAction = null; remoteAim = null;
         playerNames[0] = SystemUI.getPlayerName();
         window.dbSet(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
             status: 'waiting',
@@ -1372,6 +1427,8 @@ SystemUI.v2Lobby.setup({
             const data = snap.val();
             if (data.status !== 'waiting') { SystemUI.v2Lobby.showError('GAME IN PROGRESS'); return; }
             currentRoomId = code; isHost = false; myId = 2;
+            lastActionTs = 0; lastSyncTime = 0; lastRematchTs = 0; stateSeq = 0;
+            pendingGameState = null; pendingAction = null; remoteAim = null;
             playerNames[0] = data.seats[0]?.name || 'Player 1';
             playerNames[1] = SystemUI.getPlayerName();
             const updated = [...data.seats];
@@ -1382,18 +1439,22 @@ SystemUI.v2Lobby.setup({
         });
     },
     onLeave: () => {
-        if (roomListener) { roomListener(); roomListener = null; }
-        SystemUI.stopChat(); chatStarted = false;
-        currentRoomId = null;
-        lastActionTs = 0; lastSyncTime = 0; lastRematchTs = 0;
-        pendingGameState = null;
-        onlineGameStarted = false;
-        myId = 1; isHost = true;
-        document.getElementById('action-zone').classList.remove('hidden');
-        gameMode = 'ai';
-        const modeEl = document.getElementById('pool-mode');
-        if (modeEl) modeEl.value = 'ai';
-        resetGame(); setPhase('break');
+        // Tidy the room on the way out: host removes it, joiner frees the
+        // seat / flags the match so the host isn't stranded.
+        if (currentRoomId && window.db) {
+            try {
+                if (isHost) {
+                    window.dbSet(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), null);
+                } else if (onlineGameStarted) {
+                    window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), { status: 'abandoned' });
+                } else {
+                    window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
+                        seats: [{ type: 'human', name: playerNames[0] || 'Player 1' }, { type: 'open', name: '' }]
+                    });
+                }
+            } catch (e) {}
+        }
+        exitOnlineToLocal('');
     },
     onStart: () => {
         window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), { status: 'playing', ts: Date.now() });
@@ -1406,7 +1467,18 @@ function listenToRoom() {
     onlineGameStarted = false;
     roomListener = window.dbOnValue(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), snap => {
         const data = snap.val();
-        if (!data) return;
+        if (!data) {
+            // Room deleted = host left. Don't leave the joiner staring at
+            // a dead table.
+            if (!isHost && currentRoomId) exitOnlineToLocal('🚪 Host left the game');
+            return;
+        }
+
+        // Joiner closed their tab mid-game — put the host back in the lobby.
+        if (data.status === 'abandoned' && isHost) {
+            hostBackToLobby('🚪 Opponent left');
+            return;
+        }
 
         if (data.seats) {
             SystemUI.v2Lobby.renderSeats(data.seats);
@@ -1431,7 +1503,7 @@ function listenToRoom() {
                 if (isHost) pushGameState();
             }
 
-            if (data.gameState) applyGameState(data.gameState);
+            if (data.gameState) { applyGameState(data.gameState); tryPendingAction(); }
         } else if (data.status === 'waiting') {
             onlineGameStarted = false;
         }
@@ -1442,28 +1514,108 @@ function listenToRoom() {
             if (gamePhase === 'ended') startNewRack();
         }
 
+        // Opponent's live aim (QoL: watch them line up the shot)
+        if (data.aimState && data.aimState.pusher !== myId) {
+            remoteAim = data.aimState;
+        }
+
         if (data.playerAction && data.playerAction.ts !== lastActionTs) {
             lastActionTs = data.playerAction.ts;
             const a = data.playerAction;
             // Ignore actions we wrote ourselves
             if (a.pusher === myId) return;
-
-            if (a.action === 'shot') {
-                aimAngle = a.angle;
-                executeShot(a.angle, a.power, a.spinTop, a.spinSide);
-            } else if (a.action === 'ball_in_hand') {
-                const cb = getCueBall();
-                cb.pocketed = false; cb.scale = 1;
-                cb.x = a.x; cb.y = a.y;
-                kitchenRestricted = false;
-                setPhase('playing');
-            }
+            handleRemoteAction(a);
         }
     });
 }
 
+// Execute a remote action now if the phase allows, otherwise hold it until
+// our local simulation settles (it used to be silently dropped, leaving the
+// two clients on different shots).
+function handleRemoteAction(a) {
+    if (gamePhase === 'shooting' || gamePhase === 'awaiting_host') {
+        pendingAction = a;
+        return;
+    }
+    executeRemoteAction(a);
+}
+
+function executeRemoteAction(a) {
+    remoteAim = null;
+    if (a.action === 'shot') {
+        aimAngle = a.angle;
+        executeShot(a.angle, a.power, a.spinTop, a.spinSide);
+    } else if (a.action === 'ball_in_hand') {
+        const cb = getCueBall();
+        cb.pocketed = false; cb.scale = 1;
+        cb.x = a.x; cb.y = a.y;
+        kitchenRestricted = false;
+        setPhase('playing');
+    }
+}
+
+function tryPendingAction() {
+    if (!pendingAction) return;
+    if (gamePhase === 'playing' || gamePhase === 'break' || gamePhase === 'ball_in_hand') {
+        const a = pendingAction;
+        pendingAction = null;
+        executeRemoteAction(a);
+    }
+}
+
+// ── LEAVE / DISCONNECT RECOVERY ───────────────
+function exitOnlineToLocal(msg) {
+    if (roomListener) { roomListener(); roomListener = null; }
+    SystemUI.stopChat(); chatStarted = false;
+    currentRoomId = null;
+    lastActionTs = 0; lastSyncTime = 0; lastRematchTs = 0; stateSeq = 0;
+    pendingGameState = null; pendingAction = null; remoteAim = null;
+    onlineGameStarted = false;
+    myId = 1; isHost = true;
+    gameMode = 'ai';
+    const modeEl = document.getElementById('pool-mode');
+    if (modeEl) modeEl.value = 'ai';
+    document.getElementById('action-zone').classList.remove('hidden');
+    document.getElementById('result-modal').classList.add('hidden');
+    resetGame();
+    setPhase('break');
+    if (msg) setTurnMsg(msg);
+}
+
+function hostBackToLobby(msg) {
+    pendingGameState = null; pendingAction = null; remoteAim = null;
+    onlineGameStarted = false;
+    stateSeq = 0;
+    resetGame();
+    setPhase('break');
+    document.getElementById('result-modal').classList.add('hidden');
+    const seats = [{ type: 'human', name: SystemUI.getPlayerName() }, { type: 'open', name: '' }];
+    window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
+        status: 'waiting', seats,
+        gameState: null, playerAction: null, aimState: null, rematchRequest: null,
+        ts: Date.now()
+    });
+    SystemUI.v2Lobby.renderSeats(seats);
+    document.getElementById('v2-lobby-overlay').classList.remove('sys-hidden');
+    SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+    if (msg) setTurnMsg(msg);
+}
+
+// Room hygiene: pool rooms used to live forever (no cleanup at all).
+window.addEventListener('beforeunload', () => {
+    if (gameMode !== 'online' || !currentRoomId || !window.db) return;
+    try {
+        if (isHost) {
+            window.dbSet(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), null);
+        } else {
+            window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), { status: 'abandoned' });
+        }
+    } catch (e) {}
+});
+
 function pushGameState(extra) {
     if (gameMode !== 'online' || !currentRoomId) return;
+    stateSeq++;
     const ballData = balls.map(b => ({ id: b.id, x: b.x, y: b.y, pocketed: b.pocketed }));
     const payload = {
         balls: JSON.stringify(ballData),
@@ -1472,6 +1624,7 @@ function pushGameState(extra) {
         kitchenRestricted,
         isBreakShot,
         gamePhase,
+        seq: stateSeq,
         ts: Date.now(),
         pusher: myId
     };
@@ -1483,7 +1636,14 @@ function pushGameState(extra) {
 }
 
 function applyGameState(s) {
-    if (!s || s.ts <= lastSyncTime) return;
+    if (!s) return;
+    // Order by monotonic seq — both players push state, and comparing their
+    // wall clocks (old behavior) dropped every move from the machine whose
+    // clock ran behind.
+    if (s.seq) {
+        if (s.seq < stateSeq) return;
+        stateSeq = s.seq;
+    } else if (s.ts <= lastSyncTime) return;
     // Skip our own pushes
     if (s.pusher === myId) { lastSyncTime = s.ts; return; }
     // If our local physics is still resolving, defer until settle
@@ -1546,7 +1706,8 @@ function sendShot(angle, power, sTop, sSide) {
     if (!currentRoomId) return;
     window.dbUpdate(window.dbRef(window.db, 'pool_rooms/' + currentRoomId), {
         playerAction: { action: 'shot', angle, power, spinTop: sTop, spinSide: sSide,
-                        pusher: myId, ts: Date.now() }
+                        pusher: myId, ts: Date.now() },
+        aimState: null
     });
 }
 

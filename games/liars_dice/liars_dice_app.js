@@ -25,7 +25,10 @@ SystemUI.init({
     gameName: "LIAR'S DICE PRO",
     rules: "Each player has 5 secret dice. Bid on the total number of dice of a certain face across the whole table. 1s are WILD. Call 'LIAR' if you think the previous bid is too high!",
     hudDropdowns: [
-        { id: "sys-mode", options: [{value:"ai", label:"🤖 vs AI"}, {value:"online", label:"🌐 Online"}] },
+        // Online removed: it was never implemented (the lobby opened but no
+        // game data ever synced, so both players hung after the first bid).
+        // Re-add only alongside a real SystemMatch integration.
+        { id: "sys-mode", options: [{value:"ai", label:"🤖 vs AI"}] },
         { id: "sys-count", options: [{value:2, label:"2 Players"}, {value:3, label:"3 Players"}, {value:4, label:"4 Players"}] },
         { id: "sys-diff", options: [{value:"easy", label:"Easy"}, {value:"normal", label:"Normal"}, {value:"hard", label:"Hard"}] }
     ]
@@ -35,7 +38,6 @@ SystemUI.init({
 setTimeout(() => {
     document.getElementById("sys-mode").addEventListener("change", (e) => {
         gameMode = e.target.value;
-        if (gameMode === "online") SystemUI.v2Lobby.show();
         resetGame();
     });
     document.getElementById("sys-count").addEventListener("change", (e) => {

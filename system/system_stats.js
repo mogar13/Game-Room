@@ -26,13 +26,34 @@ window.SystemStats = {
         if (stored) {
             try {
                 const parsed = JSON.parse(stored);
-                // Merge safely
-                this.data.global = { ...this.data.global, ...(parsed.global || {}) };
-                this.data.games = parsed.games || {};
+                // Accept both the canonical { global:{...}, games:{} } shape
+                // and the legacy flat { gamesPlayed, ... } shape that older
+                // auth builds wrote — never leave data.global undefined.
+                const g = (parsed && parsed.global) || parsed || {};
+                this.data.global = {
+                    gamesPlayed: g.gamesPlayed || 0,
+                    wins:        g.wins        || 0,
+                    losses:      g.losses      || 0,
+                    ties:        g.ties        || 0
+                };
+                this.data.games = (parsed && parsed.games) || {};
             } catch (e) {
                 console.error("Casino OS: Failed to parse stats.", e);
             }
         }
+    },
+
+    // Self-heal: other modules historically replaced this.data with foreign
+    // shapes — never let a record call throw on a missing node.
+    _ensureShape: function() {
+        if (!this.data || typeof this.data !== 'object') this.data = { global: {}, games: {} };
+        if (!this.data.global || typeof this.data.global !== 'object') this.data.global = {};
+        const g = this.data.global;
+        if (typeof g.gamesPlayed !== 'number') g.gamesPlayed = 0;
+        if (typeof g.wins   !== 'number') g.wins   = 0;
+        if (typeof g.losses !== 'number') g.losses = 0;
+        if (typeof g.ties   !== 'number') g.ties   = 0;
+        if (!this.data.games || typeof this.data.games !== 'object') this.data.games = {};
     },
 
     saveData: function() {
@@ -54,6 +75,7 @@ window.SystemStats = {
     // --- CORE STATS API ---
 
     recordGameStart: function(gameId) {
+        this._ensureShape();
         this.data.global.gamesPlayed++;
         
         if (gameId) {
@@ -72,6 +94,7 @@ window.SystemStats = {
     },
 
     recordWin: function(gameId) {
+        this._ensureShape();
         this.data.global.wins++;
         
         if (gameId) {
@@ -91,6 +114,7 @@ window.SystemStats = {
     },
 
     recordLoss: function(gameId) {
+        this._ensureShape();
         this.data.global.losses++;
         
         if (gameId) {
@@ -106,6 +130,7 @@ window.SystemStats = {
     },
 
     recordTie: function(gameId) {
+        this._ensureShape();
         this.data.global.ties++;
         
         if (gameId) {
@@ -124,6 +149,7 @@ window.SystemStats = {
     },
 
     getStats: function(gameId = null) {
+        this._ensureShape();
         if (gameId) {
             return this.data.games[gameId] || null;
         }

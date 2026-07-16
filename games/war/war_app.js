@@ -20,6 +20,10 @@ SystemUI.init({
 // ── STATE ──────────────────────────────────────
 let gameMode    = "ai";
 let chatStarted = false;
+let currentRoomId    = null;  // tracked locally — SystemMatch clears its copy before onLeave fires
+let iAmJoiner        = false;
+let joinerPaid       = false; // joiner has paid the synced bet for the current game
+let onlineResultDone = false; // joiner has recorded the result/payout for the current game
 let playerDeck  = [];
 let oppDeck     = [];
 let warPile     = [];
@@ -117,12 +121,33 @@ setTimeout(() => {
                     gameId:   "war",
                     roomPath: "war_rooms",
                     onHost: (roomId) => {
+                        currentRoomId = roomId;
+                        iAmJoiner = false;
+                        joinerPaid = false;
+                        onlineResultDone = false;
                         listenToRoom(roomId);
                     },
                     onJoin: (roomId) => {
+                        currentRoomId = roomId;
+                        iAmJoiner = true;
+                        joinerPaid = false;
+                        onlineResultDone = false;
                         listenToRoom(roomId);
                     },
                     onLeave: () => {
+                        // Joiner leaving mid-game: flag the room so the host isn't stuck
+                        // waiting on joinerReady forever.
+                        if (iAmJoiner && currentRoomId && !isGameOver && window.db && window.dbUpdate) {
+                            try { window.dbUpdate(window.dbRef(window.db, `war_rooms/${currentRoomId}`), { status: "abandoned" }); } catch (e) {}
+                        }
+                        // Refund a live bet (host paid at deal, joiner via joinerPaid).
+                        if (!isGameOver && currentBet > 0 && (!iAmJoiner || joinerPaid)) {
+                            SystemUI.money += currentBet;
+                            SystemUI.updateMoneyDisplay();
+                        }
+                        currentRoomId = null;
+                        joinerPaid = false;
+                        onlineResultDone = false;
                         gameMode = "ai";
                         modeEl.value = "ai";
                         chatStarted = false;
@@ -247,9 +272,10 @@ async function doFlip() {
     // Resolve round
     if (pCard.value > oCard.value) {
         // Player wins
+        const wonCount = 2 + warPile.length; // capture before the pile is cleared
         playerDeck.push(pCard, oCard, ...warPile);
         warPile = [];
-        showResult("win", `YOU WIN THE ROUND! +${2 + warPile.length} cards`);
+        showResult("win", `YOU WIN THE ROUND! +${wonCount} cards`);
         markCardResult("player-flip-card", true);
         markCardResult("opp-flip-card", false);
         SystemUI.playSound('win');
@@ -506,6 +532,7 @@ function pushHostState(lastFlip) {
         gameState: JSON.stringify({
             playerDeck, oppDeck, warPile,
             isGameOver, roundNumber, inWar,
+            bet: currentBet,
             lastFlip: lastFlip || null
         }),
         joinerReady: false
@@ -515,12 +542,25 @@ function pushHostState(lastFlip) {
 function applyHostState(stateJson) {
     try {
         const s = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
-        playerDeck  = s.playerDeck  || [];
-        oppDeck     = s.oppDeck     || [];
+        // The host pushes ITS perspective — swap the decks for the joiner so
+        // "playerDeck" is always the local player's own deck.
+        playerDeck  = s.oppDeck     || [];
+        oppDeck     = s.playerDeck  || [];
         warPile     = s.warPile     || [];
         isGameOver  = s.isGameOver;
         roundNumber = s.roundNumber || 0;
         inWar       = s.inWar       || false;
+        if (typeof s.bet === "number" && s.bet > 0) currentBet = s.bet;
+
+        if (!isGameOver) onlineResultDone = false;
+
+        // Joiner economy: pay the (synced) bet once per game, when the host deals.
+        if (!isGameOver && !joinerPaid) {
+            joinerPaid = true;
+            SystemUI.money -= currentBet;
+            SystemUI.updateMoneyDisplay();
+            if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("war");
+        }
 
         // Show game area if game has started
         if (!isGameOver || roundNumber > 0) {
@@ -534,20 +574,21 @@ function applyHostState(stateJson) {
             document.getElementById("gameover-controls").classList.remove("hidden");
         }
 
-        // Show the last flipped cards if present
+        // Show the last flipped cards if present.
+        // lastFlip.pCard is the HOST's card, lastFlip.oCard is OURS (the joiner's).
         if (s.lastFlip && s.lastFlip.pCard && s.lastFlip.oCard) {
             showCardFaceDown("player-flip-card");
             showCardFaceDown("opp-flip-card");
-            flipCardFaceUp("player-flip-card", s.lastFlip.pCard);
-            flipCardFaceUp("opp-flip-card", s.lastFlip.oCard);
-            if (s.lastFlip.pCard.value > s.lastFlip.oCard.value) {
-                markCardResult("player-flip-card", false); // from joiner perspective, host won
+            flipCardFaceUp("player-flip-card", s.lastFlip.oCard); // our card in our slot
+            flipCardFaceUp("opp-flip-card", s.lastFlip.pCard);    // host's card opposite
+            if (s.lastFlip.oCard.value > s.lastFlip.pCard.value) {
+                markCardResult("player-flip-card", true); // joiner won the round
+                markCardResult("opp-flip-card", false);
+                showResult("win", "YOU WIN THE ROUND!");
+            } else if (s.lastFlip.pCard.value > s.lastFlip.oCard.value) {
+                markCardResult("player-flip-card", false);
                 markCardResult("opp-flip-card", true);
                 showResult("lose", "OPPONENT WINS THE ROUND");
-            } else if (s.lastFlip.oCard.value > s.lastFlip.pCard.value) {
-                markCardResult("opp-flip-card", false);
-                markCardResult("player-flip-card", true); // joiner won
-                showResult("win", "YOU WIN THE ROUND!");
             } else {
                 showResult("war", "⚔️ WAR! ⚔️");
             }
@@ -556,9 +597,12 @@ function applyHostState(stateJson) {
         if (inWar) showWarPile(warPile.length);
         else hideWarPile();
 
-        if (isGameOver && roundNumber > 0) {
-            // Joiner perspective: if oppDeck (host) has fewer cards, joiner wins
-            if (oppDeck.length < playerDeck.length) {
+        if (isGameOver && roundNumber > 0 && !onlineResultDone) {
+            onlineResultDone = true; // guard: repeated onValue snapshots must not re-pay/re-record
+            joinerPaid = false;      // ready for the next deal
+            // After the swap above, playerDeck is OUR deck — we win when we hold more cards.
+            // (Same test as the host's endGame, so exactly one side can win.)
+            if (playerDeck.length > oppDeck.length) {
                 const winAmount = currentBet * 2;
                 SystemUI.money += winAmount;
                 SystemUI.updateMoneyDisplay();
@@ -585,11 +629,53 @@ function applyHostState(stateJson) {
     } catch(e) { console.error("War sync error:", e); }
 }
 
+// Exit online mode back to local play (host left / opponent abandoned).
+function exitOnlineToLocal(hostGone) {
+    // Refund a live bet (host paid at deal, joiner via joinerPaid).
+    if (!isGameOver && currentBet > 0 && (SystemMatch.isHost() || joinerPaid)) {
+        SystemUI.money += currentBet;
+        SystemUI.updateMoneyDisplay();
+    }
+    if (hostGone) SystemMatch._roomId = null; // node already deleted — stop cleanup() writing a ghost room
+    SystemMatch.cleanup(); // detaches listener, removes room if host, stops chat
+    currentRoomId = null;
+    iAmJoiner = false;
+    joinerPaid = false;
+    onlineResultDone = false;
+    gameMode = "ai";
+    const modeEl = document.getElementById("sys-war-mode");
+    if (modeEl) modeEl.value = "ai";
+    if (SystemUI.v2Lobby) SystemUI.v2Lobby.hide();
+    chatStarted = false;
+    resetToLobby();
+}
+
+// Joiner closing the tab mid-game: tell the host instead of leaving it stuck on joinerReady.
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && iAmJoiner && currentRoomId && !isGameOver && window.db && window.dbUpdate) {
+        try { window.dbUpdate(window.dbRef(window.db, `war_rooms/${currentRoomId}`), { status: "abandoned" }); } catch (e) {}
+    }
+});
+
 function listenToRoom(roomId) {
     let gameStarted = false;
     const unsubFn = window.dbOnValue(window.dbRef(window.db, `war_rooms/${roomId}`), snap => {
         const data = snap.val();
-        if (!data) return;
+        if (!data) {
+            // Host left — SystemMatch deletes the room node. Don't leave the joiner frozen.
+            if (!SystemMatch.isHost()) {
+                showToast("Host Left", "The host closed the room.");
+                exitOnlineToLocal(true);
+            }
+            return;
+        }
+        if (data.status === "abandoned") {
+            if (SystemMatch.isHost()) {
+                showToast("Opponent Left", "Your opponent abandoned the match.");
+                exitOnlineToLocal(false);
+            }
+            return;
+        }
 
         if (data.seats) {
             SystemMatch.setSeats(data.seats);

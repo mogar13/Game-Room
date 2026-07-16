@@ -232,7 +232,17 @@ SystemMatch.setup({
         }
         listenToRoom();
     },
-    onLeave: () => { gameMode = "ai"; resetGame(); },
+    onLeave: () => {
+        if (roomListener) { roomListener(); roomListener = null; }
+        gameMode = "ai";
+        localStorage.setItem("bs_mode", "ai");
+        const modeEl = document.getElementById("sys-bs-mode");
+        if (modeEl) modeEl.value = "ai";
+        const diffEl = document.getElementById("sys-bs-diff");
+        if (diffEl) diffEl.style.display = "";
+        myId = 1; isHost = true; chatStarted = false;
+        resetGame();
+    },
     onStart: () => {
         if (currentRoomId && window.db) {
             window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), { status: "playing" });
@@ -245,7 +255,26 @@ function listenToRoom() {
     if (roomListener) roomListener();
     roomListener = window.dbOnValue(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if (!data) return;
+        if (!data) {
+            // Host deleted the room — free the joiner instead of freezing.
+            if (gameMode === "online" && !isHost) {
+                if (roomListener) { roomListener(); roomListener = null; }
+                SystemMatch.setSeats([]); // room is gone — skip the ghost seat write
+                SystemMatch.cleanup();
+                chatStarted = false;
+                SystemUI.v2Lobby.hide();
+                gameMode = "ai";
+                localStorage.setItem("bs_mode", "ai");
+                const modeEl = document.getElementById("sys-bs-mode");
+                if (modeEl) modeEl.value = "ai";
+                const diffEl = document.getElementById("sys-bs-diff");
+                if (diffEl) diffEl.style.display = "";
+                myId = 1; isHost = true;
+                resetGame();
+                document.getElementById("status-display").innerText = "HOST LEFT THE GAME — PLACE YOUR FLEET";
+            }
+            return;
+        }
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
         if(data.status === "playing" && !onlineGameStarted) {
@@ -253,15 +282,24 @@ function listenToRoom() {
             if(!chatStarted) { chatStarted = true; SystemUI.playSound('win'); SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
         }
         turn = data.turn;
-        playerBoard = myId === 1 ? data.player1Board : data.player2Board;
-        opponentBoard = myId === 1 ? data.player2Board : data.player1Board;
+        // Only take our own board from the DB once we've pushed it (ready flag set) —
+        // otherwise the all-zero seed wipes the local placements during setup.
+        const myReady = myId === 1 ? data.ready1 : data.ready2;
+        const myBoardData = myId === 1 ? data.player1Board : data.player2Board;
+        const oppBoardData = myId === 1 ? data.player2Board : data.player1Board;
+        if (myReady && myBoardData) playerBoard = myBoardData;
+        if (oppBoardData) opponentBoard = oppBoardData;
         opponentShipCoords = myId === 1 ? (data.player2Ships || {}) : (data.player1Ships || {});
-        if (data.ready1 && data.ready2) {
+        if (data.ready1 && data.ready2 && gameState === "setup") {
             gameState = "playing";
+            document.getElementById("ship-selector").classList.add("hidden");
+        }
+        if (gameState === "playing") {
             document.getElementById("status-display").innerText = turn === myId ? "YOUR TURN: FIRE!" : "ENEMY IS AIMING...";
         }
         updateVisuals(); checkWin();
-        if (isHost && gameState === "playing" && turn === (seats[0].type === 'ai' ? 1 : 2)) setTimeout(aiAttack, 1000);
+        // Host only drives the AI when the seat whose turn it is actually IS an AI.
+        if (isHost && gameState === "playing" && seats[1] && seats[1].type === 'ai' && turn === 2) setTimeout(aiAttack, 1000);
     });
 }
 
@@ -346,7 +384,10 @@ function aiAttack() {
 document.getElementById("fire-btn").addEventListener("click", () => {
     if (gameMode === "online") {
         let ready = myId === 1 ? 'ready1' : 'ready2';
-        let updates = {}; updates[ready] = true; updates[myId === 1 ? 'player1Ships' : 'player2Ships'] = shipCoords;
+        let updates = {}; updates[ready] = true;
+        updates[myId === 1 ? 'player1Ships' : 'player2Ships'] = shipCoords;
+        // Push the actual board (with the 1s) — hits and wins are judged from it.
+        updates[myId === 1 ? 'player1Board' : 'player2Board'] = playerBoard;
         window.dbUpdate(window.dbRef(window.db, 'bs_rooms/' + currentRoomId), updates);
         rollBtn.disabled = true;
     } else {

@@ -336,7 +336,7 @@
       "👥 Online",
       "🤖 Solo"
     ],
-    "roomPath": null
+    "roomPath": "holdem_rooms"
   },
   {
   "id": "liars_dice",
@@ -345,8 +345,8 @@
   "category": "board",
   "icon": "system/images/icons/icon14.png",
   "url": "games/liars_dice/liars_dice.html",
-  "badges": ["👥 Online", "🤖 Solo"],
-  "roomPath": "liars_dice_rooms"
+  "badges": ["🤖 Solo"],
+  "roomPath": null
 },
   {
     "id": "ttt",

@@ -163,11 +163,62 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
     });
 });
 
+let roomUnsub = null;
+
+// Exit online mode back to local play (host left / opponent abandoned).
+function exitOnlineToLocal() {
+    if (roomUnsub) { try { roomUnsub(); } catch (e) {} roomUnsub = null; }
+    SystemUI.stopChat();
+    chatStarted = false;
+    currentRoomId = null;
+    myId = 1;
+    isHost = true;
+    gameMode = "ai";
+    localStorage.setItem("ytz_mode", "ai");
+    const modeEl = document.getElementById("sys-ytz-mode");
+    if (modeEl) modeEl.value = "ai";
+    lobbyUI.classList.add("hidden");
+    document.getElementById("room-code-display").classList.add("hidden");
+    document.getElementById("btn-create-room").disabled = false;
+    updateAiDiffVisibility();
+    updatePlayerLabels();
+    resetGame();
+}
+
+// Room cleanup on tab close: host removes the room, joiner flags a mid-game abandon.
+window.addEventListener("beforeunload", () => {
+    if (gameMode !== "online" || !currentRoomId || !window.db) return;
+    try {
+        if (isHost) {
+            window.dbSet(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), null);
+        } else if (gameState === "playing") {
+            window.dbUpdate(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), { status: "abandoned" });
+        }
+    } catch (e) {}
+});
+
 function listenToRoom() {
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), (snapshot) => {
+    roomUnsub = window.dbOnValue(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if (!data) return;
+        if (!data) {
+            // Host removed the room — don't leave the joiner frozen mid-game.
+            if (!isHost && gameState === "playing") {
+                showToast("Host Left", "The host closed the room.");
+                exitOnlineToLocal();
+            }
+            return;
+        }
+        if (data.status === "abandoned") {
+            if (isHost) {
+                showToast("Opponent Left", "Your opponent abandoned the game.");
+                if (currentRoomId) {
+                    try { window.dbSet(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), null); } catch (e) {}
+                }
+                exitOnlineToLocal();
+            }
+            return;
+        }
 
         if (data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true;
@@ -192,6 +243,14 @@ document.getElementById("lobby-close-btn").addEventListener("click", () => {
 });
 document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     SystemUI.playSound('click');
+    // Host backing out of a room they created: remove it so it doesn't linger in Firebase.
+    if (isHost && currentRoomId && gameState !== "playing" && window.db) {
+        try { window.dbSet(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), null); } catch (e) {}
+    }
+    if (roomUnsub) { try { roomUnsub(); } catch (e) {} roomUnsub = null; }
+    currentRoomId = null;
+    document.getElementById("room-code-display").classList.add("hidden");
+    document.getElementById("btn-create-room").disabled = false;
     gameMode = "ai";
     document.getElementById("sys-ytz-mode").value = "ai";
     localStorage.setItem("ytz_mode", "ai");
@@ -335,6 +394,11 @@ function toggleKeep(idx) {
     kept[idx] = !kept[idx];
     SystemUI.playSound('chipTable');
     updateDiceDisplay();
+
+    // Online: push keeps immediately so the opponent sees them live (not just on next roll)
+    if (gameMode === "online" && currentRoomId && window.db) {
+        window.dbUpdate(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), { kept: kept });
+    }
 }
 
 // ==========================================
@@ -442,26 +506,26 @@ function renderScorecard() {
     CATS.filter(c => c.section === 'upper').forEach(cat => {
         const v1 = s1[cat.id];
         const v2 = s2[cat.id];
-        const pot = canScore && v1 === null && currentTurn === 1 ? calcScore(cat.id, dice) :
-                    canScore && v2 === null && currentTurn === 2 ? calcScore(cat.id, dice) : null;
+        const pot = canScore && v1 == null && currentTurn === 1 ? calcScore(cat.id, dice) :
+                    canScore && v2 == null && currentTurn === 2 ? calcScore(cat.id, dice) : null;
 
         const myScores = currentTurn === 1 ? s1 : s2;
-        const isClickable = canScore && myScores[cat.id] === null;
+        const isClickable = canScore && myScores[cat.id] == null;
 
         html += `<tr class="scorecard-row${isClickable ? ' can-score' : ''}" 
                      ${isClickable ? `onclick="window.scoreCategory('${cat.id}')"` : ''}>
             <td>${cat.label}</td>
-            ${scoreCellHtml(v1, currentTurn === 1 && canScore && v1 === null, calcScore(cat.id, dice))}
-            ${scoreCellHtml(v2, currentTurn === 2 && canScore && v2 === null, calcScore(cat.id, dice))}
+            ${scoreCellHtml(v1, currentTurn === 1 && canScore && v1 == null, calcScore(cat.id, dice))}
+            ${scoreCellHtml(v2, currentTurn === 2 && canScore && v2 == null, calcScore(cat.id, dice))}
         </tr>`;
     });
 
     const upper1 = calcUpperTotal(s1);
     const upper2 = calcUpperTotal(s2);
-    const bonus1Txt = s1.sixes !== null && UPPER_IDS.every(id => s1[id] !== null)
+    const bonus1Txt = s1.sixes != null && UPPER_IDS.every(id => s1[id] != null)
         ? (upper1 >= 63 ? '+35' : '0')
         : `${upper1}/63`;
-    const bonus2Txt = s2.sixes !== null && UPPER_IDS.every(id => s2[id] !== null)
+    const bonus2Txt = s2.sixes != null && UPPER_IDS.every(id => s2[id] != null)
         ? (upper2 >= 63 ? '+35' : '0')
         : `${upper2}/63`;
 
@@ -477,13 +541,13 @@ function renderScorecard() {
         const v1 = s1[cat.id];
         const v2 = s2[cat.id];
         const myScores = currentTurn === 1 ? s1 : s2;
-        const isClickable = canScore && myScores[cat.id] === null;
+        const isClickable = canScore && myScores[cat.id] == null;
 
         html += `<tr class="scorecard-row${isClickable ? ' can-score' : ''}"
                      ${isClickable ? `onclick="window.scoreCategory('${cat.id}')"` : ''}>
             <td>${cat.label}</td>
-            ${scoreCellHtml(v1, currentTurn === 1 && canScore && v1 === null, calcScore(cat.id, dice))}
-            ${scoreCellHtml(v2, currentTurn === 2 && canScore && v2 === null, calcScore(cat.id, dice))}
+            ${scoreCellHtml(v1, currentTurn === 1 && canScore && v1 == null, calcScore(cat.id, dice))}
+            ${scoreCellHtml(v2, currentTurn === 2 && canScore && v2 == null, calcScore(cat.id, dice))}
         </tr>`;
     });
 
@@ -506,7 +570,9 @@ function renderScorecard() {
 }
 
 function scoreCellHtml(existingVal, isPotential, potentialVal) {
-    if (existingVal !== null) {
+    // Loose null: RTDB strips null-valued keys, so unscored categories come back
+    // as undefined after a round-trip — treat undefined and null the same.
+    if (existingVal != null) {
         return `<td class="score-col${existingVal === 0 ? ' zero' : ''}">${existingVal}</td>`;
     }
     if (isPotential) {
@@ -527,7 +593,7 @@ window.scoreCategory = function(catId) {
     if (gameMode === "ai" && currentTurn !== 1) return;
 
     const myScores = currentTurn === 1 ? scores1 : scores2;
-    if (myScores[catId] !== null) return;
+    if (myScores[catId] != null) return; // loose null: RTDB strips nulls, undefined == unscored
 
     const val = calcScore(catId, dice);
 
@@ -568,9 +634,9 @@ window.scoreCategory = function(catId) {
 // 9. TURN MANAGEMENT
 // ==========================================
 function advanceTurnLocal() {
-    const allScored1 = CATS.every(c => scores1[c.id] !== null);
+    const allScored1 = CATS.every(c => scores1[c.id] != null);
     const allScored2 = gameMode === "ai" || gameMode === "local"
-        ? CATS.every(c => scores2[c.id] !== null)
+        ? CATS.every(c => scores2[c.id] != null)
         : true;
 
     if (allScored1 && allScored2) {
@@ -602,8 +668,8 @@ function advanceTurnLocal() {
 }
 
 function advanceTurnOnline(updateObj) {
-    const allScored1 = CATS.every(c => scores1[c.id] !== null);
-    const allScored2 = CATS.every(c => scores2[c.id] !== null);
+    const allScored1 = CATS.every(c => scores1[c.id] != null);
+    const allScored2 = CATS.every(c => scores2[c.id] != null);
 
     if (allScored1 && allScored2) {
         updateObj.status = "done";
@@ -698,10 +764,10 @@ function aiDecideKeep(dice, scores, diff) {
     }
 
     const unique = [...new Set(dice)].sort((a,b)=>a-b);
-    if (unique.length === 5 && scores['largeStraight'] === null) {
+    if (unique.length === 5 && scores['largeStraight'] == null) {
         return dice.map(() => true); 
     }
-    if (unique.length >= 4 && scores['largeStraight'] === null) {
+    if (unique.length >= 4 && scores['largeStraight'] == null) {
         const seq = findLongestSeq(dice);
         return dice.map(d => seq.includes(d));
     }
@@ -741,7 +807,7 @@ function aiBestCategory(dice, scores) {
     let best = null;
     let bestVal = -1;
 
-    const available = CATS.filter(c => scores[c.id] === null);
+    const available = CATS.filter(c => scores[c.id] == null);
     available.forEach(cat => {
         let val = calcScore(cat.id, dice);
 
@@ -1001,6 +1067,16 @@ function endGame() {
 
     showToast(title, message);
     document.getElementById("turn-banner").classList.add("hidden");
+
+    // Host removes the finished room (delayed so the joiner has processed "done";
+    // the joiner's !data handler ignores removals once gameState is no longer "playing").
+    if (gameMode === "online" && isHost && currentRoomId && window.db) {
+        const doneRoomId = currentRoomId;
+        currentRoomId = null;
+        setTimeout(() => {
+            try { window.dbSet(window.dbRef(window.db, 'yahtzee_rooms/' + doneRoomId), null); } catch (e) {}
+        }, 4000);
+    }
 
     setTimeout(() => {
         document.getElementById("start-game-btn").classList.remove("hidden");
