@@ -109,6 +109,51 @@ function updateBetUI() {
 }
 
 // ── MODE SWITCHER ──────────────────────────────
+// Wire the match layer ONCE at load (like TTT/UNO). Re-running SystemMatch.setup
+// on every switch to online leaked a fresh room listener / listenToRoom
+// subscription each time; now a mode change only toggles the lobby.
+SystemMatch.setup({
+    gameId:   "war",
+    roomPath: "war_rooms",
+    autoShow: false,
+    onHost: (roomId) => {
+        currentRoomId = roomId;
+        iAmJoiner = false;
+        joinerPaid = false;
+        onlineResultDone = false;
+        listenToRoom(roomId);
+    },
+    onJoin: (roomId) => {
+        currentRoomId = roomId;
+        iAmJoiner = true;
+        joinerPaid = false;
+        onlineResultDone = false;
+        listenToRoom(roomId);
+    },
+    onLeave: () => {
+        // Joiner leaving mid-game: flag the room so the host isn't stuck
+        // waiting on joinerReady forever.
+        if (iAmJoiner && currentRoomId && !isGameOver && window.db && window.dbUpdate) {
+            try { window.dbUpdate(window.dbRef(window.db, `war_rooms/${currentRoomId}`), { status: "abandoned" }); } catch (e) {}
+        }
+        // Refund a live bet (host paid at deal, joiner via joinerPaid).
+        if (!isGameOver && currentBet > 0 && (!iAmJoiner || joinerPaid)) {
+            SystemUI.money += currentBet;
+            SystemUI.updateMoneyDisplay();
+        }
+        currentRoomId = null;
+        joinerPaid = false;
+        onlineResultDone = false;
+        gameMode = "ai";
+        const modeEl = document.getElementById("sys-war-mode");
+        if (modeEl) modeEl.value = "ai";
+        chatStarted = false;
+        resetToLobby();
+    },
+    onStart: () => {},
+    onClose: () => {}
+});
+
 setTimeout(() => {
     const modeEl = document.getElementById("sys-war-mode");
     if (modeEl) {
@@ -117,45 +162,7 @@ setTimeout(() => {
             gameMode = e.target.value;
             document.getElementById("sys-modal").classList.add("sys-hidden");
             if (gameMode === "online") {
-                SystemMatch.setup({
-                    gameId:   "war",
-                    roomPath: "war_rooms",
-                    onHost: (roomId) => {
-                        currentRoomId = roomId;
-                        iAmJoiner = false;
-                        joinerPaid = false;
-                        onlineResultDone = false;
-                        listenToRoom(roomId);
-                    },
-                    onJoin: (roomId) => {
-                        currentRoomId = roomId;
-                        iAmJoiner = true;
-                        joinerPaid = false;
-                        onlineResultDone = false;
-                        listenToRoom(roomId);
-                    },
-                    onLeave: () => {
-                        // Joiner leaving mid-game: flag the room so the host isn't stuck
-                        // waiting on joinerReady forever.
-                        if (iAmJoiner && currentRoomId && !isGameOver && window.db && window.dbUpdate) {
-                            try { window.dbUpdate(window.dbRef(window.db, `war_rooms/${currentRoomId}`), { status: "abandoned" }); } catch (e) {}
-                        }
-                        // Refund a live bet (host paid at deal, joiner via joinerPaid).
-                        if (!isGameOver && currentBet > 0 && (!iAmJoiner || joinerPaid)) {
-                            SystemUI.money += currentBet;
-                            SystemUI.updateMoneyDisplay();
-                        }
-                        currentRoomId = null;
-                        joinerPaid = false;
-                        onlineResultDone = false;
-                        gameMode = "ai";
-                        modeEl.value = "ai";
-                        chatStarted = false;
-                        resetToLobby();
-                    },
-                    onStart: () => {},
-                    onClose: () => {}
-                });
+                SystemUI.v2Lobby.show();
             } else {
                 SystemUI.v2Lobby.hide();
                 // Tear down hosted room / joined seat so it can't ghost in Firebase
@@ -170,6 +177,9 @@ setTimeout(() => {
 
 function resetToLobby() {
     isGameOver  = true;
+    // Reset SystemBetting's own counter — otherwise the "BET: $" readout keeps
+    // the stale value and future chip clicks accumulate against it.
+    if (window.SystemBetting) SystemBetting.clearBet(false);
     currentBet  = 0;
     playerDeck  = [];
     oppDeck     = [];
@@ -330,7 +340,7 @@ function handleWar() {
     }
     if (playerDeck.length < 4) {
         // Player runs out during war
-        oppDeck.push(...warPile, ...playerDeck, ...oppDeck);
+        oppDeck.push(...warPile, ...playerDeck);
         playerDeck = [];
         warPile = [];
         endGame();
@@ -338,7 +348,7 @@ function handleWar() {
     }
     if (oppDeck.length < 4) {
         // Opponent runs out during war
-        playerDeck.push(...warPile, ...oppDeck, ...playerDeck);
+        playerDeck.push(...warPile, ...oppDeck);
         oppDeck = [];
         warPile = [];
         endGame();
@@ -406,13 +416,20 @@ function endGame() {
         showToast("YOU WIN THE WAR! 🏆", `Collected all the cards! Won $${winAmount}!`, false);
         showResult("win", `YOU WIN — $${winAmount}!`);
         setStatus("VICTORY!");
-    } else {
+    } else if (oppDeck.length > playerDeck.length) {
         // Opponent wins
         SystemUI.playSound('lose');
         if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("war");
         showToast("OPPONENT WINS", `You ran out of cards. Lost $${currentBet}.`, false);
         showResult("lose", `OPPONENT WINS`);
         setStatus("DEFEAT");
+    } else {
+        // Dead even — refund the bet instead of declaring a loss for both sides.
+        SystemUI.money += currentBet;
+        SystemUI.updateMoneyDisplay();
+        showToast("TIE GAME", `Both decks ended even. Your $${currentBet} bet was refunded.`, false);
+        showResult("war", "TIE — BET REFUNDED");
+        setStatus("TIE");
     }
 
     updateCountBadges();
@@ -421,6 +438,9 @@ function endGame() {
 }
 document.getElementById("play-again-btn").addEventListener("click", () => {
     isGameOver  = true;
+    // Clear SystemBetting's internal bet so the readout doesn't carry the stale
+    // value into the next game.
+    if (window.SystemBetting) SystemBetting.clearBet(false);
     currentBet  = 0;
     playerDeck  = [];
     oppDeck     = [];
@@ -558,6 +578,17 @@ function applyHostState(stateJson) {
 
         // Joiner economy: pay the (synced) bet once per game, when the host deals.
         if (!isGameOver && !joinerPaid) {
+            // Can't cover the host's bet? Don't let the 0-clamp charge a partial
+            // stake and then pay out a full win. Notify and leave the match.
+            if (currentBet > SystemUI.money) {
+                showToast("Not Enough Cash", `This match's bet is $${currentBet}, more than your balance.`);
+                const rid = SystemMatch.getRoomId();
+                if (rid && window.db && window.dbUpdate) {
+                    try { window.dbUpdate(window.dbRef(window.db, `war_rooms/${rid}`), { status: "abandoned" }); } catch (e) {}
+                }
+                exitOnlineToLocal(false);
+                return;
+            }
             joinerPaid = true;
             SystemUI.money -= currentBet;
             SystemUI.updateMoneyDisplay();
@@ -612,11 +643,17 @@ function applyHostState(stateJson) {
                 if (typeof SystemStats !== 'undefined') SystemStats.recordWin("war", winAmount);
                 showResult("win", `YOU WIN — $${winAmount}!`);
                 setStatus("VICTORY!");
-            } else {
+            } else if (oppDeck.length > playerDeck.length) {
                 SystemUI.playSound('lose');
                 if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("war");
                 showResult("lose", "OPPONENT WINS");
                 setStatus("DEFEAT");
+            } else {
+                // Dead even — refund instead of charging a loss to both sides.
+                SystemUI.money += currentBet;
+                SystemUI.updateMoneyDisplay();
+                showResult("war", "TIE — BET REFUNDED");
+                setStatus("TIE");
             }
         }
 

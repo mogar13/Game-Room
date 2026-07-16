@@ -52,11 +52,13 @@ function showToast(title, message) {
 // ── 2. V2 MULTIPLAYER LOBBY & SYNC ──────────
 let currentRoomId = null;
 let isHost = true;
-let myColor = 'white'; 
-let chatStarted = false; 
+let myColor = 'white';
+let chatStarted = false;
 let seats = [];
 let myId = 1;
 let roomListener = null;
+let onlineBuyInPaid = false;
+let aiRollPending = false;
 
 document.getElementById("sys-bg-mode").addEventListener("change", (e) => {
     gameMode = e.target.value;
@@ -106,12 +108,14 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1; myColor = 'white'; chatStarted = false;
+        onlineBuyInPaid = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; myId = 2; myColor = 'black'; chatStarted = false;
+        onlineBuyInPaid = false;
         seats = SystemMatch.getSeats();
         // Backgammon auto-starts on join.
         if (window.db && window.dbUpdate) {
@@ -161,6 +165,22 @@ function listenToRoom() {
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
 
+        // Joiner left mid-game — host flips the empty seat to AI so the
+        // drop-in AI driver in syncGameState keeps the match alive.
+        if (isHost && onlineGameStarted && currentPhase === "playing" &&
+            seats[1] && seats[1].type === "open") {
+            seats[1] = { type: "ai", name: "AI (takeover)" };
+            window.dbUpdate(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), { seats: seats });
+            showToast("Opponent Left", "The AI will take over their checkers.");
+        }
+
+        // Rematch: host resets the room to 'waiting' after a finish — re-arm
+        // the start gate and the buy-in so the next round charges again.
+        if (data.status === "waiting" && onlineGameStarted) {
+            onlineGameStarted = false;
+            onlineBuyInPaid = false;
+        }
+
         if (data.status === "finished" && data.winner) {
             if (currentPhase === "playing") handleOnlineFinish(data);
             return;
@@ -173,6 +193,14 @@ function listenToRoom() {
                 chatStarted = true;
                 SystemUI.playSound('win');
                 SystemUI.startChat(currentRoomId, SystemUI.getPlayerName());
+            }
+            // Charge the buy-in once per online match (mirrors the AI-mode
+            // idle-branch deduction so the winner's BUY_IN*2 payout isn't minted).
+            if (!onlineBuyInPaid) {
+                onlineBuyInPaid = true;
+                SystemUI.money -= BUY_IN;
+                SystemUI.updateMoneyDisplay();
+                if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("backgammon");
             }
             currentPhase = "playing";
             document.getElementById("roll-btn").innerText = "ROLL DICE";
@@ -218,7 +246,21 @@ function handleOnlineFinish(data) {
         else SystemStats.recordLoss("backgammon");
     }
 
-    setTimeout(resetGame, 1200);
+    setTimeout(() => {
+        resetGame();
+        if (gameMode === "online") {
+            // Rematch-lite: host resets the room to 'waiting' (fresh board),
+            // both clients return to the lobby; START begins a new round.
+            if (isHost && currentRoomId && window.db) {
+                window.dbUpdate(window.dbRef(window.db, 'bg_rooms/' + currentRoomId), {
+                    board: board, bar: bar, off: off,
+                    currentTurn: 'white', activeDice: [], d1: "", d2: "",
+                    status: "waiting", winner: null
+                });
+            }
+            SystemUI.v2Lobby.show();
+        }
+    }, 1200);
 }
 
 function syncGameState(data) {
@@ -235,11 +277,17 @@ function syncGameState(data) {
     updateTurnIndicator(); 
     renderBoard();
 
-    // V2 DROP-IN AI: If host, check if turn went to an AI seat
-    if (isHost && currentPhase === "playing" && activeDice.length > 0) {
+    // V2 DROP-IN AI: If host, drive any AI seat whose turn it is.
+    if (isHost && currentPhase === "playing") {
         const currentSeatIdx = currentTurn === 'white' ? 0 : 1;
         if (seats[currentSeatIdx] && seats[currentSeatIdx].type === 'ai') {
-            setTimeout(aiLogicLoop, 800);
+            if (activeDice.length > 0) {
+                setTimeout(aiLogicLoop, 800);
+            } else if (!aiRollPending) {
+                // AI's turn but no dice rolled yet — nothing else will roll for it online.
+                aiRollPending = true;
+                setTimeout(() => { aiRollPending = false; handleRoll(); }, 800);
+            }
         }
     }
 }
@@ -260,6 +308,9 @@ let lastMovedTo = null;
 
 document.getElementById("roll-btn").addEventListener("click", () => {
     if (currentPhase === "idle") {
+        // Online matches start/charge via the room status flip, never the idle
+        // buy-in branch — otherwise the host burns a buy-in into a finished room.
+        if (gameMode === "online") { showToast("Online", "Start a new match from the lobby."); return; }
         if (SystemUI.money < BUY_IN) { showToast("Error", "Not enough cash!"); return; }
         SystemUI.money -= BUY_IN;
         SystemUI.updateMoneyDisplay();
@@ -512,11 +563,12 @@ function executeMove(fromIdx, toIdx, dieUsed) {
 
             SystemUI.playSound(isMyWin ? 'win' : 'lose');
             showToast(`${currentTurn.toUpperCase()} WINS!`, `They bore off all 15 checkers.`);
-            if (isMyWin && gameMode !== "ai") { SystemUI.money += (BUY_IN * 2); SystemUI.updateMoneyDisplay(); }
-            
+            // AI mode charges the buy-in on start, so a win must pay it back out.
+            if (isMyWin) { SystemUI.money += (BUY_IN * 2); SystemUI.updateMoneyDisplay(); }
+
             // 2.0 STATS INTEGRATION - Wrapped for safety
             if (typeof SystemStats !== 'undefined') {
-                if (isMyWin) SystemStats.recordWin("backgammon", gameMode !== "ai" ? BUY_IN * 2 : 0);
+                if (isMyWin) SystemStats.recordWin("backgammon", BUY_IN * 2);
                 else SystemStats.recordLoss("backgammon");
             }
             

@@ -49,15 +49,25 @@ setTimeout(() => {
             
             if(gameMode === "online") {
                 document.getElementById("multiplayer-lobby").classList.remove("hidden");
-            } else { 
-                document.getElementById("multiplayer-lobby").classList.add("hidden"); 
-                SystemUI.stopChat(); 
-                chatStarted = false; 
+            } else {
+                document.getElementById("multiplayer-lobby").classList.add("hidden");
+                // Tear down any online room, same as btn-cancel-lobby
+                if (roomListener) { roomListener(); roomListener = null; }
+                if (currentRoomId) {
+                    if (isHost) window.dbRemove(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId));
+                    else window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "abandoned" });
+                    currentRoomId = null;
+                }
+                document.getElementById("btn-create-room").disabled = false;
+                document.getElementById("room-code-display").classList.add("hidden");
+                SystemUI.stopChat();
+                chatStarted = false;
                 // Reset host privileges so local start button works
                 myId = 1;
                 isHost = true;
                 p2Name = "AI";
-                resetGame(); 
+                stateSeq = 0; lastLogSync = "";
+                resetGame();
             }
         });
     }
@@ -155,8 +165,14 @@ document.getElementById("stock-pile").addEventListener("click", () => {
 
     if(deck.length === 0) {
         const topDiscard = discardPile.pop();
-        deck = [...discardPile].reverse(); 
+        deck = [...discardPile].reverse();
         discardPile = [topDiscard];
+        if(deck.length === 0) {
+            // Nothing left to recycle — stock stays empty, must draw from discard
+            playSound('lose');
+            document.getElementById("phase-banner").innerText = "STOCK EMPTY — DRAW FROM THE DISCARD PILE";
+            return;
+        }
     }
 
     myHand.push(deck.pop());
@@ -267,7 +283,7 @@ function aiTurn() {
         discardPile = [topDiscard];
     }
 
-    if(discardPile.length > 0 && Math.random() > 0.5) {
+    if(discardPile.length > 0 && (deck.length === 0 || Math.random() > 0.5)) {
         oppHand.push(discardPile.pop());
         logMove(p2Name, "drew from discard pile.");
     } else {
@@ -521,6 +537,8 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
                 players: 2, p2Name: p1Name, status: "playing"
             });
             lobbyUI.classList.add("hidden");
+            document.getElementById("start-game-btn").innerText = "Waiting for Host...";
+            document.getElementById("start-game-btn").disabled = true;
             listenToRoom();
         }
     });
@@ -673,8 +691,8 @@ window.addEventListener("beforeunload", () => {
     if (gameMode === "online" && currentRoomId && window.db) {
         if (isHost) {
             window.dbRemove(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId));
-        } else if (gameState === "playing") {
-            // Joiner vanished mid-game: flag it so the host doesn't wait forever
+        } else {
+            // Joiner vanished (pre-deal or mid-game): flag it so the host doesn't wait forever
             window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "abandoned" });
         }
     }

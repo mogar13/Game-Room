@@ -29,7 +29,10 @@ const redNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 3
 
 function updateUI() {
     SystemUI.updateMoneyDisplay();
-    SystemUI.updateBetDisplay(currentTotalBet);
+    // SystemBetting's display shows its internal accumulator (which roulette
+    // zeroes on every chip click) — write the real table total instead.
+    const betEl = document.getElementById("sys-current-bet-display");
+    if (betEl) betEl.innerText = currentTotalBet;
     document.getElementById("spin-btn").disabled = (currentTotalBet === 0 || isSpinning);
     SystemUI.enableBetting(!isSpinning);
 }
@@ -63,9 +66,14 @@ function initTable() {
 // ==========================================
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
-        if (isSpinning) return;
+        // Chips are a denomination selector here, not a wager — roll back
+        // SystemBetting's internal accumulation so clicks stay pure selection
+        // (otherwise the rack clamps against bankroll and goes dead).
+        SystemBetting.currentBet = 0;
+        if (isSpinning) { updateUI(); return; }
         SystemUI.playSound('click'); // Selecting a chip just clicks
-        selectedChipAmount = val; 
+        selectedChipAmount = val;
+        updateUI();
     },
     onClear: function() {
         if (isSpinning) return;
@@ -76,6 +84,24 @@ SystemUI.setupBetting("os-betting-rack", {
         updateUI();
     }
 });
+
+// REPEAT / 1/2 / 2X / ALL-IN operate on SystemBetting's accumulator, which
+// roulette doesn't use (2X's internal clearBet would refund and wipe the whole
+// table) — hide them for this game.
+document.querySelectorAll("#os-betting-rack .sys-bet-mod").forEach(btn => btn.style.display = "none");
+
+// Money is deducted at chip placement, so leaving with unspun bets on the
+// table would forfeit the stake — refund pending bets on the way out.
+// currentTotalBet is zeroed after refunding, so a double fire (pagehide +
+// beforeunload) or a prior CLEAR can't refund twice.
+function refundPendingBets() {
+    if (isSpinning || currentTotalBet <= 0) return;
+    SystemUI.money += currentTotalBet;
+    currentTotalBet = 0;
+    bets = {};
+}
+window.addEventListener("pagehide", refundPendingBets);
+window.addEventListener("beforeunload", refundPendingBets);
 
 document.querySelectorAll(".bet-area").forEach(area => {
     area.addEventListener("click", () => placeBet(area.dataset.type, area));

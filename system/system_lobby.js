@@ -170,6 +170,13 @@ window.SystemLobby = {
     },
 
     bindEvents: function() {
+        // Bind exactly once. setup() can run multiple times per page (e.g. a game
+        // re-enters online mode), but the handlers read this.callbacks live, so the
+        // latest callbacks are always used — re-binding would only stack duplicate
+        // listeners and fire onHost/onJoin N times.
+        if (this._bound) return;
+        this._bound = true;
+
         const playSound = (type) => {
             if (window.SystemAudio) window.SystemAudio.play(type);
             else if (window.SystemUI) window.SystemUI.playSound(type);

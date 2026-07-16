@@ -213,6 +213,10 @@ let gamePhase     = "idle";
 let onlineAnswerLocked = false;
 let hotseatAnswerCount = 0;
 
+// vs-AI local: per-question elimination so a wrong answer only knocks out the
+// answerer while the timer keeps running for everyone else.
+let eliminated = [];
+
 // Online: guardian timer that force-resolves a stuck round (dead/disconnected guest).
 let guardianTimer = null;
 
@@ -302,19 +306,18 @@ function handleTimeout() {
         return;
     }
 
-    answered = true;
-    revealAnswers(null);
-    SystemUI.playSound('lose');
-
     const q = questions[currentQIndex];
 
     if (gameMode === "hotseat") {
+        answered = true;
         // Treat a timeout as wrong for the active player and rotate
         streaks[activePlayer - 1] = 0;
         renderScores();
         hotseatAnswerCount++;
         if (hotseatAnswerCount < playerCount) {
+            // Don't reveal the correct answer to the players still to come.
             disableAllAnswers();
+            showLockedInBanner();
             activePlayer = (activePlayer % playerCount) + 1;
             setTimeout(() => {
                 resetAnswerButtons();
@@ -326,8 +329,17 @@ function handleTimeout() {
         }
         activePlayer = 1;
         hotseatAnswerCount = 0;
+        revealAnswers(null);
+        SystemUI.playSound('lose');
+        showNextOverlay(false, q.correct, 0, null);
+        return;
     }
 
+    // vs-AI (and any other local mode): time ran out with no correct answer.
+    answered = true;
+    clearAiTimers();
+    revealAnswers(null);
+    SystemUI.playSound('lose');
     showNextOverlay(false, q.correct, 0, null);
 }
 
@@ -554,6 +566,7 @@ function showQuestion(index) {
     answered           = false;
     onlineAnswerLocked = false;
     gamePhase          = "playing";
+    eliminated         = new Array(playerCount).fill(false);
     if (gameMode === "hotseat") hotseatAnswerCount = 0;
 
     const q = questions[index];
@@ -587,9 +600,56 @@ function handleAnswerClick(answer, btn) {
         return;
     }
 
+    if (gameMode === "ai") {
+        // Fastest-correct-wins: a correct answer ends the round; a wrong one only
+        // eliminates the human while the timer + AI opponents keep going.
+        const q = questions[currentQIndex];
+        if (answer === q.correct) {
+            answered = true;
+            stopTimer();
+            clearAiTimers();
+            processAnswer(answer, 1, timeLeft);
+        } else {
+            eliminated[0] = true;
+            streaks[0] = 0;
+            renderScores();
+            SystemUI.playSound('lose');
+            disableAllAnswers();
+            if (btn) btn.classList.add("wrong");
+            maybeResolveLocalRound();
+        }
+        return;
+    }
+
+    // hotseat
     answered = true;
     stopTimer();
     processAnswer(answer, activePlayer, timeLeft);
+}
+
+// vs-AI local: if every player has now been eliminated, resolve the round as a
+// miss (nobody got it right) instead of waiting for the timer to run out.
+function maybeResolveLocalRound() {
+    if (answered) return;
+    for (let i = 0; i < playerCount; i++) {
+        if (!eliminated[i]) return; // someone can still answer
+    }
+    answered = true;
+    stopTimer();
+    clearAiTimers();
+    const q = questions[currentQIndex];
+    revealAnswers(null);
+    setTimeout(() => showNextOverlay(false, q.correct, 0, null), 1000);
+}
+
+// Neutral "locked in" state shown between hotseat players so the correct answer
+// isn't revealed to those who haven't answered yet.
+function showLockedInBanner() {
+    const banner = document.getElementById("result-banner");
+    banner.classList.remove("hidden", "correct-banner", "wrong-banner");
+    document.getElementById("result-icon").textContent = "🔒";
+    document.getElementById("result-text").textContent = "ANSWER LOCKED IN";
+    document.getElementById("result-pts").textContent  = "";
 }
 
 function processAnswer(answer, player, tLeft) {
@@ -607,13 +667,14 @@ function processAnswer(answer, player, tLeft) {
     }
 
     renderScores();
-    revealAnswers(answer);
-    showResultBanner(correct, pts);
 
     if (gameMode === "hotseat") {
         hotseatAnswerCount++;
         if (hotseatAnswerCount < playerCount) {
+            // Don't reveal the correct answer to players still to come — just
+            // show a neutral locked-in state and rotate.
             disableAllAnswers();
+            showLockedInBanner();
             activePlayer = (activePlayer % playerCount) + 1;
             setTimeout(() => {
                 resetAnswerButtons();
@@ -626,6 +687,10 @@ function processAnswer(answer, player, tLeft) {
         activePlayer = 1;
         hotseatAnswerCount = 0;
     }
+
+    // Non-hotseat, or the last hotseat player: safe to reveal now.
+    revealAnswers(answer);
+    showResultBanner(correct, pts);
 
     setTimeout(() => {
         showNextOverlay(correct, q.correct, pts, correct ? player : null);
@@ -718,34 +783,35 @@ function scheduleAiAnswers(q) {
 
 function aiAnswerNow(aiId, q, accuracy) {
     if (answered) return;
+    if (eliminated[aiId - 1]) return; // this AI already missed this round
     const aiCorrect = Math.random() < accuracy;
-    const aiAnswer  = aiCorrect
-        ? q.correct
-        : q.answers.filter(a => a !== q.correct)[
-            Math.floor(Math.random() * (q.answers.length - 1))
-          ];
 
+    if (!aiCorrect) {
+        // Wrong AI is eliminated but the round continues for everyone else.
+        eliminated[aiId - 1] = true;
+        streaks[aiId - 1] = 0;
+        renderScores();
+        maybeResolveLocalRound();
+        return;
+    }
+
+    // Correct AI wins the round.
     const aiTimeLeft = timeLeft;
     answered = true;
     stopTimer();
     clearAiTimers();
 
-    const pts = aiCorrect ? calcPoints(q.difficulty, aiTimeLeft) : 0;
-    if (aiCorrect) {
-        scores[aiId - 1]  += pts;
-        streaks[aiId - 1] += 1;
-        SystemUI.playSound('lose');
-    } else {
-        streaks[aiId - 1] = 0;
-        SystemUI.playSound('win');
-    }
+    const pts = calcPoints(q.difficulty, aiTimeLeft);
+    scores[aiId - 1]  += pts;
+    streaks[aiId - 1] += 1;
+    SystemUI.playSound('lose'); // an AI winning is bad news for the player
 
     renderScores();
-    revealAnswers(aiAnswer);
-    showResultBanner(!aiCorrect, 0);
+    revealAnswers(q.correct);
+    showResultBanner(aiCorrect, pts);
 
     setTimeout(() => {
-        showNextOverlay(aiCorrect, q.correct, pts, aiCorrect ? aiId : null);
+        showNextOverlay(aiCorrect, q.correct, pts, aiId);
     }, 1000);
 }
 
@@ -1381,6 +1447,12 @@ function syncFromFirebase(data) {
             streaks = new Array(playerCount).fill(0);
             document.getElementById("game-over-modal").classList.add("hidden");
             document.getElementById("next-overlay").classList.add("hidden");
+            // Guest clicked PLAY AGAIN, which re-showed the opaque start-screen.
+            // The status="playing" branch can't re-fire for a rematch, so pull
+            // the guest out from behind it here and re-enable the start button.
+            document.getElementById("start-screen").classList.add("hidden");
+            const rematchBtn = document.getElementById("start-btn");
+            if (rematchBtn) { rematchBtn.textContent = "START GAME"; rematchBtn.disabled = false; }
             renderScores();
         }
     }
@@ -1390,6 +1462,8 @@ function syncFromFirebase(data) {
         try {
             questions = JSON.parse(data.questions);
             document.getElementById("loading-screen").classList.add("hidden");
+            // Safety net: make sure the guest isn't stuck behind the start-screen.
+            document.getElementById("start-screen").classList.add("hidden");
             gamePhase = "playing";
             const idx = (typeof data.questionIndex === "number") ? data.questionIndex : 0;
             showQuestion(idx);

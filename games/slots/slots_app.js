@@ -22,7 +22,9 @@ SystemUI.init({
 let baseBet = 0;
 let activeLines = 5;
 let isSpinning = false;
-let activeSpinSound = null; // To track and stop the spin sound
+// SystemUI.playSound() returns nothing, so keep our own Audio instance
+// (same file SystemAudio uses for 'roulette') to stop it when reels finish.
+const spinSound = new Audio('../../system/audio/roulette.mp3');
 
 // FIXED PATHS: Pointing to your new icons folder
 const symbols = [
@@ -48,9 +50,15 @@ const paylines = [
 SystemUI.setupBetting("os-betting-rack", {
     onBet: function(val) {
         if (isSpinning) return;
-        if (SystemUI.money >= (baseBet + val) * activeLines) { 
-            baseBet += val; 
-            updateHUD(); 
+        if (SystemUI.money >= (baseBet + val) * activeLines) {
+            baseBet += val;
+            updateHUD();
+        } else {
+            // SystemBetting already committed the chip — roll its rack back
+            // to the accepted per-line bet so the HUD doesn't show a dead bet.
+            SystemBetting.currentBet = baseBet;
+            SystemBetting.updateDisplay();
+            alert(`Not enough cash for ${activeLines} lines at that bet!`);
         }
     },
     onClear: function() {
@@ -140,8 +148,11 @@ document.getElementById("btn-spin").addEventListener("click", () => {
     isSpinning = true;
     updateHUD();
     
-    // Play the OS spin sound!
-    activeSpinSound = SystemUI.playSound('roulette');
+    // Play the spin sound (self-managed so it can be stopped with the reels)
+    if (!SystemUI.isMuted) {
+        spinSound.currentTime = 0;
+        spinSound.play().catch(e => {});
+    }
 
     document.getElementById("deck-win").innerText = "0";
     document.querySelectorAll(".winning-pulse").forEach(el => el.classList.remove("winning-pulse"));
@@ -184,11 +195,8 @@ function spinReel(stripId, symTop, symMid, symBot, duration) {
 
 function evaluateMatrix(matrix) {
     // Stop the spin sound exactly when reels finish
-    if (activeSpinSound) {
-        activeSpinSound.pause();
-        activeSpinSound.currentTime = 0;
-        activeSpinSound = null;
-    }
+    spinSound.pause();
+    spinSound.currentTime = 0;
 
     let totalWin = 0;
     let winningCoords = [];

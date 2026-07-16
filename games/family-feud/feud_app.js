@@ -284,9 +284,14 @@ function listenToRoom() {
         
         // Game over — the old {status:'finished'}-only write was ignored here,
         // so the guest never saw the result. Sync the final state and announce.
+        // Gate on the pushed phase actually being "gameover": this branch runs
+        // on every snapshot while status is "finished", including the rematch
+        // pushes before the host flips status back to "playing".
         if (data.status === "finished" && onlineGameStarted) {
             if (data.gameState) syncFromFirebase(data.gameState);
-            if (!gameOverHandled) endGame(true);
+            let pushedPhase = null;
+            try { pushedPhase = JSON.parse(data.gameState).phase; } catch (e) {}
+            if (pushedPhase === "gameover" && !gameOverHandled) endGame(true);
         }
 
         // BUZZ REFEREE LOGIC (HOST ONLY)
@@ -349,6 +354,7 @@ function pushGameState() {
             questionIndex:       currentQuestionIndex,
             activePlayer:        activePlayer,
             faceoffWinner:       faceoffWinner,
+            roundWinner:         roundWinner,
             strikes:             strikes,
             boardPoints:         boardPoints,
             revealedAnswers:     roundAnswers.map(a => a.revealed),
@@ -402,6 +408,7 @@ function syncFromFirebase(stateJson) {
         // Must update active player BEFORE phase logic for UI highlighting
         if (data.activePlayer  !== undefined) activePlayer  = data.activePlayer;
         if (data.faceoffWinner !== undefined) faceoffWinner = data.faceoffWinner;
+        if (data.roundWinner   !== undefined) roundWinner   = data.roundWinner;
 
         renderBoard();
 
@@ -419,7 +426,7 @@ function syncFromFirebase(stateJson) {
                 case "steal":
                     startSteal(); break;
                 case "roundover":
-                    hideGuessZone(); setPhaseTag(`${getPlayerName(activePlayer).toUpperCase()} WINS THE ROUND!`);
+                    hideGuessZone(); setPhaseTag(`${getPlayerName(roundWinner || activePlayer).toUpperCase()} WINS THE ROUND!`);
                     // Host referees the round handshake: the guest ended this
                     // round, so the host picks the next question and pushes it.
                     if (isHost) {
@@ -649,8 +656,9 @@ let gamePhase = "idle";
 let currentRound = 0;
 let currentQuestionIndex = -1;
 let usedQuestions = [];
-let activePlayer = 1;    
-let faceoffWinner = 0;   
+let activePlayer = 1;
+let faceoffWinner = 0;
+let roundWinner = 0;     // who actually won the round (a steal means it isn't activePlayer)
 let strikes = 0;
 let boardPoints = 0;
 let scores = { p1: 0, p2: 0 };
@@ -859,6 +867,11 @@ function resetGame() {
 
 function startGame() {
     if (gameMode === "online" && !isHost) return;
+    // Rematch: the room is still status:"finished" — flip it back to "playing"
+    // so both clients route snapshots through the playing branch again.
+    if (gameMode === "online" && isHost && currentRoomId && window.db) {
+        window.dbUpdate(window.dbRef(window.db, 'feud_rooms/' + currentRoomId), { status: "playing", ts: Date.now() });
+    }
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("feud");
     gameOverHandled = false;
     currentRound  = 0;
@@ -972,7 +985,7 @@ function handleBuzz(player) {
     SystemUI.playSound('click');
     if (isBotTurn(player)) {
         setPhaseTag("AI BUZZED IN!");
-        setTimeout(() => aiAnswerFaceoff(player), 900);
+        aiTimer = setTimeout(() => aiAnswerFaceoff(player), 900);
     } else {
         const name = getPlayerName(player).toUpperCase();
         setPhaseTag(`${name} BUZZED IN!`);
@@ -996,6 +1009,7 @@ function showFaceoffInput(player) {
 }
 
 function handleFaceoffGuess(input) {
+    if (gamePhase !== "faceoff-answering") return; // stale timer after reset/exit
     const matchIdx = matchAnswer(input, roundAnswers);
     if (matchIdx >= 0) {
         roundAnswers[matchIdx].revealed = true;
@@ -1013,7 +1027,7 @@ function handleFaceoffGuess(input) {
             const other = otherPlayer(faceoffWinner);
             activePlayer = other;
             gamePhase    = "faceoff-answering";
-            if (isBotTurn(other)) setTimeout(() => aiAnswerFaceoff(other), 800);
+            if (isBotTurn(other)) aiTimer = setTimeout(() => aiAnswerFaceoff(other), 800);
             else showFaceoffInput(other);
         } else {
             activePlayer = faceoffWinner;
@@ -1212,6 +1226,7 @@ function handleStealGuess(input, player) {
 // ── ROUND / GAME END ─────────────────────────
 function endRound(winner) {
     gamePhase = "roundover";
+    roundWinner = winner;
     roundAnswers.forEach(a => { a.revealed = true; });
     renderBoard();
     if (winner === 1) scores.p1 += boardPoints; else scores.p2 += boardPoints;
@@ -1280,7 +1295,7 @@ function aiAnswerFaceoff(player) {
     const stats = getAiStats();
     const topAnswer  = unrevealed.reduce((best, cur) => cur.pts > best.pts ? cur : best, unrevealed[0]);
     const aiSuccess  = Math.random() < stats.faceoffAcc;
-    setTimeout(() => { handleFaceoffGuess(aiSuccess ? topAnswer.text : "_no_match_"); }, 600);
+    aiTimer = setTimeout(() => { handleFaceoffGuess(aiSuccess ? topAnswer.text : "_no_match_"); }, 600);
 }
 
 // ── 9. EVENT LISTENERS ───────────────────────

@@ -171,6 +171,7 @@ let promoP = null;
 let aiWorking = false;
 let playerColor = "white";
 let animating = false;
+let gameOverHandled = false; // one-shot: sync echoes must not re-record stats
 
 // Move counter & History
 let moveCounts = { white: 0, black: 0 };
@@ -499,6 +500,7 @@ function newGame() {
     capW = []; capB = [];
     gameStatus = "playing";
     halfClock = 0; promoP = null; aiWorking = false; animating = false;
+    gameOverHandled = false;
     playerColor = (gameMode === "online" && myId === 2) ? "black" : "white";
 
     if (pendingDiffChange) {
@@ -703,7 +705,7 @@ function doMove(from, to, promo) {
 
 function animateAndFinish(from, to, promo) {
     const p = board[from];
-    if (!p) { finishMove(from, to, promo); return; }
+    if (!p) return; // desync guard — finishMove would dereference the missing piece
 
     animating = true;
     const boardEl = document.getElementById("chess-board");
@@ -1045,6 +1047,8 @@ function updateCaptures() {
 }
 
 function showResult(winner, reason) {
+    if (gameOverHandled) return;
+    gameOverHandled = true;
     setTimeout(() => {
         const iWon = winner && ((winner==="White"&&playerColor==="white")||(winner==="Black"&&playerColor==="black")||gameMode==="local");
 
@@ -1194,6 +1198,16 @@ function listenToRoom() {
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
 
+        // Joiner vanished mid-game (abandoned flag or SystemMatch's seat-open
+        // fallback): host hands the seat to a drop-in AI instead of waiting forever.
+        if (isHost && onlineGameStarted && (gameStatus === "playing" || gameStatus === "check") &&
+            (data.status === "abandoned" || (seats[1] && seats[1].type === "open"))) {
+            seats[1] = { type: "ai", name: "AI (takeover)" };
+            showDiffToast("OPPONENT LEFT — AI TAKES OVER", false);
+            window.dbUpdate(window.dbRef(window.db, 'chess_rooms/' + currentRoomId), { status: "playing", seats: seats });
+            return; // the echo of this write re-enters syncOnline with the AI seat
+        }
+
         if(data.status==="playing"&&!onlineGameStarted){
             onlineGameStarted=true;
             SystemUI.v2Lobby.hide();
@@ -1228,6 +1242,7 @@ function startOnline(data) {
 
     gameStatus="playing"; selected=null; legalCache=[];
     halfClock=0; promoP=null; animating=false;
+    gameOverHandled=false;
     
     resetTimers();
     buildBoard(); updateLabels(); updateNames();
@@ -1256,14 +1271,18 @@ function syncOnline(data) {
     
     moveHistory = data.moveHistory ? JSON.parse(data.moveHistory) : [];
     moveCounts = data.moveCounts || {white:0, black:0};
-    
+    halfClock = data.halfClock || 0;
+
     selected=null; legalCache=[];
-    
+
     if (!lastMove) {
         resetTimers();
         hidePromo();
         document.getElementById("game-over-modal").classList.add("hidden");
         gameStatus = "playing";
+        gameOverHandled = false;
+    } else if (data.status === "draw50") {
+        gameStatus = "draw50";
     } else {
         checkGameStatus();
     }
@@ -1299,7 +1318,8 @@ function pushState() {
         board:serB(board), turn, cr,
         ept:ept===null?-1:ept,
         lastMove:lastMove||null,
-        status:(gameStatus==="checkmate"||gameStatus==="stalemate")?gameStatus:"playing",
+        status:(gameStatus==="checkmate"||gameStatus==="stalemate"||gameStatus==="draw50")?gameStatus:"playing",
+        halfClock: halfClock,
         capW: serB(capW),
         capB: serB(capB),
         moveHistory: JSON.stringify(moveHistory),
@@ -1307,6 +1327,14 @@ function pushState() {
         seats: seats
     });
 }
+
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && currentRoomId && window.db && !isHost && chatStarted &&
+        (gameStatus === "playing" || gameStatus === "check")) {
+        // Joiner vanished mid-game: flag it so the host doesn't wait forever
+        window.dbUpdate(window.dbRef(window.db, 'chess_rooms/' + currentRoomId), { status: "abandoned" });
+    }
+});
 
 // ── 18. BOOT ──────────────────────────────────
 buildBoard();

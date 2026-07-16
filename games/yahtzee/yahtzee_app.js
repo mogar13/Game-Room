@@ -51,18 +51,26 @@ setTimeout(() => {
     if (modeEl) {
         modeEl.value = gameMode;
         modeEl.addEventListener("change", (e) => {
-            gameMode = e.target.value;
+            const newMode = e.target.value;
+            // Leaving online (possibly mid-game): tear down the room + listener
+            // FIRST, so the stale listener can't overwrite the next local game
+            // and the room doesn't ghost / strand the opponent. (gameMode still
+            // holds the previous value here.)
+            if (gameMode === "online" && newMode !== "online") {
+                teardownOnlineRoom();
+            }
+            gameMode = newMode;
             localStorage.setItem("ytz_mode", gameMode);
             updateAiDiffVisibility();
             updatePlayerLabels();
-            
+
             if (gameMode === "online") {
                 document.getElementById("multiplayer-lobby").classList.remove("hidden");
             } else {
                 document.getElementById("multiplayer-lobby").classList.add("hidden");
                 SystemUI.stopChat();
                 chatStarted = false;
-                
+
                 myId = 1;
                 isHost = true;
                 resetGame();
@@ -89,7 +97,11 @@ function updateAiDiffVisibility() {
 }
 
 document.getElementById("sys-reset-game-btn").addEventListener("click", () => {
-    if (confirm("Reset the current game?")) {
+    // In vs-AI the $200 buy-in is already spent; a reset forfeits it.
+    const msg = (gameMode === "ai" && gameState === "playing")
+        ? "Reset the current game? Your $200 buy-in for this match will be forfeited."
+        : "Reset the current game?";
+    if (confirm(msg)) {
         resetGame();
         document.getElementById("sys-modal").classList.add("sys-hidden");
     }
@@ -166,8 +178,29 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
 
 let roomUnsub = null;
 
-// Exit online mode back to local play (host left / opponent abandoned).
-function exitOnlineToLocal() {
+// Tear down the Firebase room + listener we own. Host deletes the room; a
+// joiner flags it "abandoned" so the host isn't stranded. Detaches the listener
+// and nulls currentRoomId so a late snapshot can't corrupt a following game.
+// Must run while isHost still reflects our real role.
+function teardownOnlineRoom() {
+    if (currentRoomId && window.db) {
+        try {
+            if (isHost) {
+                window.dbSet(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), null);
+            } else {
+                window.dbUpdate(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), { status: "abandoned" });
+            }
+        } catch (e) {}
+    }
+    if (roomUnsub) { try { roomUnsub(); } catch (e) {} roomUnsub = null; }
+    currentRoomId = null;
+}
+
+// Exit online mode back to local play. Pass teardownRoom=true when WE initiate
+// the leave (mode switch / cancel) so the room is deleted/abandoned; omit it
+// when a listener already saw the other side leave (room is already gone).
+function exitOnlineToLocal(teardownRoom) {
+    if (teardownRoom) teardownOnlineRoom();
     if (roomUnsub) { try { roomUnsub(); } catch (e) {} roomUnsub = null; }
     SystemUI.stopChat();
     chatStarted = false;
@@ -240,30 +273,16 @@ function listenToRoom() {
 
 document.getElementById("lobby-close-btn").addEventListener("click", () => {
     SystemUI.playSound('click');
-    lobbyUI.classList.add("hidden");
+    // Closing the lobby must also revert the mode (like cancel) — otherwise
+    // gameMode stays "online" with no room and START GAME writes to
+    // yahtzee_rooms/null and hard-stucks.
+    exitOnlineToLocal(true);
 });
 document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
     SystemUI.playSound('click');
-    // Host backing out of a room they created: remove it so it doesn't linger in Firebase.
-    if (isHost && currentRoomId && gameState !== "playing" && window.db) {
-        try { window.dbSet(window.dbRef(window.db, 'yahtzee_rooms/' + currentRoomId), null); } catch (e) {}
-    }
-    if (roomUnsub) { try { roomUnsub(); } catch (e) {} roomUnsub = null; }
-    currentRoomId = null;
-    document.getElementById("room-code-display").classList.add("hidden");
-    document.getElementById("btn-create-room").disabled = false;
-    gameMode = "ai";
-    document.getElementById("sys-ytz-mode").value = "ai";
-    localStorage.setItem("ytz_mode", "ai");
-    lobbyUI.classList.add("hidden");
-    updateAiDiffVisibility();
-    updatePlayerLabels();
-    SystemUI.stopChat();
-    chatStarted = false;
-    
-    myId = 1;
-    isHost = true;
-    resetGame();
+    // Full teardown: host deletes the room, a mid-game joiner flags it abandoned
+    // so the host isn't stranded, then drop back to local play.
+    exitOnlineToLocal(true);
 });
 
 // ==========================================
@@ -310,7 +329,7 @@ function calcScore(catId, dice) {
         case 'fullHouse': {
             const hasThree = counts.some(c => c === 3);
             const hasTwo   = counts.some(c => c === 2);
-            return (hasThree && hasTwo) || maxCount === 5 ? 25 : 0;
+            return (hasThree && hasTwo) ? 25 : 0;
         }
         case 'smallStraight': {
             const unique = [...new Set(dice)].sort((a, b) => a - b).join('');
@@ -858,7 +877,9 @@ function startOnlineGame(data) {
 }
 
 function syncOnlineState(data) {
-    if (!data || gameState !== "playing") return;
+    // Belt-and-suspenders: a late snapshot from a detached/old listener must
+    // never overwrite a local game after the player has left online mode.
+    if (!data || gameState !== "playing" || gameMode !== "online") return;
 
     dice = data.dice || dice;
     kept = data.kept || kept;
@@ -889,6 +910,12 @@ function syncOnlineState(data) {
 // 12. GAME INIT / RESET
 // ==========================================
 function initGame() {
+    // Online mode with no room (e.g. lobby closed via X) must not start —
+    // otherwise the writes below target yahtzee_rooms/null and hard-stuck.
+    if (gameMode === "online" && !currentRoomId) {
+        showToast("No Room", "Open the online lobby and create or join a room first.");
+        return;
+    }
     if (gameMode !== "local" && SystemUI.money < BUY_IN) {
         showToast("Insufficient Funds", "You need $200 to buy in!");
         return;

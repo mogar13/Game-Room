@@ -228,6 +228,27 @@ function listenToRoom() {
             return;
         }
 
+        // Joiner closed their tab mid-game — free the remaining host.
+        if (data.status === "abandoned") {
+            if (gameMode === "online" && isHost) {
+                if (roomListenerUnsub) { roomListenerUnsub(); roomListenerUnsub = null; }
+                SystemMatch.setSeats([]); // room is abandoned — skip the ghost seat write
+                SystemMatch.cleanup();
+                chatStarted = false;
+                SystemUI.v2Lobby.hide();
+                showToast("Opponent Left", `${data.abandonedBy || "Opponent"} left the game. Returning to AI mode.`);
+                gameMode = "ai";
+                const modeEl = document.getElementById("sys-mem-mode");
+                if (modeEl) modeEl.value = "ai";
+                localStorage.setItem("mem_mode", "ai");
+                myId = 1; isHost = true;
+                updateAiDiffVisibility();
+                updatePlayerLabels();
+                resetGame();
+            }
+            return;
+        }
+
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
 
@@ -360,13 +381,7 @@ function initGame() {
 
     if (gameMode === "online") {
         if (isHost && window.db) {
-            if (SystemUI.money < config.cost) {
-                showToast("Insufficient Funds", "You don't have enough cash!");
-                return;
-            }
-            SystemUI.money -= config.cost;
-            SystemUI.updateMoneyDisplay();
-            
+            // Online is a free match — no buy-in, so endGame credits no payout.
             // AUDIT: Tracking game start
             if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("memory");
 
@@ -387,14 +402,17 @@ function initGame() {
         return;
     }
 
-    if (SystemUI.money < config.cost) {
-        showToast("Insufficient Funds", "You don't have enough cash!");
-        return;
+    // Hotseat is a free local match — no buy-in (and endGame pays nothing).
+    if (gameMode !== "local") {
+        if (SystemUI.money < config.cost) {
+            showToast("Insufficient Funds", "You don't have enough cash!");
+            return;
+        }
+
+        SystemUI.money -= config.cost;
+        SystemUI.updateMoneyDisplay();
     }
 
-    SystemUI.money -= config.cost;
-    SystemUI.updateMoneyDisplay();
-    
     // AUDIT: Tracking game start
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("memory");
 
@@ -691,6 +709,7 @@ function updateTurnBanner() {
 // 12. END GAME
 // ==========================================
 function endGame() {
+    if (gameState !== "playing") return; // guard against double endGame (e.g. joiner)
     gameState = "idle";
     const banner = document.getElementById("turn-banner");
     if(banner) banner.classList.add("hidden");
@@ -743,7 +762,7 @@ function endGame() {
         
         // AUDIT: Tracking win/loss online
         if (typeof SystemStats !== 'undefined') {
-            if (iWon) SystemStats.recordWin("memory", config.payout);
+            if (iWon) SystemStats.recordWin("memory", 0); // free online match — no payout
             else if (!isTie) SystemStats.recordLoss("memory");
         }
 
@@ -766,3 +785,14 @@ function endGame() {
 document.getElementById("start-game-btn")?.addEventListener("click", initGame);
 updatePlayerLabels();
 updateScoreUI();
+
+// Joiner closed the tab mid-game — flag the room so the host isn't stranded.
+// (Host teardown is handled by SystemMatch's own unload hook.)
+window.addEventListener("beforeunload", () => {
+    if (!currentRoomId || gameMode !== "online" || isHost || !window.db) return;
+    try {
+        window.dbUpdate(window.dbRef(window.db, 'memory_rooms/' + currentRoomId), {
+            status: "abandoned", abandonedBy: SystemUI.getPlayerName()
+        });
+    } catch (e) {}
+});

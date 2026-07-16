@@ -287,7 +287,7 @@ function executePlay(index, position, player) {
     checkWin(player);
     
     if (gameState === "playing") {
-        currentTurn = (gameMode === "online") ? (myId === 1 ? 2 : 1) : (player === 1 ? 2 : 1);
+        currentTurn = (player === 1 ? 2 : 1);
         renderTable(); 
         checkPassVisibility();
         if (gameMode === "online") pushGameState();

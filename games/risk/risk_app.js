@@ -216,7 +216,7 @@ let players       = [];
 let territories   = {};       
 let currentTurn   = 0;
 let gamePhase     = "idle";   
-let setupRemaining= 0;        
+let setupRemaining= [];       // manual setup: troops left to place, per player
 let draftRemaining= 0;
 let cardDeck      = [];
 let setsTraded    = 0;        
@@ -837,7 +837,6 @@ function initGame(count, setup) {
         startDraftPhase();
     } else {
         gamePhase = "setup";
-        setupRemaining = INITIAL_TROOPS[numPlayers];
         startManualSetup();
     }
 
@@ -884,19 +883,24 @@ function randomSetup() {
 
 // ── 13. MANUAL SETUP ─────────────────────────
 function startManualSetup() {
-    setupRemaining = INITIAL_TROOPS[numPlayers];
-    setPhaseLabel("SETUP", `Place ${setupRemaining} troops`);
+    // Each player gets their own pool of troops (matching random setup),
+    // not one shared counter split across the whole table.
+    setupRemaining = players.map(() => INITIAL_TROOPS[numPlayers]);
+    setPhaseLabel("SETUP", `Place ${setupRemaining[currentTurn]} troops each`);
     updateTurnDisplay();
     document.getElementById("draft-block").classList.remove("hidden");
-    document.getElementById("draft-count").textContent = setupRemaining;
+    document.getElementById("draft-count").textContent = setupRemaining[currentTurn];
 
     if (players[currentTurn].isAI && (gameMode !== "online" || isHost)) setTimeout(aiSetupTurn, 1500); // SLOWED PACE
 }
 
 function aiSetupTurn() {
     if (gamePhase !== "setup" || !players[currentTurn].isAI || (gameMode === "online" && !isHost)) return;
+    // Claim unclaimed land first — only reinforce owned territory once every
+    // territory on the map has an owner.
+    const unclaimed = TERRITORIES.map(t => t.id).filter(id => territories[id].owner === -1);
     const owned = [...players[currentTurn].territories];
-    const pool  = owned.length > 0 ? owned : TERRITORIES.map(t => t.id).filter(id => territories[id].owner === -1);
+    const pool  = unclaimed.length > 0 ? unclaimed : owned;
     if (pool.length === 0) { nextSetupTurn(); return; }
 
     const id = pool[Math.floor(Math.random() * pool.length)];
@@ -917,10 +921,10 @@ function placeSetupTroop(id, playerIdx) {
     updateTroopCounter(id);
     pulseCounter(id);
 
-    setupRemaining--;
-    document.getElementById("draft-count").textContent = setupRemaining;
+    setupRemaining[playerIdx]--;
+    document.getElementById("draft-count").textContent = setupRemaining[playerIdx];
 
-    if (setupRemaining <= 0) {
+    if (setupRemaining.every(r => r <= 0)) {
         const unclaimed = TERRITORIES.filter(t => territories[t.id].owner === -1);
         if (unclaimed.length > 0) {
             unclaimed.forEach(terr => {
@@ -944,8 +948,14 @@ function placeSetupTroop(id, playerIdx) {
 }
 
 function nextSetupTurn() {
-    currentTurn = (currentTurn + 1) % numPlayers;
+    // Skip players who have already placed all of their troops
+    let guard = 0;
+    do {
+        currentTurn = (currentTurn + 1) % numPlayers;
+        guard++;
+    } while (setupRemaining[currentTurn] <= 0 && guard <= numPlayers);
     updateTurnDisplay();
+    document.getElementById("draft-count").textContent = setupRemaining[currentTurn];
     if (players[currentTurn].isAI && (gameMode !== "online" || isHost)) setTimeout(aiSetupTurn, 800); // SLOWED PACE
 }
 
@@ -1162,14 +1172,17 @@ function openAttackModal() {
         btn.disabled = d > maxAtk;
         btn.classList.toggle("active", d === Math.min(atkDice, maxAtk));
     });
+    // Only a hotseat defender may choose their own dice — for AI and remote
+    // defenders the attacker must not pick for them, so force the standard max.
+    const defenderPicks = gameMode === "hotseat";
     document.querySelectorAll("#def-dice-picker .dice-opt").forEach(btn => {
         const d = parseInt(btn.dataset.dice);
-        btn.disabled = d > maxDef;
-        btn.classList.toggle("active", d === Math.min(defDice, maxDef));
+        btn.disabled = d > maxDef || !defenderPicks;
+        btn.classList.toggle("active", d === (defenderPicks ? Math.min(defDice, maxDef) : maxDef));
     });
 
     atkDice = Math.min(atkDice, maxAtk);
-    defDice = Math.min(defDice, maxDef);
+    defDice = defenderPicks ? Math.min(defDice, maxDef) : maxDef;
 
     document.getElementById("atk-summary").textContent =
         `${TERR_MAP[attackFrom].name} (${atkTroops}) → ${TERR_MAP[attackTo].name} (${defTroops})`;
@@ -1521,6 +1534,8 @@ function openCardModal(forced = false) {
 
     document.getElementById("card-modal-sub").textContent = sub;
     document.getElementById("card-modal-trade").disabled = true;
+    // A forced 5+ card trade must not be cancellable
+    document.getElementById("card-modal-cancel").style.display = forced ? "none" : "";
 
     const handEl = document.getElementById("card-hand-display");
     handEl.innerHTML = "";
@@ -1808,8 +1823,10 @@ function aiDraftPhase() {
 
     let i = 0;
     const placeNext = () => {
+        aiTimeout = null; // fired — re-arm the watchdog
         if (i >= placementQueue.length) {
             aiTimeout = setTimeout(() => {
+                aiTimeout = null;
                 startAttackPhase();
                 aiAttackPhase();
             }, 3000); // SLOWED PACE
@@ -1862,7 +1879,7 @@ function aiAttackPhase() {
     }
 
     if (viable.length === 0) {
-        aiTimeout = setTimeout(() => { startFortifyPhase(); }, 2500); // SLOWED PACE
+        aiTimeout = setTimeout(() => { aiTimeout = null; startFortifyPhase(); }, 2500); // SLOWED PACE
         return;
     }
 
@@ -1886,14 +1903,14 @@ function aiAttackPhase() {
     document.getElementById("atk-from-name").textContent = TERR_MAP[attackFrom].name;
     document.getElementById("atk-to-name").textContent   = TERR_MAP[attackTo].name;
 
-    aiTimeout = setTimeout(() => { executeAttack(); }, 2500); // SLOWED PACE
+    aiTimeout = setTimeout(() => { aiTimeout = null; executeAttack(); }, 2500); // SLOWED PACE
 }
 
 function aiFortify() {
     if (gamePhase !== "fortify" || !players[currentTurn].isAI || (gameMode === "online" && !isHost)) return;
 
     if (aiDifficulty === "easy" && Math.random() < 0.5) {
-         aiTimeout = setTimeout(endTurn, 2500); // SLOWED PACE
+         aiTimeout = setTimeout(() => { aiTimeout = null; endTurn(); }, 2500); // SLOWED PACE
          return;
     }
 
@@ -1926,7 +1943,7 @@ function aiFortify() {
         }
     }
 
-    aiTimeout = setTimeout(endTurn, 3000); // SLOWED PACE
+    aiTimeout = setTimeout(() => { aiTimeout = null; endTurn(); }, 3000); // SLOWED PACE
 }
 
 function aiAfterBattle(conquered, turnAtSchedule) {
@@ -1987,9 +2004,9 @@ function aiAfterBattle(conquered, turnAtSchedule) {
     );
 
     if (hasTargets) {
-        aiTimeout = setTimeout(aiAttackPhase, 2000); // SLOWED PACE
+        aiTimeout = setTimeout(() => { aiTimeout = null; aiAttackPhase(); }, 2000); // SLOWED PACE
     } else {
-        aiTimeout = setTimeout(() => startFortifyPhase(), 2500); // SLOWED PACE
+        aiTimeout = setTimeout(() => { aiTimeout = null; startFortifyPhase(); }, 2500); // SLOWED PACE
     }
 }
 
@@ -2499,6 +2516,13 @@ function listenToRoom() {
 // ── LEAVE / DISCONNECT RECOVERY ───────────────
 function exitOnlineToLocal(msg) {
     if (roomListener) { try { roomListener(); } catch (e) {} roomListener = null; }
+    if (window.SystemMatch) {
+        // Blank stale seats first so a joiner's cleanup()/unload can't write a
+        // seat-release into the deleted room and recreate it as a ghost node.
+        // The host's cleanup() also deletes the room on the abandoned path.
+        if (!isHost) SystemMatch.setSeats([]);
+        SystemMatch.cleanup();
+    }
     SystemUI.stopChat(); chatStarted = false;
     currentRoomId = null;
     onlineGameStarted = false;
@@ -2589,7 +2613,7 @@ function syncFromFirebase(stateJson) {
         setsTraded   = state.setsTraded || 0;
         currentTurn  = state.currentTurn;
         gamePhase    = state.gamePhase;
-        setupRemaining = state.setupRemaining || 0;
+        setupRemaining = state.setupRemaining || [];
         draftRemaining = state.draftRemaining || 0;
         cardDeck     = state.cardDeck || [];
         
@@ -2625,7 +2649,7 @@ function syncFromFirebase(stateJson) {
 
         if (gamePhase === "setup") {
             document.getElementById("draft-block").classList.remove("hidden");
-            document.getElementById("draft-count").textContent = setupRemaining;
+            document.getElementById("draft-count").textContent = setupRemaining[currentTurn] ?? 0;
         } else if (gamePhase === "draft") {
             document.getElementById("draft-block").classList.remove("hidden");
             document.getElementById("draft-count").textContent = draftRemaining;

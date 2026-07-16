@@ -151,7 +151,7 @@ function getAdjacentRooms(r, c) {
     const dirs = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
     const rooms = [];
     for (const [nr, nc] of dirs) {
-        if (nr < 0 || nr >= 24 || nc < 0 || nr >= 24) continue;
+        if (nr < 0 || nr >= 24 || nc < 0 || nc >= 24) continue;
         const t = BOARD_MAP[nr][nc];
         if (isRoomId(t) && !rooms.includes(t)) rooms.push(t);
     }
@@ -516,6 +516,7 @@ function initGame(count, roomData) {
     notesData  = {};
     gameOverHandled  = false;
     suggestionResult = null;
+    aiSuspectsSeen = {}; aiWeaponsSeen = {}; aiRoomsSeen = {};
 
     // Build player list.
     // Online (host only): every seat that a real player joined is human —
@@ -618,6 +619,7 @@ function initGameFromState(data) {
     buildCardInfo();
     gameOverHandled  = false;
     suggestionResult = null;
+    aiSuspectsSeen = {}; aiWeaponsSeen = {}; aiRoomsSeen = {};
     stateSeq         = state.seq || 0;
     seenAnnounceTs   = (state.announceMsg && state.announceMsg.ts) || 0;
     seenResultTs     = (state.suggestionResult && state.suggestionResult.ts) || 0;
@@ -712,6 +714,7 @@ function rollDice() {
 }
 
 function endTurn() {
+    if (gamePhase === "gameover") return;
     clearHighlights();
     reachableSet.clear();
     gamePhase = "rolling";
@@ -1218,7 +1221,7 @@ function resolveAccusation(playerIdx, suspectId, weaponId, roomId) {
             </p>
         `;
         resultModalCallback = () => {
-            endTurn();
+            if (gamePhase !== "gameover") endTurn();
         };
         modal.classList.remove("hidden");
 
@@ -1266,8 +1269,8 @@ function endGame(winnerIdx) {
         });
     }
 
-    // AUDIT: Safely track wins/losses via OS 2.0
-    if (typeof SystemStats !== 'undefined') {
+    // AUDIT: Safely track wins/losses via OS 2.0 (pass-and-play doesn't count)
+    if (typeof SystemStats !== 'undefined' && gameMode !== "hotseat") {
         if (winnerIdx === myPlayerIndex) {
             SystemStats.recordWin("clue", 0);
         } else {
@@ -1493,7 +1496,8 @@ function showAnnounceModal(title, body) {
     document.getElementById("result-modal-title").textContent = title;
     document.getElementById("result-modal-body").innerHTML =
         `<p style="text-align:center;color:var(--parchment);margin:12px 0;">${body}</p>`;
-    resultModalCallback = null;
+    // Keep any pending callback (e.g. "Card Shown" OK) — nulling it here would
+    // discard the only step that advances gamePhase out of "showing".
     document.getElementById("result-modal").classList.remove("hidden");
 }
 

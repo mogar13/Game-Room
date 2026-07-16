@@ -28,9 +28,10 @@ let myColor       = null;
 let currentRoomId = null;
 let roomListener  = null;
 let chatStarted   = false;
-let seats         = []; 
-let myId          = 1; 
-let isHost        = true; 
+let seats         = [];
+let myId          = 1;
+let isHost        = true;
+let onlineBuyInPaid = false; // one-shot: charge the buy-in once per online round
 
 // =============================================
 // SYSTEM UI INIT
@@ -728,6 +729,7 @@ function endGame(winner) {
         title = playerWon ? '🏆 You Win!' : '💀 You Lose';
         msg   = playerWon ? `You win $${WIN_PAY}!` : 'Better luck next time.';
         if (playerWon) { SystemUI.money += WIN_PAY; SystemUI.updateMoneyDisplay(); }
+        onlineBuyInPaid = false; // re-arm the buy-in for a PLAY AGAIN round
         SystemUI.playSound(playerWon ? 'win' : 'lose');
         
         // AUDIT: Safely track online wins/losses
@@ -779,23 +781,24 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1; myColor = "red"; chatStarted = false;
+        onlineBuyInPaid = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; myId = 2; myColor = "black"; chatStarted = false;
+        onlineBuyInPaid = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
     onLeave: () => {
-        gameMode = "ai";
         document.getElementById("sys-chk-mode").value = "ai";
         document.getElementById('sys-chk-diff').parentElement.style.display = '';
-        localStorage.setItem("chess_mode", "ai");
         myId = 1;
         isHost = true;
         chatStarted = false;
+        currentRoomId = null;
         if (roomListener) { roomListener(); roomListener = null; }
         resetGame();
     },
@@ -814,12 +817,14 @@ SystemMatch.setup({
         }
     },
     onClose: () => {
-        if (gameMode === "online" && !gameActive) {
-            gameMode = "ai";
+        // Read the mode from the dropdown — there is no `gameMode` variable in checkers.
+        const mode = document.getElementById('sys-chk-mode').value;
+        if (mode === "online" && !gameActive) {
             document.getElementById("sys-chk-mode").value = "ai";
             document.getElementById('sys-chk-diff').parentElement.style.display = '';
             myId = 1;
             isHost = true;
+            currentRoomId = null;
             if (roomListener) { roomListener(); roomListener = null; }
             resetGame();
         }
@@ -852,6 +857,14 @@ function listenToRoom() {
         }
 
         seats = data.seats || [];
+        // Joiner tab-close releases seat 2 back to 'open'; mid-game the host flips
+        // it to an AI so the match can finish instead of stalling forever.
+        if (isHost && gameActive && data.status === 'playing' && seats[1] && seats[1].type === 'open') {
+            seats[1] = { type: 'ai', name: 'AI (takeover)' };
+            SystemMatch.setSeats(seats);
+            window.dbUpdate(window.dbRef(window.db, `checkers_rooms/${currentRoomId}`), { seats: seats });
+            showToast('Opponent Left', 'The AI took over their pieces.');
+        }
         SystemUI.v2Lobby.renderSeats(seats);
 
         if (data.status === 'playing' && !onlineGameStarted) {
@@ -869,9 +882,15 @@ function listenToRoom() {
                 Array.from({ length: 8 }, (_, c) => (data.board[r] && data.board[r][c]) ? data.board[r][c] : null)
             );
             currentTurn   = data.currentTurn;
-            multiJumpPiece = null;
+            // Restore the multi-jump lock from the pushed state — hard-nulling it
+            // here let the mover's own echo break the same-piece chain mid multi-jump.
+            multiJumpPiece = data.chainPiece || null;
             selectedCell   = null;
             highlightMoves = [];
+            if (multiJumpPiece && currentTurn === myColor) {
+                selectedCell   = { r: multiJumpPiece.r, c: multiJumpPiece.c };
+                highlightMoves = getMovesForPiece(multiJumpPiece.r, multiJumpPiece.c, board).jumps;
+            }
 
             if (data.winner) {
                 renderBoard();
@@ -882,6 +901,15 @@ function listenToRoom() {
                     endGame(data.winner);
                 }
                 return;
+            }
+
+            // Charge the buy-in once per online round on BOTH clients (mirrors the
+            // local-mode deduction so the winner's WIN_PAY isn't minted from nothing).
+            if (!onlineBuyInPaid) {
+                onlineBuyInPaid = true;
+                SystemUI.money -= BUY_IN;
+                SystemUI.updateMoneyDisplay();
+                if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("checkers");
             }
 
             gameActive    = true;
@@ -910,6 +938,7 @@ function pushToFirebase(winner) {
     const payload = {
         board:       board,
         currentTurn: currentTurn,
+        chainPiece:  multiJumpPiece || null, // multi-jump anchor — survives the echo
         status:      'playing',
         seats:       seats,
         winner:      winner || null

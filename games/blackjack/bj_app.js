@@ -383,7 +383,6 @@ function disableActionButtons() {
     document.getElementById("hit-btn").disabled = true;
     document.getElementById("stand-btn").disabled = true;
     document.getElementById("double-btn").disabled = true;
-    document.getElementById("split-btn").disabled = true;
     document.getElementById("insurance-btn").classList.add("hidden");
 }
 
@@ -522,8 +521,11 @@ function handleDealerTurn() {
   dealerTurnRunning = true;
   gamePhase = "dealerTurn";
   if (gameMode === "online") pushGameState();
-  renderGame(); 
-  const allDone = playerStatus.every(s => s === "busted" || s === "blackjack" || s === "inactive");
+  renderGame();
+  // Only judge the seats actually in play — phantom trailing 'active' entries
+  // would otherwise force the dealer to draw even when every real player busted.
+  const activeCount = gameMode === "online" ? seats.length : lobbyPlayerCount;
+  const allDone = playerStatus.slice(0, activeCount).every(s => s === "busted" || s === "blackjack" || s === "inactive");
   const difficultyLimit = Number(savedDifficulty);
   function playDealerAction() {
       let dealerScore = calculateScore(dealerHand);
@@ -571,7 +573,7 @@ function resolveLocalResults() {
     if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", bet * 2.5);
     if (typeof SystemUI.unlockAchievement !== 'undefined') SystemUI.unlockAchievement("blackjack_hand");
   } else if (dScore > 21 || pScore > dScore) {
-    title = "You Win!"; message = `Beat the dealer! Won $${bet * 2}!`;
+    title = "You Win!"; message = `Beat the dealer! Won $${bet}!`;
     SystemUI.money += (bet * 2); winStreak++; SystemUI.playSound('win');
     if (typeof SystemStats !== 'undefined') SystemStats.recordWin("blackjack", bet * 2);
   } else if (dScore > pScore || (dealerHasBlackjack && !playerHasBlackjack)) {
@@ -840,6 +842,23 @@ function listenToRoom() {
             return;
         }
         seats = data.seats || [];
+        // A joiner tab-close releases their seat back to 'open'; mid-hand the host
+        // flips it to an AI so the round can finish instead of stalling at that seat.
+        if (isHost && (gamePhase === "dealing" || gamePhase === "playing" || gamePhase === "dealerTurn")) {
+            let tookOver = false;
+            for (let i = 1; i < seats.length; i++) {
+                if (seats[i] && seats[i].type === "open") {
+                    seats[i] = { type: "ai", name: "AI (takeover)" };
+                    tookOver = true;
+                    if (gamePhase === "playing" && activeSeat === i) setTimeout(playAiTurn, 1000);
+                }
+            }
+            if (tookOver) {
+                SystemMatch.setSeats(seats);
+                window.dbUpdate(window.dbRef(window.db, 'bj_rooms/' + currentRoomId), { seats: seats });
+                showToast("Player Left", "A player left — the AI took over their seat.");
+            }
+        }
         SystemUI.v2Lobby.renderSeats(seats);
         if(data.status==="playing" && !onlineGameStarted){
             onlineGameStarted = true; SystemUI.v2Lobby.hide();
