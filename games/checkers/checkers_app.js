@@ -76,6 +76,8 @@ document.getElementById('sys-chk-mode').addEventListener('change', function () {
         SystemUI.stopChat();
         chatStarted = false;
         SystemUI.v2Lobby.hide();
+        // Tear down hosted room / joined seat so it can't ghost in Firebase
+        if (window.SystemMatch) SystemMatch.cleanup();
         myId = 1;
         isHost = true;
         resetGame();

@@ -61,6 +61,8 @@ setTimeout(() => {
                 chatStarted = false;
                 isHost = true;
                 if (roomListener) { roomListener(); roomListener = null; }
+                // Tear down hosted room / joined seat so it can't ghost in Firebase
+                if (window.SystemMatch) SystemMatch.cleanup();
                 restartGame();
             }
         });
