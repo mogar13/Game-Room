@@ -1328,26 +1328,40 @@ function applyFilters() {
 
 if(searchInput) searchInput.addEventListener('input', applyFilters);
 
-// Chrome ignores autocomplete="off" when it has saved credentials for the
-// site and autofills the username into any input it mis-reads as a login
-// field — which blanked the whole game grid. The search box must always
-// start empty: wipe whatever the browser injected on load, on bfcache
-// restore (returning to the hub via Back), and on tab re-focus shortly
-// after load. Never fires once the user has actually typed.
-let userHasTypedInSearch = false;
+// Chrome's password manager force-fills the saved username into the search
+// box (it mis-reads it as a login field and ignores autocomplete="off"),
+// which blanked the whole game grid. Two-layer defense:
+//
+// 1. The input ships with the readonly attribute (see index.html) — Chrome
+//    NEVER autofills a readonly field. We lift readonly the moment the user
+//    actually interacts with it, so typing is unaffected.
+// 2. Belt-and-braces wipe of any value that still lands without the user
+//    having touched the field: on load, on bfcache restore (Back button),
+//    and for the first seconds after load.
+let userTouchedSearch = false;
 if (searchInput) {
-    searchInput.addEventListener('keydown', () => { userHasTypedInSearch = true; });
+    const unlockSearch = () => {
+        userTouchedSearch = true;
+        searchInput.removeAttribute('readonly');
+    };
+    searchInput.addEventListener('pointerdown', unlockSearch);
+    searchInput.addEventListener('touchstart', unlockSearch, { passive: true });
+    searchInput.addEventListener('focus', unlockSearch);
+    searchInput.addEventListener('keydown', unlockSearch);
+
     const wipeAutofill = () => {
-        if (!userHasTypedInSearch && searchInput.value !== '') {
+        if (!userTouchedSearch && searchInput.value !== '') {
             searchInput.value = '';
             applyFilters();
         }
     };
-    window.addEventListener('pageshow', wipeAutofill);
-    // Autofill can land after pageshow — sweep a few times in the first second
-    setTimeout(wipeAutofill, 250);
-    setTimeout(wipeAutofill, 600);
-    setTimeout(wipeAutofill, 1200);
+    window.addEventListener('pageshow', () => {
+        // bfcache restores re-lock the field: it must always come back inert
+        if (!userTouchedSearch) searchInput.setAttribute('readonly', '');
+        wipeAutofill();
+    });
+    // Autofill can land late — sweep repeatedly over the first seconds
+    [150, 400, 800, 1500, 3000].forEach(ms => setTimeout(wipeAutofill, ms));
 }
 
 catBtns.forEach(btn => {
