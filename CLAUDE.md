@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-"The Game Shack" — a static, single-page web arcade/casino hub (PWA) hosting 31 mini-games. Pure browser app: vanilla HTML/CSS/JS, no build step, no package manager, no tests. Deploys as static files to GitHub Pages from `main` at the repo root (live at https://mogar13.github.io/Game-Room/). Persistence is split between `localStorage` (offline-first) and Firebase (Authentication for accounts; Realtime Database for player records, multiplayer rooms, and chat).
+"The Game Shack" — a static, single-page web arcade/casino hub (PWA) hosting 31 mini-games. Pure browser app: vanilla HTML/CSS/JS, no build step, no package manager, no tests. Deploys as static files to GitHub Pages from `main` at the repo root (live at https://mogar13.github.io/Game-Shack/). Persistence is split between `localStorage` (offline-first) and Firebase (Authentication for accounts; Realtime Database for player records, multiplayer rooms, and chat).
 
 A React + TypeScript migration is planned but not started — see [plans/MIGRATION_PLAN.md](plans/MIGRATION_PLAN.md). Until it begins, the conventions below still hold.
 

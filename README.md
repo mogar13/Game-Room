@@ -4,7 +4,7 @@ A browser arcade hosting 31 mini-games — board games, card games, and casino t
 single hub with one shared account, bankroll, XP/level system, cosmetics store, and live
 multiplayer.
 
-**Play:** https://mogar13.github.io/Game-Room/
+**Play:** https://mogar13.github.io/Game-Shack/
 
 No build step, no package manager, no dependencies to install. The whole thing is static
 HTML/CSS/JS served from the repo root, with Firebase providing authentication, multiplayer rooms,
