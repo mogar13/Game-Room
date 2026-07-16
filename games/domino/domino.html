@@ -14,7 +14,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, update, get, child } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
+    import { getDatabase, ref, set, onValue, update, get, child, remove } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-database.js";
     
     const firebaseConfig = {
       apiKey: "AIzaSyAaQ95UV63kEN4DD-HT35G9VNJVnVw9XFM",
@@ -36,6 +36,7 @@
     window.dbUpdate = update;
     window.dbGet = get;
     window.dbChild = child;
+    window.dbRemove = remove;
   </script>
 </head>
 <body>
