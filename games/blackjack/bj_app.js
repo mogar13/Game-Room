@@ -56,6 +56,10 @@ let isHost        = true;
 
 let lastPushTime = 0;
 let lastSyncTime = 0;
+let stateSeq = 0;              // monotonic state counter — wall clocks are not comparable across machines
+let betPaid = false;           // joiner has paid their own bet for the current hand
+let payoutResolved = false;    // this client has resolved/paid its own seat for the current hand
+let dealerTurnRunning = false; // host guard: dealer loop must not double-start
 
 // --- Multiplayer State Arrays (Expanded to 4) ---
 let playerHands  = [[], [], [], []];
@@ -153,15 +157,25 @@ SystemUI.setupBetting("os-betting-rack", {
 
         currentBets[myId - 1] += val;
         updateBetUI();
-        if (gameMode === "online") pushGameState();
+        // Write only OUR seat's bet — pushing the whole gameState here let two
+        // players betting at once clobber each other's bets.
+        if (gameMode === "online") pushMyBet();
     },
     onClear: function() {
         if (gamePhase !== "betting") return;
         currentBets[myId - 1] = 0;
         updateBetUI();
-        if (gameMode === "online") pushGameState();
+        if (gameMode === "online") pushMyBet();
     }
 });
+
+// Targeted per-seat bet write into a small side map (bets/seatN), merged on receive.
+function pushMyBet() {
+    if (gameMode !== "online" || !currentRoomId || !window.db) return;
+    const update = {};
+    update['seat' + (myId - 1)] = currentBets[myId - 1];
+    window.dbUpdate(window.dbRef(window.db, 'bj_rooms/' + currentRoomId + '/bets'), update);
+}
 
 function updateBetUI() {
     SystemUI.updateBetDisplay(currentBets[myId - 1]);
@@ -250,6 +264,9 @@ function resetTableForBetting() {
   dealerHand = [];
   playerStatus = ["active", "active", "active", "active"];
   activeSeat = 0;
+  betPaid = false;
+  payoutResolved = false;
+  dealerTurnRunning = false;
   
   updateBetUI(); 
   updateStreakUI();
@@ -393,10 +410,16 @@ function processTurn() {
     }
     if (activeSeat >= activeCount) {
         if (isHost) handleDealerTurn();
+        else if (gameMode === "online") {
+            // Non-host can't run the dealer — push the phase so the host picks it up.
+            gamePhase = "dealerTurn";
+            pushGameState();
+        }
         return;
     }
     updateTurnUI();
-    if (gameMode === "online" && isHost) pushGameState();
+    // Any online client that advanced the turn must push it, or the other side never sees it.
+    if (gameMode === "online") pushGameState();
     if (isHost) {
         const isBot = (gameMode === "online") ? seats[activeSeat]?.type === "ai" : (activeSeat > 0);
         if (isBot) {
@@ -480,7 +503,9 @@ document.getElementById("insurance-btn").addEventListener("click", () => {
     showToast("Insurance Paid!", `Dealer has Blackjack. You won $${insBet * 2}.`);
     setTimeout(() => {
         gamePhase = "dealerTurn";
-        if (gameMode === "online" && isHost) pushGameState();
+        // Push from the acting client even when it's not the host — otherwise a
+        // non-host insurance vs dealer blackjack deadlocks (seq ordering makes this safe).
+        if (gameMode === "online") pushGameState();
         if (isHost) handleDealerTurn();
     }, 2500);
   } else {
@@ -491,6 +516,8 @@ document.getElementById("insurance-btn").addEventListener("click", () => {
 
 function handleDealerTurn() {
   if (!isHost) return;
+  if (dealerTurnRunning) return; // may be triggered by both processTurn and synced 'dealerTurn' phase
+  dealerTurnRunning = true;
   gamePhase = "dealerTurn";
   if (gameMode === "online") pushGameState();
   renderGame(); 
@@ -512,8 +539,19 @@ function handleDealerTurn() {
 
 function determineWinners() {
   gamePhase = "payout";
+  dealerTurnRunning = false;
   disableActionButtons();
-  renderGame(); 
+  renderGame();
+  resolveLocalResults();
+  if (gameMode === "online") pushGameState();
+}
+
+// Resolves THIS client's own seat only: outcome toast + local payout + stats.
+// Host calls it from determineWinners; non-hosts call it when the synced phase
+// hits 'payout'. Each seat is paid on its own client, so nobody is paid twice.
+function resolveLocalResults() {
+  if (payoutResolved) return;
+  payoutResolved = true;
   const dScore = calculateScore(dealerHand);
   const dealerHasBlackjack = (dScore === 21 && dealerHand.length === 2);
   const myIdx = myId - 1;
@@ -545,7 +583,6 @@ function determineWinners() {
   SystemUI.updateMoneyDisplay();
   localStorage.setItem("blackjack_streak", winStreak);
   updateStreakUI();
-  if (gameMode === "online") pushGameState();
   setTimeout(() => { showToast(title, message, true); }, 1000);
 }
 
@@ -726,12 +763,16 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+        betPaid = false; payoutResolved = false; dealerTurnRunning = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; chatStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+        betPaid = false; payoutResolved = false; dealerTurnRunning = false;
         myId = SystemMatch.getMyId();
         seats = SystemMatch.getSeats();
         // Blackjack auto-starts on join (matches original behavior).
@@ -741,6 +782,10 @@ SystemMatch.setup({
         listenToRoom();
     },
     onLeave: () => {
+        if (roomListener) { roomListener(); roomListener = null; } // detach or the dead room keeps syncing
+        currentRoomId = null;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+        betPaid = false; payoutResolved = false; dealerTurnRunning = false;
         gameMode = "ai"; myId = 1; isHost = true;
         document.getElementById("sys-bj-mode").value = "ai";
         localStorage.setItem("blackjack_mode", "ai");
@@ -762,24 +807,61 @@ SystemMatch.setup({
     }
 });
 
+// Exit online mode back to local play (host closed the room).
+function exitOnlineToLocal(hostGone) {
+    if (roomListener) { roomListener(); roomListener = null; }
+    if (hostGone) SystemMatch._roomId = null; // node already deleted — stop cleanup() writing a ghost room
+    SystemMatch.cleanup(); // stops chat, resets match state
+    chatStarted = false;
+    currentRoomId = null;
+    stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+    betPaid = false; payoutResolved = false; dealerTurnRunning = false;
+    gameMode = "ai"; myId = 1; isHost = true;
+    const modeEl = document.getElementById("sys-bj-mode");
+    if (modeEl) modeEl.value = "ai";
+    localStorage.setItem("blackjack_mode", "ai");
+    syncPCountVisibility();
+    SystemUI.v2Lobby.hide();
+    resetTableForBetting();
+}
+
 function listenToRoom() {
     let onlineGameStarted = false;
     roomListener = window.dbOnValue(window.dbRef(window.db,'bj_rooms/'+currentRoomId), snap=>{
-        const data=snap.val(); if(!data) return;
+        const data=snap.val();
+        if(!data){
+            // Host left — the room node is deleted. Don't leave the joiner frozen.
+            if (!isHost) {
+                showToast("Host Left", "The host closed the room.");
+                exitOnlineToLocal(true);
+            }
+            return;
+        }
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
         if(data.status==="playing" && !onlineGameStarted){
             onlineGameStarted = true; SystemUI.v2Lobby.hide();
             if(!chatStarted){ chatStarted=true; SystemUI.startChat(currentRoomId,SystemUI.getPlayerName()); }
         }
+        // Merge the per-seat bets map (only other seats — ours is authoritative locally).
+        if (data.bets && gamePhase === "betting") {
+            for (let i = 0; i < 4; i++) {
+                if (i === myId - 1) continue;
+                const v = data.bets['seat' + i];
+                if (typeof v === "number") currentBets[i] = v;
+            }
+            renderTableChips();
+        }
         if (onlineGameStarted && data.gameState) syncOnlineState(data.gameState);
     });
+    SystemMatch.setListener(roomListener);
 }
 
 function pushGameState() {
-    if (gameMode !== "online" || !window.db) return;
+    if (gameMode !== "online" || !window.db || !currentRoomId) return;
     const now = Date.now();
     lastPushTime = now;
+    stateSeq++; // monotonic shared counter — receivers fast-forward to the highest seen
     window.dbUpdate(window.dbRef(window.db, 'bj_rooms/' + currentRoomId), {
         gameState: JSON.stringify({
             gamePhase: gamePhase,
@@ -788,6 +870,8 @@ function pushGameState() {
             dealerHand: dealerHand,
             currentBets: currentBets,
             playerStatus: playerStatus,
+            deck: deck, // shared shoe — without it a joiner's HIT pops from an empty local deck
+            seq: stateSeq,
             ts: now,
             pusher: myId
         })
@@ -797,25 +881,57 @@ function pushGameState() {
 function syncOnlineState(stateJson) {
     try {
         const data = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
-        if (!data.ts || (data.pusher === myId && data.ts === lastPushTime) || data.ts <= lastSyncTime) return;
-        lastSyncTime = data.ts;
+        // Order by monotonic seq, not wall clocks — Date.now() isn't comparable across machines.
+        if (data.seq) {
+            if (data.pusher === myId && data.seq === stateSeq) return; // own echo
+            if (data.seq < stateSeq) return;                           // stale
+            stateSeq = data.seq;
+        } else {
+            // Legacy payload without seq: only suppress our own echo.
+            if (!data.ts || (data.pusher === myId && data.ts === lastPushTime)) return;
+        }
+        lastSyncTime = data.ts || lastSyncTime;
+        const prevPhase = gamePhase;
         gamePhase = data.gamePhase;
         activeSeat = data.activeSeat;
         playerHands = data.playerHands || [[], [], [], []];
+        for (let i = 0; i < 4; i++) { if (!playerHands[i]) playerHands[i] = []; }
         dealerHand = data.dealerHand || [];
         currentBets = data.currentBets || [0, 0, 0, 0];
         playerStatus = data.playerStatus || ["active", "active", "active", "active"];
+        if (data.deck) deck = data.deck;
         if (gamePhase === "betting") {
+            betPaid = false;
+            payoutResolved = false;
+            dealerTurnRunning = false;
             document.getElementById("playing-controls")?.classList.add("hidden");
             document.getElementById("betting-controls")?.classList.remove("hidden");
         } else {
             document.getElementById("betting-controls")?.classList.add("hidden");
             document.getElementById("playing-controls")?.classList.remove("hidden");
         }
+        // Joiner economy: pay our own bet once, when the hand starts (mirrors the host's
+        // deduction on DEAL — otherwise payouts credit a bet that was never placed).
+        if (!isHost && !betPaid && prevPhase === "betting" && gamePhase !== "betting" && gamePhase !== "payout") {
+            betPaid = true;
+            const myBet = currentBets[myId - 1] || 0;
+            if (myBet > 0) { SystemUI.money -= myBet; SystemUI.updateMoneyDisplay(); }
+            if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("blackjack");
+        }
         renderGame(); updateBetUI(); updateTurnUI();
+        // Non-host entering 'payout': run the local results pass for our own seat
+        // (host already ran its own inside determineWinners).
+        if (!isHost && gamePhase === "payout" && !payoutResolved) {
+            disableActionButtons();
+            resolveLocalResults();
+        }
         if (isHost && gamePhase === "playing") {
             const isBot = seats[activeSeat]?.type === "ai";
             if (isBot) playAiTurn();
+        }
+        // Host picks up a non-host-pushed 'dealerTurn' (insurance path / joiner finished last).
+        if (isHost && gamePhase === "dealerTurn") {
+            handleDealerTurn(); // internally guarded against re-entry
         }
     } catch (e) { console.error("Sync Error:", e); }
 }

@@ -46,9 +46,15 @@ const DAMAGE = {
     rightLeg: { normal: 11, explosive: 17, bouncy:  9 }
 };
 
-// ── CANVAS ───────────────────────────────────
+// ── CANVAS / VIRTUAL COORDINATES ─────────────
+// ALL game logic runs in a fixed virtual space so that two players with
+// different window sizes simulate the exact same battlefield. (Previously
+// physics ran in raw canvas pixels: the wall, player positions and arrow
+// trajectories differed per client, so hits/misses desynced constantly.)
+const VW = 1280, VH = 720;
 let canvas, ctx;
-let W = 0, H = 0, groundY = 0;
+let W = VW, H = VH, groundY = VH * 0.78;
+let viewScale = 1, viewOffX = 0, viewOffY = 0, viewDpr = 1;
 
 // ── GAME STATE ───────────────────────────────
 let gameActive = false;
@@ -59,8 +65,8 @@ let wind = 0;
 let lastTime = 0;
 
 let players = [
-    { hp: 100, name: 'You',      x: 0, shield: false, arrows: { normal: 99, explosive: 2, bouncy: 2 } },
-    { hp: 100, name: 'Opponent', x: 0, shield: false, arrows: { normal: 99, explosive: 2, bouncy: 2 } }
+    { hp: 100, name: 'You',      x: VW * 0.20, shield: false, arrows: { normal: 99, explosive: 2, bouncy: 2 } },
+    { hp: 100, name: 'Opponent', x: VW * 0.80, shield: false, arrows: { normal: 99, explosive: 2, bouncy: 2 } }
 ];
 
 let selectedArrow = 'normal';
@@ -72,13 +78,15 @@ let msgText = '';
 let msgTimer = 0;
 
 // ── MOVEMENT & WALL STATE ────────────────────
-let playerBaseX = [0, 0];   // home positions, set in resizeCanvas/resetGame
+const playerBaseX = [VW * 0.20, VW * 0.80];  // home positions (virtual units)
 let sessionScore = [0, 0];  // [myWins, opponentWins] for this session
 let stuckArrow = null;      // { x, y, angle } shown briefly after a miss
 let onlineSettings = { wind: 'on_medium', move: 'off', wall: 'off' }; // host-authoritative settings for online
 let moveTime = 0;           // accumulates dt for oscillation
+let gameEnded = false;      // true once a winner has been announced this round
+let pendingBowState = null; // gameState deferred while a local arrow is in flight
 let wallEnabled = false;
-let wallX = 0;
+let wallX = VW / 2;
 const WALL_W = 14;
 const WALL_H_RATIO = 1.45;  // taller than the player (~100px player height)
 
@@ -219,6 +227,11 @@ function initBowman() {
     document.getElementById('start-btn').addEventListener('click', startGame);
     document.getElementById('play-again-btn').addEventListener('click', () => {
         document.getElementById('result-modal').classList.add('hidden');
+        if (gameMode === 'online' && !isHost) {
+            // Host owns the rematch; the fresh state push revives us.
+            showMsg('⏳ Waiting for host to start the rematch…', 4);
+            return;
+        }
         if (gameMode === 'online' && isHost && currentRoomId) {
             window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), { status: 'playing', ts: Date.now() });
         }
@@ -231,29 +244,28 @@ function initBowman() {
 
 function resizeCanvas() {
     const wrapper = document.getElementById('canvas-wrapper');
-    W = wrapper.clientWidth;
-    H = wrapper.clientHeight;
-    
-    // Mobile Fix: Scale canvas for High-DPI (Retina) screens so it isn't blurry
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
-    canvas.style.width = W + 'px';
-    canvas.style.height = H + 'px';
-    ctx.scale(dpr, dpr);
-    
-    groundY = H * 0.78;
-    playerBaseX[0] = W * 0.20;
-    playerBaseX[1] = W * 0.80;
-    players[0].x = playerBaseX[0];
-    players[1].x = playerBaseX[1];
-    wallX = W / 2;
+    const cssW = wrapper.clientWidth;
+    const cssH = wrapper.clientHeight;
+
+    // High-DPI backing store; game space stays the fixed VW×VH virtual world,
+    // letterbox-scaled to fit. Window size no longer affects the simulation.
+    viewDpr = window.devicePixelRatio || 1;
+    canvas.width  = cssW * viewDpr;
+    canvas.height = cssH * viewDpr;
+    canvas.style.width  = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    viewScale = Math.min(cssW / VW, cssH / VH);
+    viewOffX  = (cssW - VW * viewScale) / 2;
+    viewOffY  = (cssH - VH * viewScale) / 2;
     render();
 }
 
 // ── GAME FLOW ─────────────────────────────────
 function resetGame() {
     gameActive = false;
+    gameEnded = false;
+    pendingBowState = null;
+    physAccum = 0;
     isAnimating = false;
     activeTurn = 0;
     roundNum = 0;
@@ -359,29 +371,47 @@ function gameLoop(ts) {
     if (gameActive) requestAnimationFrame(gameLoop);
 }
 
+// Fixed-timestep physics so every client integrates the exact same
+// trajectory regardless of monitor refresh rate / frame hitches.
+const PHYS_STEP = 1 / 120;
+let physAccum = 0;
+
+function applyMovement(moveSetting) {
+    const speed   = moveSetting === 'fast' ? 2.8 : 1.2;
+    const maxDist = moveSetting === 'fast' ? 55  : 35;
+    // Player 0 oscillates toward/away from center, player 1 mirrors
+    players[0].x = playerBaseX[0] + Math.sin(moveTime * speed) * maxDist;
+    players[1].x = playerBaseX[1] - Math.sin(moveTime * speed) * maxDist;
+    // Keep away from wall if active
+    if (wallEnabled) {
+        const wallLeft = wallX - WALL_W / 2;
+        const wallRight = wallX + WALL_W / 2;
+        if (players[0].x > wallLeft - 30) players[0].x = wallLeft - 30;
+        if (players[1].x < wallRight + 30) players[1].x = wallRight + 30;
+    }
+}
+
 function update(dt) {
     if (msgTimer > 0) msgTimer -= dt;
     if (stuckArrow) { stuckArrow.timer -= dt; if (stuckArrow.timer <= 0) stuckArrow = null; }
 
-    // Player movement oscillation
     const moveSetting = getEffectiveSetting('move');
-    if (gameActive && moveSetting !== 'off') {
-        moveTime += dt;
-        const speed   = moveSetting === 'fast' ? 2.8 : 1.2;
-        const maxDist = moveSetting === 'fast' ? 55  : 35;
-        // Player 0 oscillates toward/away from center, player 1 mirrors
-        players[0].x = playerBaseX[0] + Math.sin(moveTime * speed) * maxDist;
-        players[1].x = playerBaseX[1] - Math.sin(moveTime * speed) * maxDist;
-        // Keep away from wall if active
-        if (wallEnabled) {
-            const wallLeft = wallX - WALL_W / 2;
-            const wallRight = wallX + WALL_W / 2;
-            if (players[0].x > wallLeft - 30) players[0].x = wallLeft - 30;
-            if (players[1].x < wallRight + 30) players[1].x = wallRight + 30;
-        }
-    }
+    const moving = gameActive && moveSetting !== 'off';
 
-    if (arrow) updateArrow(dt);
+    if (arrow) {
+        // While an arrow flies, advance movement + physics together in fixed
+        // steps: target position during flight is then identical on both
+        // clients (moveTime is synced at fire time via the shot action).
+        physAccum += dt;
+        while (physAccum >= PHYS_STEP && arrow) {
+            physAccum -= PHYS_STEP;
+            if (moving) { moveTime += PHYS_STEP; applyMovement(moveSetting); }
+            updateArrow(PHYS_STEP);
+        }
+    } else {
+        physAccum = 0;
+        if (moving) { moveTime += dt; applyMovement(moveSetting); }
+    }
 
     if (explosion) {
         explosion.radius += dt * 220;
@@ -524,6 +554,7 @@ function handleHit(hit, targetIdx) {
         } else {
             isAnimating = false;
             setTurnLabel();
+            flushPendingBowState();
         }
     }, 1600);
 }
@@ -543,6 +574,7 @@ function arrowMissed() {
         } else {
             isAnimating = false;
             setTurnLabel();
+            flushPendingBowState();
         }
     }, 1000);
 }
@@ -605,9 +637,19 @@ function endTurn() {
 
 function checkWin() {
     if (players[0].hp > 0 && players[1].hp > 0) return false;
-    gameActive = false;
+    // Host must broadcast the final HP state — without this push the joiner
+    // never learned the game ended and sat frozen at the end of every match.
+    if (gameMode === 'online' && isHost) pushGameState();
+    finishGame(players[0].hp > 0 ? 0 : 1);
+    return true;
+}
 
-    const winnerIdx = players[0].hp > 0 ? 0 : 1;
+function finishGame(winnerIdx) {
+    if (gameEnded) return;
+    gameEnded = true;
+    gameActive = false;
+    arrow = null; arrowTrail = []; isAnimating = false; aiming = false;
+
     const isMyWin = (gameMode === 'ai' && winnerIdx === 0) ||
                     (gameMode === 'online' && winnerIdx === myId - 1);
 
@@ -626,7 +668,6 @@ function checkWin() {
         document.getElementById('modal-msg').innerText = msg + `\n\nSession: ${sessionScore[0]} – ${sessionScore[1]}`;
         document.getElementById('result-modal').classList.remove('hidden');
     }, 900);
-    return true;
 }
 
 function setTurnLabel() {
@@ -648,16 +689,11 @@ function isMyActiveTurn() {
 
 function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
-    // Mobile Fix: Since we scaled the context, we just need the raw CSS coordinates relative to the rect
-    if (e.touches && e.touches.length > 0) {
-        return { 
-            x: e.touches[0].clientX - rect.left, 
-            y: e.touches[0].clientY - rect.top 
-        };
-    }
-    return { 
-        x: e.clientX - rect.left, 
-        y: e.clientY - rect.top 
+    const src = (e.touches && e.touches.length > 0) ? e.touches[0] : e;
+    // Map CSS pixels back into the virtual game space
+    return {
+        x: (src.clientX - rect.left - viewOffX) / viewScale,
+        y: (src.clientY - rect.top  - viewOffY) / viewScale
     };
 }
 
@@ -829,7 +865,12 @@ function simShot(sx, sy, angle, power) {
 // ── RENDERING ─────────────────────────────────
 function render() {
     if (!ctx || !W || !H) return;
-    ctx.clearRect(0, 0, W, H);
+    // Paint the full backing store (letterbox bars included), then draw the
+    // fixed virtual world through the view transform.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#05010f';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(viewDpr * viewScale, 0, 0, viewDpr * viewScale, viewDpr * viewOffX, viewDpr * viewOffY);
 
     drawBG();
     drawGround();
@@ -1414,6 +1455,10 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1;
+        gameMode = 'online';
+        const modeEl = document.getElementById('bw-mode');
+        if (modeEl) modeEl.value = 'online';
+        lastActionTs = 0; lastSyncTime = 0;
         players[0].name = SystemUI.getPlayerName();
         players[1].name = 'Opponent';
         listenToRoom();
@@ -1421,6 +1466,10 @@ SystemMatch.setup({
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; myId = 2;
+        gameMode = 'online';
+        const modeEl2 = document.getElementById('bw-mode');
+        if (modeEl2) modeEl2.value = 'online';
+        lastActionTs = 0; lastSyncTime = 0;
         const seats = SystemMatch.getSeats();
         players[0].name = (seats[0] && seats[0].name) || 'Player 1';
         players[1].name = SystemUI.getPlayerName();
@@ -1447,7 +1496,17 @@ SystemMatch.setup({
 function listenToRoom() {
     roomListener = window.dbOnValue(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), snap => {
         const data = snap.val();
-        if (!data) return;
+        if (!data) {
+            // Room deleted = host left. Tell the joiner instead of freezing.
+            if (!isHost && currentRoomId) opponentLeft('HOST LEFT THE GAME');
+            return;
+        }
+
+        // A departing joiner flags the room so the host isn't stranded.
+        if (data.status === 'abandoned' && isHost) {
+            opponentLeft('OPPONENT LEFT');
+            return;
+        }
 
         // Sync lobby settings to joiner before game starts
         if (data.lobbySettings && !isHost) {
@@ -1464,7 +1523,7 @@ function listenToRoom() {
             SystemUI.v2Lobby.hide();
             document.getElementById('action-zone').classList.remove('hidden');
             if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
-            if (isHost && !gameActive) {
+            if (isHost && !gameActive && !gameEnded) {
                 startGame();
             } else if (!isHost && data.gameState) {
                 applyGameState(data.gameState);
@@ -1473,16 +1532,48 @@ function listenToRoom() {
 
         if (data.playerAction && data.playerAction.ts !== lastActionTs) {
             lastActionTs = data.playerAction.ts;
-            if (data.playerAction.action === 'shot') {
+            if (data.playerAction.action === 'shot' && !gameEnded) {
                 const { shooterIdx, angle, power, arrowType } = data.playerAction;
+                if (typeof data.playerAction.moveTime === 'number') moveTime = data.playerAction.moveTime;
                 fireArrow(shooterIdx, angle, power, arrowType);
             }
         }
     });
 }
 
+// Shared "the other player is gone" recovery. The host turns the room back
+// into a joinable lobby; the joiner exits to the lobby setup screen.
+function opponentLeft(msg) {
+    showMsg('🚪 ' + msg, 4);
+    pendingBowState = null;
+    if (isHost && currentRoomId && window.db) {
+        resetGame();
+        const seats = [{ type: 'human', name: SystemUI.getPlayerName() }, { type: 'open', name: 'Open' }];
+        window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), {
+            status: 'waiting', seats, playerAction: null, gameState: null, ts: Date.now()
+        });
+        if (window.SystemMatch) SystemMatch.setSeats(seats);
+        document.getElementById('result-modal').classList.add('hidden');
+        SystemUI.v2Lobby.renderSeats(seats);
+        document.getElementById('v2-lobby-overlay').classList.remove('sys-hidden');
+        SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
+    } else {
+        if (roomListener) { roomListener(); roomListener = null; }
+        SystemUI.stopChat(); chatStarted = false;
+        currentRoomId = null; myId = 1; isHost = true;
+        lastActionTs = 0; lastSyncTime = 0;
+        gameMode = 'ai';
+        const modeEl = document.getElementById('bw-mode');
+        if (modeEl) modeEl.value = 'ai';
+        document.getElementById('result-modal').classList.add('hidden');
+        document.getElementById('action-zone').classList.remove('hidden');
+        resetGame();
+        SystemUI.v2Lobby.show();
+    }
+}
+
 function pushGameState() {
-    if (!isHost || gameMode !== 'online') return;
+    if (!isHost || gameMode !== 'online' || !currentRoomId) return;
     window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), {
         gameState: {
             p0hp: players[0].hp,   p1hp: players[1].hp,
@@ -1498,14 +1589,49 @@ function pushGameState() {
 }
 
 function sendShot(shooterIdx, angle, power, arrowType) {
+    if (!currentRoomId || !window.db) { fireArrow(shooterIdx, angle, power, arrowType); return; }
     window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), {
-        playerAction: { action: 'shot', shooterIdx, angle, power, arrowType, ts: Date.now() }
+        // moveTime rides along so both clients place moving targets
+        // identically while the arrow is in flight.
+        playerAction: { action: 'shot', shooterIdx, angle, power, arrowType, moveTime, ts: Date.now() }
     });
 }
 
+function flushPendingBowState() {
+    const s = pendingBowState;
+    pendingBowState = null;
+    if (s) applyGameState(s);
+}
+
+// A joiner closing the tab mid-game flags the room so the host isn't
+// silently stranded waiting for a shot that will never come.
+window.addEventListener('beforeunload', () => {
+    if (gameMode === 'online' && !isHost && currentRoomId && window.db && gameActive) {
+        try {
+            window.dbUpdate(window.dbRef(window.db, 'bowman_rooms/' + currentRoomId), { status: 'abandoned' });
+        } catch (e) {}
+    }
+});
+
 function applyGameState(s) {
     if (!s || s.ts <= lastSyncTime) return;
+
+    // Don't snap state while our local arrow is mid-flight — that's what made
+    // arrows visibly vanish. Defer and apply once the animation resolves
+    // (with a timeout fallback in case a throttled tab never resolves it).
+    if (arrow || isAnimating) {
+        pendingBowState = s;
+        setTimeout(flushPendingBowState, 4000);
+        return;
+    }
     lastSyncTime = s.ts;
+
+    // Rematch arriving after a finished round: clear the old result.
+    if (gameEnded && s.p0hp > 0 && s.p1hp > 0) {
+        gameEnded = false;
+        document.getElementById('result-modal').classList.add('hidden');
+        arrow = null; arrowTrail = []; explosion = null; isAnimating = false;
+    }
 
     players[0].hp = s.p0hp; players[1].hp = s.p1hp;
     players[0].shield = s.p0sh; players[1].shield = s.p1sh;
@@ -1531,7 +1657,13 @@ function applyGameState(s) {
     updateShieldIcon(1);
     setTurnLabel();
 
-    if (!gameActive) {
+    // Joiner-side end-of-game: the host's final push carries someone at 0 HP.
+    if (players[0].hp <= 0 || players[1].hp <= 0) {
+        finishGame(players[0].hp > 0 ? 0 : 1);
+        return;
+    }
+
+    if (!gameActive && !gameEnded) {
         gameActive = true;
         document.getElementById('pre-game-btns').classList.add('hidden');
         document.getElementById('in-game-controls').classList.remove('hidden');

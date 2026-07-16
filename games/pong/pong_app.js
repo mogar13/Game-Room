@@ -436,6 +436,13 @@ function endGame(winnerIdx) {
 }
 
 function onPlayAgain() {
+    // Joiner can't restart the match — resetting locally would fake a
+    // countdown against a dead ball. Wait for the host's status write, which
+    // the room listener turns into a real reset on both clients.
+    if (gameMode === 'online' && !isHost) {
+        document.getElementById('modal-msg').innerText = 'Waiting for host to restart…';
+        return;
+    }
     document.getElementById('result-modal').classList.add('hidden');
     if (gameMode === 'online' && isHost && currentRoomId) {
         window.dbUpdate(window.dbRef(window.db, 'pong_rooms/' + currentRoomId), {
@@ -733,12 +740,14 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1;
+        lastSyncTime = 0; lastPushTime = 0; lastPushedPaddleY = 0; // fresh room — drop stale timestamps
         playerNames[0] = SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'P1';
         listenToRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; myId = 2;
+        lastSyncTime = 0; lastPushTime = 0; lastPushedPaddleY = 0; // fresh room — drop stale timestamps
         const seats = SystemMatch.getSeats();
         playerNames[0] = (seats[0] && seats[0].name) || 'P1';
         playerNames[1] = SystemUI.getPlayerName ? SystemUI.getPlayerName() : 'P2';
@@ -760,7 +769,16 @@ SystemMatch.setup({
 function listenToRoom() {
     roomListener = window.dbOnValue(window.dbRef(window.db, 'pong_rooms/' + currentRoomId), snap => {
         const data = snap.val();
-        if (!data) return;
+        if (!data) {
+            // Room node removed — the host quit. Don't freeze the joiner.
+            if (currentRoomId && !isHost) exitOnlineMode('HOST LEFT THE GAME');
+            return;
+        }
+        if (data.status === 'abandoned') {
+            // Joiner closed their tab mid-game
+            if (currentRoomId && isHost) exitOnlineMode('OPPONENT LEFT THE GAME');
+            return;
+        }
 
         if (data.seats) {
             SystemUI.v2Lobby.renderSeats(data.seats);
@@ -785,14 +803,15 @@ function listenToRoom() {
             const s = data.fullState;
             if (s.ts > lastSyncTime) {
                 lastSyncTime = s.ts;
-                // Ball: set interpolation target
-                ballTarget.x  = s.bx;
-                ballTarget.y  = s.by;
-                ballTarget.vx = s.bvx;
-                ballTarget.vy = s.bvy;
+                // Ball: set interpolation target (wire values are fractions —
+                // scale by our own field size)
+                ballTarget.x  = s.bx * W;
+                ballTarget.y  = s.by * H;
+                ballTarget.vx = s.bvx * W;
+                ballTarget.vy = s.bvy * H;
                 // Sync ball directly if we're not playing yet
                 if (gamePhase !== 'playing') {
-                    ball.x = s.bx; ball.y = s.by;
+                    ball.x = s.bx * W; ball.y = s.by * H;
                 }
                 // Scores, phase, power-ups
                 paddles[0].score = s.s0;
@@ -811,7 +830,10 @@ function listenToRoom() {
                     countdownTimer = s.cdt || 1.0;
                 }
                 if (s.pus) {
-                    try { powerUps = JSON.parse(s.pus); } catch(e) {}
+                    try {
+                        powerUps = JSON.parse(s.pus).map(p =>
+                            Object.assign({}, p, { x: p.x * W, y: p.y * H }));
+                    } catch(e) {}
                 }
                 if (s.phase === 'ended') {
                     const winnerIdx = s.s0 >= WIN_SCORE ? 0 : 1;
@@ -820,27 +842,69 @@ function listenToRoom() {
             }
         }
 
-        // Receive opponent paddle move
+        // Receive opponent paddle move (fraction of sender's field height)
         if (data.paddleMove) {
             const pm = data.paddleMove;
             const oppIdx = isHost ? 1 : 0;
             if (pm.id !== (isHost ? 'joiner' : 'host')) return; // ignore own echoes
-            paddles[oppIdx].y = pm.y;
+            paddles[oppIdx].y = pm.y * H;
         }
     });
 }
 
+// The opponent vanished — clean up and drop back to vs-AI mode with a notice.
+function exitOnlineMode(message) {
+    if (roomListener) { roomListener(); roomListener = null; }
+    if (window.SystemMatch) {
+        // Room is already gone when the host left — blank the seats first so
+        // cleanup() doesn't write a ghost seat-release into a deleted room.
+        if (!isHost) SystemMatch.setSeats([]);
+        SystemMatch.cleanup(); // host: removes room node; both: stops chat
+    }
+    currentRoomId = null;
+    chatStarted = false;
+    SystemUI.v2Lobby.hide();
+    gameMode = 'ai';
+    const modeEl = document.getElementById('pong-mode');
+    if (modeEl) modeEl.value = 'ai';
+    myId = 1; isHost = true;
+    playerNames = ['', ''];
+    resetGame();
+    document.getElementById('modal-title').innerText   = message;
+    document.getElementById('modal-msg').innerText     = 'Returning to vs AI…';
+    document.getElementById('modal-session').innerText = '';
+    document.getElementById('result-modal').classList.remove('hidden');
+    setTimeout(() => {
+        document.getElementById('result-modal').classList.add('hidden');
+        if (gameMode === 'ai' && gamePhase === 'idle') startCountdown();
+    }, 2500);
+}
+
+// Joiner closing the tab mid-game flags the room abandoned so the host's
+// listener can react. (Host tab-close removal is handled by SystemMatch.)
+window.addEventListener('beforeunload', () => {
+    if (gameMode === 'online' && currentRoomId && !isHost && chatStarted && window.db && window.dbUpdate) {
+        try { window.dbUpdate(window.dbRef(window.db, 'pong_rooms/' + currentRoomId), { status: 'abandoned' }); } catch (e) {}
+    }
+});
+
 function pushBallState() {
     if (!isHost || gameMode !== 'online') return;
+    // Everything crossing the wire is normalized to fractions of the sender's
+    // field (x/W, y/H) — the receiver scales by its own W/H, so play stays
+    // consistent across different window sizes.
     window.dbUpdate(window.dbRef(window.db, 'pong_rooms/' + currentRoomId), {
         fullState: {
-            bx: Math.round(ball.x), by: Math.round(ball.y),
-            bvx: Math.round(ball.vx), bvy: Math.round(ball.vy),
+            bx: +(ball.x / W).toFixed(4), by: +(ball.y / H).toFixed(4),
+            bvx: +(ball.vx / W).toFixed(4), bvy: +(ball.vy / H).toFixed(4),
             s0: paddles[0].score, s1: paddles[1].score,
             h0: paddles[0].h, h1: paddles[1].h,
             phase: gamePhase,
             cdv: countdownVal, cdt: +(countdownTimer.toFixed(2)),
-            pus: JSON.stringify(powerUps.filter(p => !p.collected)),
+            pus: JSON.stringify(powerUps.filter(p => !p.collected).map(p => ({
+                id: p.id, type: p.type, owner: p.owner, collected: false,
+                x: +(p.x / W).toFixed(4), y: +(p.y / H).toFixed(4)
+            }))),
             ts: Date.now()
         }
     });
@@ -853,7 +917,8 @@ function pushFullState() {
 
 function sendPaddleMove(y) {
     if (!currentRoomId) return;
+    // Paddle Y is sent as a fraction of the sender's field height
     window.dbUpdate(window.dbRef(window.db, 'pong_rooms/' + currentRoomId), {
-        paddleMove: { y: Math.round(y), id: isHost ? 'host' : 'joiner', ts: Date.now() }
+        paddleMove: { y: +(y / H).toFixed(4), id: isHost ? 'host' : 'joiner', ts: Date.now() }
     });
 }

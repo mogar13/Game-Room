@@ -11,6 +11,7 @@ let currentRoomId = null;
 let isHost    = true;     // Default true so local buttons work
 let chatStarted = false;
 let seats = [];
+let roomListener = null;
 
 SystemUI.init({
     gameName: "CONNECT 4",
@@ -52,6 +53,7 @@ setTimeout(() => {
                 chatStarted = false;
                 myPlayer = 1;
                 isHost = true;
+                if (roomListener) { roomListener(); roomListener = null; }
                 initGame();
             }
         });
@@ -548,6 +550,7 @@ SystemMatch.setup({
         myPlayer = 1;
         isHost = true;
         chatStarted = false;
+        if (roomListener) { roomListener(); roomListener = null; }
         initGame();
     },
     onStart: () => {
@@ -570,10 +573,33 @@ SystemMatch.setup({
 
 function listenToRoom() {
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, "c4_rooms/" + currentRoomId), snap => {
+    if (roomListener) roomListener();
+    roomListener = window.dbOnValue(window.dbRef(window.db, "c4_rooms/" + currentRoomId), snap => {
+        // Stale listener guard — never let room pushes overwrite a local game.
+        if (gameMode !== "online") return;
+
         const data = snap.val();
-        if (!data) return;
-        
+        if (!data) {
+            // Host deleted the room — free the joiner instead of freezing.
+            if (!isHost) {
+                if (roomListener) { roomListener(); roomListener = null; }
+                SystemMatch.setSeats([]); // room is gone — skip the ghost seat write
+                SystemMatch.cleanup();
+                chatStarted = false;
+                SystemUI.v2Lobby.hide();
+                gameMode = "ai";
+                document.getElementById("sys-c4-mode").value = "ai";
+                localStorage.setItem("c4_mode", "ai");
+                syncDiffVisibility();
+                myPlayer = 1;
+                isHost = true;
+                initGame();
+                statusDisplay.textContent = "HOST LEFT THE GAME — BACK TO AI MODE";
+                setTimeout(updateStatus, 2500);
+            }
+            return;
+        }
+
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
 
@@ -644,8 +670,7 @@ function pushOnlineMove(col) {
         const payload = {
             grid: gridToFirebase(),
             turn: nextTurn,
-            status: "playing",
-            seats: seats
+            status: "playing"
         };
         if (win) {
             payload.winner = currentTurn;

@@ -15,6 +15,8 @@ let isHost = true;
 let chatStarted = false;
 let seats = [];
 let roomListener = null;
+let onlineDealt = false;       // one-shot: host deals at most once per room via the listener echo
+let gameOverAnnounced = false; // joiner announces a synced game-over exactly once
 
 let lastPushTime = 0;
 let lastSyncTime = 0;
@@ -150,8 +152,10 @@ function buildDeck() {
 
 // ── PACED GAME FLOW ──────────────────────────
 async function startGame() {
+    if (gameMode === "online" && !isHost) return;
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("crazy8");
     gameIsActive = true; isGameOver = false; isAnimating = true; pendingGameState = null;
+    gameOverAnnounced = false;
     hands = [[], [], [], []]; discardPile = []; deck = [];
     const ss = document.getElementById("start-screen");
     if (ss) ss.classList.add("hidden");
@@ -259,32 +263,43 @@ async function executePlayCardAsync(pIdx, cardIdx, newSuit) {
 async function executeDrawCardAsync(pIdx) {
     if (!hands[pIdx]) return;
     isAnimating = true;
-    
-    // Recycle discard pile if deck is empty
-    if (deck.length === 0 && discardPile.length > 1) {
-        let top = discardPile.pop();
-        deck = [...discardPile];
-        discardPile = [top];
-        for (let i = deck.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [deck[i], deck[j]] = [deck[j], deck[i]];
-        }
-        logMove("Deck reshuffled.");
-    }
+    const isAuthority = (gameMode !== "online" || isHost);
 
-    // Only draw if cards are actually available
-    if (deck.length > 0) {
-        let drawnCard = deck.pop();
-        hands[pIdx].push(drawnCard);
+    if (isAuthority) {
+        // Recycle discard pile if deck is empty
+        if (deck.length === 0 && discardPile.length > 1) {
+            let top = discardPile.pop();
+            deck = [...discardPile];
+            discardPile = [top];
+            for (let i = deck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [deck[i], deck[j]] = [deck[j], deck[i]];
+            }
+            logMove("Deck reshuffled.");
+        }
+
+        // Only draw if cards are actually available
+        if (deck.length > 0) {
+            let drawnCard = deck.pop();
+            hands[pIdx].push(drawnCard);
+            playCustomSound('draw');
+            logMove(`${playerNames[pIdx]} drew a card.`);
+            renderTable(false, pIdx);
+            await sleep(600);
+        }
+    } else {
+        // Non-host: the replay only drives animation/sound. Mutating deck/hands here
+        // (especially a local Math.random reshuffle) would diverge from the host's
+        // deck — the authoritative result arrives via the host's state push.
         playCustomSound('draw');
         logMove(`${playerNames[pIdx]} drew a card.`);
-        renderTable(false, pIdx); 
+        renderTable(false, pIdx);
         await sleep(600);
     }
 
     isAnimating = false;
 
-    if (gameMode !== "online" || isHost) {
+    if (isAuthority) {
         if (pIdx === activeTurn) {
             // FIX: Only auto-pass if the player has NO valid moves AND the entire deck/discard is depleted
             if (!hasValidMoves(pIdx) && deck.length === 0) {
@@ -294,6 +309,8 @@ async function executeDrawCardAsync(pIdx) {
             } else {
                 renderTable();
                 checkAITurn(); // Allow AI to chain-draw or play the card it just got
+                // Sync every draw, not only turn changes, so joiner decks never go stale
+                if (gameMode === "online") pushGameState();
             }
         }
     } else {
@@ -594,6 +611,7 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1;
+        onlineDealt = false; gameOverAnnounced = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
@@ -601,6 +619,7 @@ SystemMatch.setup({
         currentRoomId = roomId;
         isHost = false;
         myId = SystemMatch.getMyId();
+        onlineDealt = false; gameOverAnnounced = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
@@ -614,13 +633,33 @@ SystemMatch.setup({
 
 function listenToRoom() {
     roomListener = window.dbOnValue(window.dbRef(window.db, 'c8_rooms/' + currentRoomId), (snap) => {
-        const data = snap.val(); if (!data) return;
+        const data = snap.val();
+        if (!data) {
+            // Room node deleted = host left
+            if (!isHost && currentRoomId) {
+                showToast("Host Left", "Host left the game.");
+                exitOnlineToLocal();
+            }
+            return;
+        }
+        if (data.status === "abandoned") {
+            if (isHost) {
+                showToast("Opponent Left", "A player left the game.");
+                const oldRoom = currentRoomId;
+                exitOnlineToLocal();
+                window.dbRemove(window.dbRef(window.db, 'c8_rooms/' + oldRoom));
+            }
+            return;
+        }
         seats = data.seats || []; SystemUI.v2Lobby.renderSeats(seats); playerNames = seats.map(s => s.name);
         playerCount = seats.length;
         if (data.status === "playing") {
             SystemUI.v2Lobby.hide();
             if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
-            if (isHost && !gameIsActive) startGame(); else if (!isHost) { if (data.gameState) applyHostState(data.gameState); }
+            // One-shot deal: without these guards the host's own game-over push echoes back
+            // (gameIsActive=false) and re-deals forever. Restarts go through the PLAY AGAIN button.
+            if (isHost && !gameIsActive && !isGameOver && !onlineDealt) { onlineDealt = true; startGame(); }
+            else if (!isHost) { if (data.gameState) applyHostState(data.gameState); }
         }
         if (data.playerAction && data.playerAction.ts !== lastActionTs) { 
             lastActionTs = data.playerAction.ts; 
@@ -633,6 +672,29 @@ function listenToRoom() {
         }
     });
 }
+
+function exitOnlineToLocal() {
+    if (roomListener) { roomListener(); roomListener = null; }
+    SystemUI.stopChat(); chatStarted = false;
+    SystemUI.v2Lobby.hide();
+    gameMode = "ai"; myId = 1; isHost = true; currentRoomId = null; onlineDealt = false;
+    playerNames = [SystemUI.getPlayerName(), "AI 2", "AI 3", "AI 4"];
+    playerCount = parseInt(localStorage.getItem("crazy8_pcount") || "2");
+    const modeEl = document.getElementById("sys-c8-mode");
+    if (modeEl) modeEl.value = "ai";
+    resetGame();
+}
+
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && currentRoomId && window.db) {
+        if (isHost) {
+            window.dbRemove(window.dbRef(window.db, 'c8_rooms/' + currentRoomId));
+        } else if (gameIsActive) {
+            // Joiner vanished mid-game: flag it so the host doesn't wait forever
+            window.dbUpdate(window.dbRef(window.db, 'c8_rooms/' + currentRoomId), { status: "abandoned" });
+        }
+    }
+});
 
 function pushGameState() {
     if (gameMode !== "online" || !isHost) return;
@@ -648,14 +710,44 @@ function sendBroadcastAction(action, pIdx, cardIdx = -1, suit = "") {
 }
 
 function applyHostState(s) {
-    if (!s || s.ts <= lastSyncTime) return; 
+    if (!s || s.ts <= lastSyncTime) return;
     if (isAnimating) { pendingGameState = s; return; }
     lastSyncTime = s.ts; pendingGameState = null;
-    hands = s.hands; discardPile = s.discardPile; deck = s.deck; currentSuit = s.currentSuit;
-    activeTurn = s.activeTurn; isGameOver = s.isGameOver; gameIsActive = s.gameIsActive;
+    const wasGameOver = isGameOver;
+    // RTDB strips empty arrays from snapshots — default every array on receive
+    hands = [0, 1, 2, 3].map(i => (s.hands && s.hands[i]) || []);
+    discardPile = s.discardPile || [];
+    deck = s.deck || [];
+    currentSuit = s.currentSuit || "";
+    activeTurn = s.activeTurn; isGameOver = !!s.isGameOver; gameIsActive = !!s.gameIsActive;
+    if (!isGameOver) gameOverAnnounced = false;
     const ss = document.getElementById("start-screen");
-    if (ss) ss.classList.add("hidden");
     const ga = document.getElementById("game-area");
+    if (!wasGameOver && isGameOver && !gameOverAnnounced) {
+        // Non-host: announce the synced game-over (host handles its own in checkWinConditions)
+        gameOverAnnounced = true;
+        let winnerIdx = -1;
+        for (let i = 0; i < playerCount; i++) {
+            if (hands[i] && hands[i].length === 0) { winnerIdx = i; break; }
+        }
+        renderTable();
+        if (winnerIdx !== -1) {
+            setStatus("GAME OVER! " + playerNames[winnerIdx] + " WINS!");
+            if (winnerIdx === myId - 1) {
+                playCustomSound('win'); showResultModal("🎉 YOU WIN!");
+                if (typeof SystemStats !== 'undefined') SystemStats.recordWin("crazy8", 0);
+            } else {
+                playCustomSound('lose'); showResultModal(`😞 ${playerNames[winnerIdx]} WINS!`);
+                if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("crazy8");
+            }
+        }
+        if (ss) ss.classList.remove("hidden");
+        if (ga) ga.classList.add("hidden");
+        const startBtn = document.getElementById("start-game-btn");
+        if (startBtn) startBtn.innerText = "WAITING FOR HOST...";
+        return;
+    }
+    if (ss) ss.classList.add("hidden");
     if (ga) ga.classList.remove("hidden");
     renderTable();
 }

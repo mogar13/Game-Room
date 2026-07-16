@@ -9,6 +9,7 @@ let currentRoomId = null;
 let isHost = true;
 let chatStarted = false;
 let seats = [];
+let roomListener = null;
 
 let p1Name = SystemUI.getPlayerName();
 let p2Name = "AI";
@@ -193,7 +194,7 @@ function startGame() {
 
     renderTable();
     checkPassVisibility();
-    if(gameMode === "online") pushGameState();
+    if(gameMode === "online") pushGameState(true); // deal push must include seat 2's hand
 }
 
 function attemptPlayTile(index) {
@@ -346,14 +347,14 @@ function checkPassVisibility() {
 function checkWin(player) {
     if (myHand.length === 0) {
         gameState = "finished";
-        
+
         // AUDIT: Safely track win via OS 2.0
         if (typeof SystemStats !== 'undefined') SystemStats.recordWin("dominoes", 0);
 
         playDominoSound('win');
         logMove("SYSTEM", `${p1Name} EMPTIED THEIR HAND!`, true);
         alert("YOU WIN!");
-        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "finished" });
+        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "finished", winnerSeat: myId, winnerName: p1Name });
         resetGame();
     } else if (oppHandCount === 0 || oppHand.length === 0) {
         gameState = "finished";
@@ -364,7 +365,7 @@ function checkWin(player) {
         playDominoSound('lose');
         logMove("SYSTEM", `${p2Name} EMPTIED THEIR HAND!`, true);
         alert(`${p2Name} WINS!`);
-        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "finished" });
+        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "finished", winnerSeat: (myId === 1 ? 2 : 1), winnerName: p2Name });
         resetGame();
     }
 }
@@ -375,7 +376,8 @@ function checkBlockedGame() {
         playDominoSound('tie');
         logMove("SYSTEM", "TABLE IS BLOCKED! Game over.", true);
         alert("The table is blocked! It's a draw.");
-        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "finished" });
+        // winnerSeat 0 = draw (0 survives in RTDB, unlike null)
+        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "finished", winnerSeat: 0, winnerName: "" });
         resetGame();
     }
 }
@@ -550,7 +552,9 @@ SystemMatch.setup({
         listenToRoom();
     },
     onLeave: () => {
-        gameMode = "ai"; myId = 1; isHost = true;
+        if (roomListener) { roomListener(); roomListener = null; }
+        SystemUI.stopChat(); chatStarted = false;
+        gameMode = "ai"; myId = 1; isHost = true; currentRoomId = null;
         resetGame();
     },
     onStart: () => {
@@ -562,9 +566,25 @@ SystemMatch.setup({
 
 function listenToRoom() {
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), (snapshot) => {
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if(!data) return;
+        if(!data) {
+            // Room node deleted = host left
+            if (!isHost && currentRoomId) {
+                alert("Host left the game.");
+                exitOnlineToLocal();
+            }
+            return;
+        }
+        if (data.status === "abandoned") {
+            if (isHost) {
+                alert(`${p2Name} left the game.`);
+                const oldRoom = currentRoomId;
+                exitOnlineToLocal();
+                window.dbRemove(window.dbRef(window.db, 'domino_rooms/' + oldRoom));
+            }
+            return;
+        }
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
         if(data.status === "playing" && !onlineGameStarted) {
@@ -580,31 +600,36 @@ function listenToRoom() {
     });
 }
 
-function pushGameState() {
+function pushGameState(includeOppHand = false) {
     if (gameMode !== "online") return;
     let payload = {
-        board: board, 
-        boneyard: boneyard, 
-        turn: currentTurn, 
-        leftEnd: leftEnd, 
+        board: board,
+        boneyard: boneyard,
+        turn: currentTurn,
+        leftEnd: leftEnd,
         rightEnd: rightEnd,
-        consecutivePasses: consecutivePasses, 
-        status: gameState, 
-        lastPlayedTileId: lastPlayedTileId, 
-        seats: seats
+        consecutivePasses: consecutivePasses,
+        status: gameState,
+        lastPlayedTileId: lastPlayedTileId,
+        seats: seats,
+        dealt: true // stable "game dealt" sentinel — board/boneyard strip from snapshots when empty
     };
-    if (myId === 1) { 
-        payload.p1Hand = myHand; 
-        payload.p2Hand = oppHand; 
-    } else { 
-        payload.p2Hand = myHand; 
-        payload.p1Hand = oppHand; 
+    // Each client writes only its own hand key, so a stale local copy of the
+    // opponent's hand can never clobber theirs (dbUpdate merges keys).
+    if (myId === 1) {
+        payload.p1Hand = myHand;
+        // Host also owns seat 2's hand at deal time and when seat 2 is an AI
+        if (includeOppHand || !seats[1] || seats[1].type !== "human") payload.p2Hand = oppHand;
+    } else {
+        payload.p2Hand = myHand;
     }
     window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), payload);
 }
 
 function syncFromFirebase(data) {
-    if (data.status === "playing" && data.boneyard) {
+    // Gate on the dealt sentinel, NOT on boneyard: the boneyard routinely empties in the
+    // endgame and RTDB strips empty arrays, which used to freeze all sync from that point.
+    if (data.status === "playing" && data.dealt) {
         document.getElementById("start-game-btn").classList.add("hidden");
         document.getElementById("move-log-container").classList.remove("hidden");
         document.getElementById("boneyard").classList.remove("hidden");
@@ -617,13 +642,13 @@ function syncFromFirebase(data) {
         consecutivePasses = data.consecutivePasses || 0;
         lastPlayedTileId = data.lastPlayedTileId || null;
         if (myId === 1) {
-            myHand = data.p1Hand || []; 
-            oppHand = data.p2Hand || []; 
-            p2Name = seats[1].name;
+            myHand = data.p1Hand || [];
+            oppHand = data.p2Hand || [];
+            if (seats[1]) p2Name = seats[1].name;
         } else {
-            myHand = data.p2Hand || []; 
-            oppHand = data.p1Hand || []; 
-            p2Name = seats[0].name;
+            myHand = data.p2Hand || [];
+            oppHand = data.p1Hand || [];
+            if (seats[0]) p2Name = seats[0].name;
         }
         oppHandCount = oppHand.length;
         renderTable(); 
@@ -637,8 +662,43 @@ function syncFromFirebase(data) {
             }
         }
     } else if (data.status === "finished") {
+        if (gameState === "playing") {
+            // The finisher already announced locally; this side announces once here
+            gameState = "finished";
+            if (data.winnerSeat === 0) {
+                playDominoSound('tie');
+                logMove("SYSTEM", "TABLE IS BLOCKED! Game over.", true);
+                alert("The table is blocked! It's a draw.");
+            } else if (data.winnerSeat !== undefined && data.winnerSeat !== myId) {
+                if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("dominoes");
+                playDominoSound('lose');
+                logMove("SYSTEM", `${data.winnerName || p2Name} EMPTIED THEIR HAND!`, true);
+                alert(`${data.winnerName || p2Name} WINS!`);
+            }
+        }
         resetGame();
     }
 }
+
+function exitOnlineToLocal() {
+    if (roomListener) { roomListener(); roomListener = null; }
+    SystemUI.stopChat(); chatStarted = false;
+    SystemUI.v2Lobby.hide();
+    gameMode = "ai"; myId = 1; isHost = true; currentRoomId = null; p2Name = "AI";
+    const modeEl = document.getElementById("sys-domino-mode");
+    if (modeEl) modeEl.value = "ai";
+    resetGame();
+}
+
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && currentRoomId && window.db) {
+        if (isHost) {
+            window.dbRemove(window.dbRef(window.db, 'domino_rooms/' + currentRoomId));
+        } else if (gameState === "playing") {
+            // Joiner vanished mid-game: flag it so the host doesn't wait forever
+            window.dbUpdate(window.dbRef(window.db, 'domino_rooms/' + currentRoomId), { status: "abandoned" });
+        }
+    }
+});
 
 resetGame();

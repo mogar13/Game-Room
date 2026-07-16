@@ -17,6 +17,7 @@ let currentRoomId = null;
 let myId          = 1;
 let isHost        = false;
 let seats         = [];
+let roomListener  = null; // onValue unsubscribe fn — detach on exit
 
 // Settings that live on the start screen
 let selectedCategory = localStorage.getItem("trivia_category") || "";   // "" = any
@@ -786,6 +787,9 @@ function advanceToNextQuestion() {
 
 // ── 12. GAME OVER ────────────────────────────
 function endGame() {
+    // Guard re-entry: every later onValue with status "finished" would
+    // otherwise re-fire the stats recording and the game-over modal.
+    if (gamePhase === "gameover") return;
     gamePhase = "gameover";
     stopTimer();
     clearAiTimers();
@@ -970,6 +974,7 @@ function updateLobbyPreview() {
 }
 
 function cleanupRoom() {
+    if (roomListener) { roomListener(); roomListener = null; }
     if (isHost && currentRoomId && window.db && window.dbRemove) {
         try { window.dbRemove(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId)).catch(()=>{}); }
         catch (e) {}
@@ -997,6 +1002,43 @@ function cleanupRoom() {
     myId = 1;
     seats = [];
     chatStarted = false;
+}
+
+// Guest-side: the host deleted the room (quit / tab close). Detach, notify
+// briefly via the loading screen, and return to the start screen in AI mode.
+function handleHostLeft() {
+    if (roomListener) { roomListener(); roomListener = null; }
+    stopTimer();
+    clearAiTimers();
+    clearGuardian();
+    currentRoomId = null;
+    isHost = false;
+    myId = 1;
+    seats = [];
+    chatStarted = false;
+    SystemUI.stopChat();
+    questions = [];
+    gamePhase = "idle";
+
+    gameMode = "ai";
+    document.getElementById("sys-trivia-mode").value = "ai";
+    localStorage.setItem("trivia_mode", "ai");
+    SystemUI.v2Lobby.hide();
+
+    document.getElementById("game-over-modal").classList.add("hidden");
+    document.getElementById("next-overlay").classList.add("hidden");
+    const startBtn = document.getElementById("start-btn");
+    if (startBtn) { startBtn.textContent = "START GAME"; startBtn.disabled = false; }
+
+    document.getElementById("loading-screen").classList.remove("hidden");
+    document.getElementById("loading-text").textContent = "HOST LEFT THE GAME";
+    document.getElementById("loading-sub").textContent  = "Returning to menu…";
+    updateNames();
+
+    setTimeout(() => {
+        document.getElementById("loading-screen").classList.add("hidden");
+        document.getElementById("start-screen").classList.remove("hidden");
+    }, 2000);
 }
 
 // Set up Firebase auto-cleanup when this client disconnects unexpectedly.
@@ -1201,9 +1243,14 @@ SystemUI.v2Lobby.setup({
 
 function listenToRoom() {
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), snapshot => {
+    if (roomListener) roomListener();
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'trivia_rooms/' + currentRoomId), snapshot => {
         const data = snapshot.val();
-        if (!data) return;
+        if (!data) {
+            // Room node removed — the host quit. Don't freeze the guest.
+            if (!isHost && currentRoomId) handleHostLeft();
+            return;
+        }
 
         if (data.seats) {
             seats = data.seats;

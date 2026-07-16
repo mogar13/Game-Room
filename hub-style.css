@@ -946,6 +946,7 @@ header {
   border-left: 2px solid var(--accent-color);
   z-index: 200001;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1078,7 +1079,9 @@ header {
 /* Stats grid */
 .pp-stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0,1fr) lets boxes shrink below their content width — a long
+     value must never force the whole panel to scroll sideways */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1088,6 +1091,8 @@ header {
   border-radius: 8px;
   padding: 10px 4px;
   text-align: center;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .pp-stat-val {
@@ -1096,6 +1101,9 @@ header {
   font-weight: 900;
   color: var(--accent-color);
   margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pp-stat-lbl {
@@ -1165,7 +1173,7 @@ header {
 
 @media (max-width: 600px) {
   #profile-panel { width: 100%; max-width: 100%; border-left: none; border-top: 2px solid var(--accent-color); }
-  .pp-stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .pp-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /*======================================================

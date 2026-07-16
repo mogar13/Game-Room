@@ -447,7 +447,8 @@ function endTurn() {
     if (oppM.length === 0 && oppJ.length === 0) {
         renderBoard();
         endGame(currentTurn);
-        if (document.getElementById('sys-chk-mode').value === 'online') pushToFirebase();
+        // Push the winner explicitly so the other client learns the game ended.
+        if (document.getElementById('sys-chk-mode').value === 'online') pushToFirebase(currentTurn);
         return;
     }
 
@@ -829,7 +830,24 @@ function listenToRoom() {
     if (roomListener) roomListener();
     roomListener = window.dbOnValue(window.dbRef(window.db, `checkers_rooms/${currentRoomId}`), snap => {
         const data = snap.val();
-        if (!data) return;
+        if (!data) {
+            // Host deleted the room — free the joiner instead of freezing.
+            if (!isHost && document.getElementById('sys-chk-mode').value === 'online') {
+                if (roomListener) { roomListener(); roomListener = null; }
+                SystemMatch.setSeats([]); // room is gone — skip the ghost seat write
+                SystemMatch.cleanup();
+                chatStarted = false;
+                SystemUI.v2Lobby.hide();
+                showToast('Host Left', 'The host left the game. Returning to AI mode.');
+                document.getElementById('sys-chk-mode').value = 'ai';
+                document.getElementById('sys-chk-diff').parentElement.style.display = '';
+                myId = 1;
+                isHost = true;
+                myColor = null;
+                resetGame();
+            }
+            return;
+        }
 
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
@@ -849,17 +867,23 @@ function listenToRoom() {
                 Array.from({ length: 8 }, (_, c) => (data.board[r] && data.board[r][c]) ? data.board[r][c] : null)
             );
             currentTurn   = data.currentTurn;
-            gameActive    = true;
-            forcedJumpers = getForcedJumpers(currentTurn, board);
             multiJumpPiece = null;
             selectedCell   = null;
             highlightMoves = [];
 
             if (data.winner) {
-                gameActive = false;
-                endGame(data.winner);
+                renderBoard();
+                // Announce/record once per client — the mover already ran
+                // endGame locally, so only end a still-active game here.
+                if (gameActive) {
+                    gameActive = false;
+                    endGame(data.winner);
+                }
                 return;
             }
+
+            gameActive    = true;
+            forcedJumpers = getForcedJumpers(currentTurn, board);
 
             const p1L = document.getElementById('p1-label');
             const p2L = document.getElementById('p2-label');
@@ -878,21 +902,16 @@ function listenToRoom() {
     });
 }
 
-function pushToFirebase() {
-    const opponent = currentTurn === 'red' ? 'black' : 'red';
-    const { allMoves: m, allJumps: j } = getAllMoves(currentTurn, board);
-    const prevPlayerWon = (m.length === 0 && j.length === 0);
-
+// The winner (a color) is passed explicitly from the win branch of endTurn —
+// recomputing it here after the turn flip gave the wrong answer and never fired.
+function pushToFirebase(winner) {
     const payload = {
         board:       board,
         currentTurn: currentTurn,
         status:      'playing',
-        seats:       seats
+        seats:       seats,
+        winner:      winner || null
     };
-
-    if (prevPlayerWon) {
-        payload.winner = opponent === 'red' ? 'black' : 'red'; 
-    }
 
     window.dbUpdate(window.dbRef(window.db, `checkers_rooms/${currentRoomId}`), payload);
 }

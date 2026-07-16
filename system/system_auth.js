@@ -92,7 +92,28 @@ window.SystemAuth = {
         };
     },
 
-    _defaultStats:        function() { return { gamesPlayed: 0, wins: 0, losses: 0, ties: 0, games: {} }; },
+    // Shape MUST match SystemStats.data ({ global: {...}, games: {} }).
+    // The old flat shape here silently replaced SystemStats.data on login,
+    // leaving data.global undefined — profile stats showed "undefined" and
+    // recordGameStart() threw, so logged-in users never accumulated stats.
+    _defaultStats:        function() { return { global: { gamesPlayed: 0, wins: 0, losses: 0, ties: 0 }, games: {} }; },
+
+    // Normalize a stats record from the cloud/localStorage into the canonical
+    // shape. Handles the legacy flat shape and Firebase's empty-object
+    // stripping (games:{} vanishes from snapshots).
+    _normalizeStats: function(s) {
+        s = s || {};
+        const g = s.global || s;   // legacy flat records kept counters at the top level
+        return {
+            global: {
+                gamesPlayed: g.gamesPlayed || 0,
+                wins:        g.wins        || 0,
+                losses:      g.losses      || 0,
+                ties:        g.ties        || 0
+            },
+            games: s.games || {}
+        };
+    },
     _defaultAchievements: function() { return { unlocked: [] }; },
     _defaultRewards:      function() { return { lastClaim: "", streak: 0 }; },
 
@@ -518,7 +539,8 @@ window.SystemAuth = {
                 bankroll: p.bankroll || 0,
                 xp:       p.xp       || 0,
                 level:    p.level    || 1,
-                wins:     (user.stats && user.stats.wins) || p.wins || 0
+                wins:     (user.stats && user.stats.global && user.stats.global.wins) ||
+                          (user.stats && user.stats.wins) || p.wins || 0
             });
         } catch(e) {
             console.warn("Casino OS: leaderboard push failed.", e);
@@ -564,11 +586,15 @@ window.SystemAuth = {
             window.SystemProfile.saveProfile();
         }
         if (window.SystemStats) {
-            window.SystemStats.data = { ...(user.stats || this._defaultStats()) };
+            window.SystemStats.data = this._normalizeStats(user.stats);
             if (typeof window.SystemStats.saveData === 'function') window.SystemStats.saveData();
         }
         if (window.SystemAchievements) {
-            window.SystemAchievements.data = { ...(user.achievements || this._defaultAchievements()) };
+            const ach = { ...(user.achievements || this._defaultAchievements()) };
+            // Firebase strips empty arrays — a fresh account comes back
+            // without `unlocked`, which crashed the profile panel.
+            if (!Array.isArray(ach.unlocked)) ach.unlocked = [];
+            window.SystemAchievements.data = ach;
             if (typeof window.SystemAchievements.saveData === 'function') window.SystemAchievements.saveData();
         }
         if (window.SystemRewards) {
@@ -716,3 +742,30 @@ window.SystemAuth = {
 };
 
 window.SystemAuth.init();
+
+// ── LIVE CLOUD SYNC ───────────────────────────
+// Games run inside an iframe and write stats/profile/achievements to
+// localStorage; the parent hub receives 'storage' events for those writes.
+// Without this, the cloud record and public leaderboard only updated on
+// logout or a manual "SYNC TO CLOUD" click — rankings looked frozen.
+(function() {
+    const WATCHED = ["casino_stats", "casino_player_profile", "casino_achievements"];
+    let syncTimer = null;
+    window.addEventListener("storage", function(e) {
+        const A = window.SystemAuth;
+        if (!A || !A.isLoggedIn()) return;
+        if (!e || WATCHED.indexOf(e.key) === -1) return;
+        clearTimeout(syncTimer);
+        // Debounced: a game session fires many writes back-to-back.
+        syncTimer = setTimeout(function() {
+            try {
+                if (window.SystemStats)        window.SystemStats.loadData();
+                if (window.SystemProfile && window.SystemProfile.loadProfile) window.SystemProfile.loadProfile();
+                if (window.SystemAchievements) window.SystemAchievements.loadData();
+                A._saveCurrentUserData();
+            } catch (err) {
+                console.warn("Casino OS: live sync failed.", err);
+            }
+        }, 4000);
+    });
+})();

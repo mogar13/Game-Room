@@ -77,6 +77,8 @@ let currentPhase = "draw"; // "draw" or "discard"
 let selectedCards = [];
 let gameState = "setup";
 let lastLogSync = "";
+let stateSeq = 0;       // monotonic packet counter shared via pushes; guards stale/out-of-order state
+let roomListener = null;
 
 function isMyTurn() {
     if (gameMode === "online") return currentTurn === myId;
@@ -240,14 +242,15 @@ function checkWin(player) {
         if (typeof SystemStats !== 'undefined') SystemStats.recordWin("rummy", 0);
         playSound('win');
         showGameOver(p1Name, "You emptied your hand first!");
-        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "finished", winner: p1Name });
+        // winnerSeat is the reliable comparison key (names can collide); winner kept for display
+        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "finished", winner: p1Name, winnerSeat: myId });
     } else if (oppHandCount === 0 || oppHand.length === 0) {
         gameState = "finished";
         // AUDIT: Tracking loss
         if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("rummy");
         playSound('lose');
         showGameOver(p2Name, `${p2Name} emptied their hand first!`);
-        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "finished", winner: p2Name });
+        if(gameMode === 'online') window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "finished", winner: p2Name, winnerSeat: (myId === 1 ? 2 : 1) });
     }
 }
 
@@ -496,6 +499,7 @@ function generateRoomCode() {
 document.getElementById("btn-create-room").addEventListener("click", () => {
     playSound('win');
     currentRoomId = generateRoomCode(); isHost = true; myId = 1; chatStarted = false;
+    stateSeq = 0; lastLogSync = "";
     window.dbSet(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), {
         status: "waiting", players: 1, p1Name: p1Name, turn: 1
     }).then(() => {
@@ -512,6 +516,7 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
     window.dbGet(window.dbChild(window.dbRef(window.db), `rummy_rooms/${code}`)).then((snapshot) => {
         if (snapshot.exists() && snapshot.val().players === 1) {
             currentRoomId = code; isHost = false; myId = 2; chatStarted = false;
+            stateSeq = 0; lastLogSync = "";
             window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), {
                 players: 2, p2Name: p1Name, status: "playing"
             });
@@ -523,9 +528,25 @@ document.getElementById("btn-join-room").addEventListener("click", () => {
 
 function listenToRoom() {
     let onlineGameStarted = false;
-    window.dbOnValue(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), (snapshot) => {
+    roomListener = window.dbOnValue(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if(!data) return;
+        if(!data) {
+            // Room node deleted = host left
+            if (!isHost && currentRoomId) {
+                alert("Host left the game.");
+                exitOnlineToLocal();
+            }
+            return;
+        }
+        if (data.status === "abandoned") {
+            if (isHost) {
+                alert(`${p2Name} left the game.`);
+                const oldRoom = currentRoomId;
+                exitOnlineToLocal();
+                window.dbRemove(window.dbRef(window.db, 'rummy_rooms/' + oldRoom));
+            }
+            return;
+        }
         if(data.status === "playing" && !onlineGameStarted) {
             onlineGameStarted = true;
             lobbyUI.classList.add("hidden");
@@ -541,9 +562,12 @@ function listenToRoom() {
 
 function pushGameState() {
     if (gameMode !== "online") return;
+    stateSeq++;
     let payload = {
         deck: deck, discardPile: discardPile,
-        turn: currentTurn, phase: currentPhase, status: gameState
+        turn: currentTurn, phase: currentPhase, status: gameState,
+        dealt: true, // stable "game dealt" sentinel — deck/discard strip from snapshots when empty
+        seq: stateSeq, pusher: myId
     };
     if (myId === 1) {
         payload.p1Hand = myHand; payload.p2Hand = oppHand;
@@ -560,7 +584,15 @@ function pushGameState() {
 }
 
 function syncFromFirebase(data) {
-    if (data.status === "playing" && data.deck) {
+    // Ordering guard: drop stale packets, and skip our own echoes (they carry our own state)
+    if (data.seq) {
+        if (data.seq < stateSeq) return;
+        stateSeq = data.seq;
+    }
+    if (data.pusher && data.pusher === myId && data.status === "playing") return;
+    // Gate on the dealt sentinel, NOT on deck: the stock routinely empties and RTDB strips
+    // empty arrays, which used to freeze all sync from that point on.
+    if (data.status === "playing" && data.dealt) {
         document.getElementById("start-game-btn").classList.add("hidden");
         document.getElementById("sort-btn").classList.remove("hidden");
 
@@ -591,25 +623,61 @@ function syncFromFirebase(data) {
 
         renderBoard();
     } else if (data.status === "finished") {
-        if(data.winner && data.winner !== p1Name) {
-            // AUDIT: Tracking final game result
-            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("rummy");
-            showGameOver(data.winner, `${data.winner} emptied their hand first!`);
+        if (gameState === "playing") {
+            // The winner already announced locally (gameState is "finished" there);
+            // announce once on the losing side, comparing by seat, not display name.
+            gameState = "finished";
+            const iWon = (data.winnerSeat !== undefined) ? (data.winnerSeat === myId) : (data.winner === p1Name);
+            if (!iWon) {
+                // AUDIT: Tracking final game result
+                if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("rummy");
+                showGameOver(data.winner || p2Name, `${data.winner || p2Name} emptied their hand first!`);
+            }
         }
     }
 }
 
 document.getElementById("lobby-close-btn").addEventListener("click", () => { lobbyUI.classList.add("hidden"); });
 document.getElementById("btn-cancel-lobby").addEventListener("click", () => {
+    if (roomListener) { roomListener(); roomListener = null; }
+    if (isHost && currentRoomId) window.dbRemove(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId));
+    currentRoomId = null;
+    document.getElementById("btn-create-room").disabled = false;
+    document.getElementById("room-code-display").classList.add("hidden");
     gameMode = "ai"; p2Name = "AI";
     document.getElementById("sys-rummy-mode").value = "ai";
     localStorage.setItem("rummy_mode", "ai");
     lobbyUI.classList.add("hidden");
     SystemUI.stopChat(); chatStarted = false;
-    
+
     myId = 1;
     isHost = true;
     resetGame();
+});
+
+function exitOnlineToLocal() {
+    if (roomListener) { roomListener(); roomListener = null; }
+    SystemUI.stopChat(); chatStarted = false;
+    gameMode = "ai"; myId = 1; isHost = true; p2Name = "AI"; currentRoomId = null;
+    stateSeq = 0; lastLogSync = "";
+    localStorage.setItem("rummy_mode", "ai");
+    const modeDropdown = document.getElementById("sys-rummy-mode");
+    if (modeDropdown) modeDropdown.value = "ai";
+    lobbyUI.classList.add("hidden");
+    document.getElementById("btn-create-room").disabled = false;
+    document.getElementById("room-code-display").classList.add("hidden");
+    resetGame();
+}
+
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && currentRoomId && window.db) {
+        if (isHost) {
+            window.dbRemove(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId));
+        } else if (gameState === "playing") {
+            // Joiner vanished mid-game: flag it so the host doesn't wait forever
+            window.dbUpdate(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), { status: "abandoned" });
+        }
+    }
 });
 
 resetGame();

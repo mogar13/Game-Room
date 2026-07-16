@@ -14,8 +14,10 @@ let chatStarted = false;
 let seats = [];
 let roomListener = null;
 
-let lastPushTime = 0;
-let lastSyncTime = 0;
+// Monotonic state sequence for ordering pushes. Wall-clock timestamps are
+// NOT comparable across machines (clock skew silently dropped opponents'
+// moves) — every full-state push bumps this instead.
+let stateSeq = 0;
 
 // Unified Player Arrays
 let hands = [[], [], [], []]; 
@@ -495,11 +497,13 @@ document.querySelectorAll('.color-btn').forEach(btn => {
 });
 
 document.getElementById("uno-btn").addEventListener("click", () => {
-    calledUnoFlags[myId - 1] = true; 
+    calledUnoFlags[myId - 1] = true;
     document.getElementById("uno-btn").classList.add("hidden");
-    logMove(playerNames[myId - 1], `YELLED UNO!`); 
+    logMove(playerNames[myId - 1], `YELLED UNO!`);
     showUnoShout(playerNames[myId - 1]);
-    if (gameMode === "online") pushGameState(playerNames[myId - 1], `YELLED UNO!`);
+    // Yells must NOT push the full game state: the yeller may not hold the
+    // turn, and a stale full-state write would revert everyone's board.
+    if (gameMode === "online") pushYell(playerNames[myId - 1]);
 });
 
 function handleActionCard(card, playerNum) {
@@ -540,9 +544,9 @@ function handleActionCard(card, playerNum) {
         else if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("uno");
         
         if (gameMode === 'online') {
-            pushGameState(null, "WINS!", playerNames[playerNum-1]);
-            // SURGICAL FIX: Adding +50 to the timestamp guarantees the Host will process this final "finished" packet.
-            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { status: "finished", ts: Date.now() + 50 }); 
+            // Single atomic push carrying the final hand sizes AND the
+            // finished status — the old two-write version raced.
+            pushGameState(null, "WINS!", playerNames[playerNum-1], "finished");
         }
         setTimeout(resetGame, 2500);
         return; 
@@ -611,15 +615,29 @@ function advanceTurn(steps, logMsg) {
     renderTable();
 
     if (isHost && (seats[currentTurn - 1]?.type === 'ai' || (gameMode === "ai" && currentTurn !== 1))) {
-        setTimeout(aiTurn, 1500);
+        scheduleAiTurn();
     }
+}
+
+// Coalesce AI-turn scheduling. Multiple room writes (a move, then a yell,
+// then a hand sync) can each try to schedule the same AI turn — without a
+// token the AI would play twice and corrupt the game.
+let aiMoveToken = 0;
+function scheduleAiTurn() {
+    const tok = ++aiMoveToken;
+    setTimeout(() => { if (tok === aiMoveToken) aiTurn(); }, 1500);
 }
 
 function aiTurn() {
     if (gameMode === "online" && seats[currentTurn - 1]?.type !== 'ai') return;
+    if (gameMode === "ai" && currentTurn === 1) return;
+    if (!discardPile.length) return;
 
     const pIdx = currentTurn - 1;
     if (!hands[pIdx]) return;
+    // Freshly-adopted seat (player left mid-game): the real cards may still
+    // be in flight from Firebase — retry until placeholders are replaced.
+    if (hands[pIdx].some(c => c && c.placeholder)) { scheduleAiTurn(); return; }
     const topCard = discardPile[discardPile.length - 1];
     let playable = [];
     for (let i = 0; i < hands[pIdx].length; i++) { 
@@ -642,7 +660,7 @@ function aiTurn() {
         if (hands[pIdx].length === 1) {
             calledUnoFlags[pIdx] = true;
             showUnoShout(playerNames[pIdx]);
-            if (gameMode === "online") pushGameState(playerNames[pIdx], null, playerNames[pIdx]);
+            if (gameMode === "online") pushYell(playerNames[pIdx]);
         }
         
         if (played.type === 'wild') {
@@ -718,6 +736,8 @@ SystemMatch.setup({
         if (isHost && currentRoomId && window.db) {
             window.dbSet(window.dbRef(window.db, `uno_hands/${currentRoomId}`), null);
             window.dbSet(window.dbRef(window.db, `uno_hand_incoming/${currentRoomId}`), null);
+        } else {
+            releaseMySeat();
         }
         location.reload();
     },
@@ -739,7 +759,16 @@ SystemMatch.setup({
 function listenToRoom() {
     let onlineGameStarted = false;
     roomListener = window.dbOnValue(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), (snap) => {
-        const data = snap.val(); if (!data) return;
+        const data = snap.val();
+        if (!data) {
+            // Room node deleted = the host left. Without this the joiner
+            // just stared at a dead table forever.
+            if (!isHost && currentRoomId) {
+                showResultModal("🚪 HOST LEFT THE GAME", "#f1c40f");
+                setTimeout(() => location.reload(), 2200);
+            }
+            return;
+        }
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
         playerNames = seats.map(s => s.name);
@@ -856,41 +885,82 @@ function subscribeToOwnedHands() {
     });
 }
 
-function pushGameState(unoYell = null, logMsg = null, actingPlayerName = null) {
+function pushGameState(unoYell = null, logMsg = null, actingPlayerName = null, statusOverride = null) {
     if (gameMode !== "online") return;
-    const now = Date.now(); lastPushTime = now;
+    const now = Date.now();
+    stateSeq++;
     const handSizes = hands.map(h => (h || []).length);
-    let payload = { deck, discardPile, turn: currentTurn, direction: playDirection, currentColor: currentPlayColor, status: "playing", seats, handSizes, ts: now, pusher: myId };
+    // NOTE: Firebase strips empty arrays — when the deck runs dry the `deck`
+    // key vanishes from the room node. Receivers must treat a missing deck
+    // as [], never as "no state" (the old code froze the game here).
+    let payload = { deck, discardPile, turn: currentTurn, direction: playDirection, currentColor: currentPlayColor, status: statusOverride || "playing", seats, handSizes, ts: now, seq: stateSeq, pusher: myId };
 
     let pName = actingPlayerName || playerNames[myId-1];
 
     if (unoYell) {
-        payload.lastUnoYell = now + "_" + unoYell;
+        payload.lastUnoYell = JSON.stringify({ ts: now, name: unoYell });
         lastSeenUnoYell = payload.lastUnoYell;
     }
     if (logMsg) {
-        payload.lastLogSync = now + "_" + pName + "_" + logMsg;
+        payload.lastLogSync = JSON.stringify({ ts: now, name: pName, msg: logMsg });
         lastLogSync = payload.lastLogSync;
     }
 
     window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), payload);
 }
 
+// Minimal out-of-turn write: announces a yell WITHOUT touching the game
+// state. (A yell used to push the yeller's full — possibly stale — state,
+// which could revert the whole game by a turn.)
+function pushYell(name) {
+    if (gameMode !== "online" || !currentRoomId || !window.db) return;
+    const packet = JSON.stringify({ ts: Date.now(), name });
+    lastSeenUnoYell = packet;
+    window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { lastUnoYell: packet });
+}
+
+function parsePacket(str) {
+    try { const o = JSON.parse(str); if (o && o.name) return o; } catch (e) {}
+    // Legacy "ts_name_msg" format fallback
+    const p = String(str).split("_");
+    return { ts: p[0], name: p[1], msg: p.slice(2).join("_") };
+}
+
 function syncFromFirebase(data) {
+    // Yells/log lines are handled BEFORE the pusher/seq guards: they can be
+    // written by any player at any time and must never be dropped because
+    // the last full-state pusher happened to be us.
+    if (data.lastUnoYell && data.lastUnoYell !== lastSeenUnoYell) {
+        lastSeenUnoYell = data.lastUnoYell;
+        showUnoShout(parsePacket(data.lastUnoYell).name);
+    }
+    if (data.lastLogSync && data.lastLogSync !== lastLogSync) {
+        lastLogSync = data.lastLogSync;
+        const p = parsePacket(data.lastLogSync);
+        if (p.msg) logMove(p.name, p.msg);
+    }
+
     if (data.pusher && data.pusher === myId) return;
-    if (data.ts && (data.ts < lastSyncTime)) return;
-    if (data.ts) lastSyncTime = data.ts;
+    // Order by monotonic seq, not wall-clock: clients' clocks are not in
+    // sync and comparing Date.now() across machines dropped real moves.
+    if (data.seq) {
+        if (data.seq < stateSeq) return;
+        stateSeq = data.seq;
+    }
+
+    const hasState = !!(data.discardPile && data.discardPile.length);
 
     // Only force visibility changes if the status is explicitly "playing"
-    if (data.status === "playing" && data.deck) {
+    if (data.status === "playing" && hasState) {
         document.getElementById("start-screen").classList.add("hidden");
         document.getElementById("game-area").classList.remove("hidden");
         document.getElementById("move-log").classList.remove("hidden");
     }
 
-    if ((data.status === "playing" || data.status === "finished") && data.deck) {
+    if ((data.status === "playing" || data.status === "finished") && hasState) {
         const oldDiscardLen = (discardPile || []).length;
-        deck = data.deck; discardPile = data.discardPile; currentTurn = data.turn;
+        deck = data.deck || [];            // deck key vanishes when empty — that's a valid state
+        discardPile = data.discardPile; currentTurn = data.turn;
         playDirection = data.direction; currentPlayColor = data.currentColor;
 
         const sizes = data.handSizes || [];
@@ -911,17 +981,11 @@ function syncFromFirebase(data) {
 
         if (data.discardPile && data.discardPile.length > oldDiscardLen) cardJustPlayed = true;
 
-        if (data.lastUnoYell && data.lastUnoYell !== lastSeenUnoYell) {
-            lastSeenUnoYell = data.lastUnoYell; showUnoShout(data.lastUnoYell.split("_")[1]);
-        }
-        if (data.lastLogSync && data.lastLogSync !== lastLogSync) {
-            lastLogSync = data.lastLogSync; const p = data.lastLogSync.split("_"); logMove(p[1], p.slice(2).join("_"));
-        }
         renderHand(); renderTable();
 
         if (data.status === "playing") {
             if (isHost && data.pusher !== myId && (seats[currentTurn - 1]?.type === 'ai' || (gameMode === "ai" && currentTurn !== 1))) {
-                setTimeout(aiTurn, 1500);
+                scheduleAiTurn();
             }
         } else if (data.status === "finished") {
             let winnerIdx = sizes.findIndex(sz => sz === 0);
@@ -975,10 +1039,29 @@ function showResultModal(m, c) {
     setTimeout(() => { o.style.opacity = "0"; setTimeout(() => o.style.display="none", 300); }, 2200);
 }
 
+// A departing joiner hands their seat to an AI so the match can continue —
+// the host already owns AI hands, so it picks up their cards automatically.
+function releaseMySeat() {
+    if (gameMode !== "online" || !currentRoomId || isHost || !window.db) return;
+    if (!Array.isArray(seats) || !seats[myId - 1]) return;
+    // Only flip to AI when a game is actually running — in the lobby,
+    // SystemMatch releases the seat back to 'open' instead.
+    const gameArea = document.getElementById("game-area");
+    if (!gameArea || gameArea.classList.contains("hidden")) return;
+    const newSeats = seats.map((s, i) =>
+        i === myId - 1 ? { type: 'ai', name: (s.name || ('Player ' + myId)) + ' 🤖' } : s
+    );
+    try {
+        window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { seats: newSeats, pusher: myId });
+    } catch (e) {}
+}
+
 window.addEventListener("beforeunload", () => {
     if (isHost && currentRoomId && gameMode === "online" && window.db) {
         window.dbSet(window.dbRef(window.db, `uno_rooms/${currentRoomId}`), null);
         window.dbSet(window.dbRef(window.db, `uno_hands/${currentRoomId}`), null);
         window.dbSet(window.dbRef(window.db, `uno_hand_incoming/${currentRoomId}`), null);
+    } else {
+        releaseMySeat();
     }
 });

@@ -15,6 +15,8 @@ let isHost = true;
 let chatStarted = false;
 let seats = [];
 let roomListener = null;
+let onlineDealt = false;       // one-shot: host deals at most once per room via the listener echo
+let gameOverAnnounced = false; // joiner announces a synced game-over exactly once
 
 let lastPushTime = 0;
 let lastSyncTime = 0;
@@ -104,8 +106,10 @@ function buildOldMaidDeck() {
 // ── PACED GAME FLOW ──────────────────────────
 
 async function startGame() {
+    if (gameMode === "online" && !isHost) return;
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("old-maid");
     gameIsActive = true; isGameOver = false; safePlayers = [false, false, false, false];
+    gameOverAnnounced = false;
     hands = [[], [], [], []]; discardPile = []; isAnimating = true; pendingGameState = null;
     document.getElementById("start-game-btn").classList.add("hidden");
     
@@ -444,6 +448,7 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1;
+        onlineDealt = false; gameOverAnnounced = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
@@ -451,6 +456,7 @@ SystemMatch.setup({
         currentRoomId = roomId;
         isHost = false;
         myId = SystemMatch.getMyId();
+        onlineDealt = false; gameOverAnnounced = false;
         seats = SystemMatch.getSeats();
         listenToRoom();
     },
@@ -464,14 +470,34 @@ SystemMatch.setup({
 
 function listenToRoom() {
     roomListener = window.dbOnValue(window.dbRef(window.db, 'maid_rooms/' + currentRoomId), (snap) => {
-        const data = snap.val(); if (!data) return;
+        const data = snap.val();
+        if (!data) {
+            // Room node deleted = host left
+            if (!isHost && currentRoomId) {
+                showToast("Host Left", "Host left the game.");
+                exitOnlineToLocal();
+            }
+            return;
+        }
+        if (data.status === "abandoned") {
+            if (isHost) {
+                showToast("Opponent Left", "A player left the game.");
+                const oldRoom = currentRoomId;
+                exitOnlineToLocal();
+                window.dbRemove(window.dbRef(window.db, 'maid_rooms/' + oldRoom));
+            }
+            return;
+        }
         seats = data.seats || []; SystemUI.v2Lobby.renderSeats(seats); playerNames = seats.map(s => s.name);
         playerCount = seats.length;
-        
+
         if (data.status === "playing") {
             SystemUI.v2Lobby.hide(); document.getElementById("action-zone").classList.remove("hidden");
             if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }
-            if (isHost && !gameIsActive) startGame(); else if (!isHost && data.gameState) applyHostState(data.gameState);
+            // One-shot deal: without these guards the host's own game-over push echoes back
+            // (gameIsActive=false) and re-deals forever. Restarts go through the PLAY AGAIN button.
+            if (isHost && !gameIsActive && !isGameOver && !onlineDealt) { onlineDealt = true; startGame(); }
+            else if (!isHost && data.gameState) applyHostState(data.gameState);
         }
         
         // Listen for animations from anyone
@@ -489,6 +515,30 @@ function pushGameState() {
     });
 }
 
+function exitOnlineToLocal() {
+    if (roomListener) { roomListener(); roomListener = null; }
+    SystemUI.stopChat(); chatStarted = false;
+    SystemUI.v2Lobby.hide();
+    gameMode = "ai"; myId = 1; isHost = true; currentRoomId = null; onlineDealt = false;
+    playerNames = [SystemUI.getPlayerName(), "AI 2", "AI 3", "AI 4"];
+    playerCount = parseInt(localStorage.getItem("oldmaid_pcount") || "4");
+    const modeEl = document.getElementById("sys-om-mode");
+    if (modeEl) modeEl.value = "ai";
+    document.getElementById("action-zone").classList.remove("hidden");
+    resetGame();
+}
+
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && currentRoomId && window.db) {
+        if (isHost) {
+            window.dbRemove(window.dbRef(window.db, 'maid_rooms/' + currentRoomId));
+        } else if (gameIsActive) {
+            // Joiner vanished mid-game: flag it so the host doesn't wait forever
+            window.dbUpdate(window.dbRef(window.db, 'maid_rooms/' + currentRoomId), { status: "abandoned" });
+        }
+    }
+});
+
 // Broadcasts an action to Firebase so all clients (Host & Joiners) execute the animation
 function sendBroadcastAction(action, targetIdx, cardIdx, thiefIdx) {
     window.dbUpdate(window.dbRef(window.db, 'maid_rooms/' + currentRoomId), { 
@@ -497,15 +547,42 @@ function sendBroadcastAction(action, targetIdx, cardIdx, thiefIdx) {
 }
 
 function applyHostState(s) {
-    if (!s || s.ts <= lastSyncTime) return; 
-    
+    if (!s || s.ts <= lastSyncTime) return;
+
     // Prevent state updates from instantly "snapping" the screen if we are mid-animation
     if (isAnimating) {
         pendingGameState = s;
         return;
     }
-    
+
     lastSyncTime = s.ts; pendingGameState = null;
-    hands = s.hands; discardPile = s.discardPile; safePlayers = s.safePlayers; activeTurn = s.activeTurn; isGameOver = s.isGameOver; gameIsActive = s.gameIsActive;
+    const wasGameOver = isGameOver;
+    // RTDB strips empty arrays from snapshots (a "safe" player's hand becomes a hole) —
+    // default every array slot on receive
+    hands = [0, 1, 2, 3].map(i => (s.hands && s.hands[i]) || []);
+    discardPile = s.discardPile || [];
+    safePlayers = s.safePlayers || [false, false, false, false];
+    activeTurn = s.activeTurn; isGameOver = !!s.isGameOver; gameIsActive = !!s.gameIsActive;
+    if (!isGameOver) gameOverAnnounced = false;
+
+    if (!wasGameOver && isGameOver && !gameOverAnnounced) {
+        // Non-host: announce the synced game-over (host handles its own in checkWinConditions)
+        gameOverAnnounced = true;
+        let loserIdx = -1;
+        for (let i = 0; i < playerCount; i++) { if (!safePlayers[i]) loserIdx = i; }
+        const loserName = playerNames[loserIdx] || "Player";
+        renderTable();
+        setStatus("GAME OVER! " + loserName + " is the OLD MAID!");
+        if (loserIdx === myId - 1) {
+            playCustomSound('lose'); showToast("Oh no!", "You are the Old Maid! 👵");
+            if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("old-maid");
+        } else {
+            if (typeof SystemStats !== 'undefined') SystemStats.recordWin("old-maid", 0);
+            showToast("You win!", `${loserName} got stuck with the Old Maid.`);
+        }
+        document.getElementById("start-game-btn").classList.remove("hidden");
+        document.getElementById("start-game-btn").innerText = "WAITING FOR HOST...";
+        return;
+    }
     renderTable(); setStatus(activeTurn === (myId-1) && !isGameOver ? "YOUR TURN - Pick a card!" : playerNames[activeTurn].toUpperCase() + "'S TURN");
 }

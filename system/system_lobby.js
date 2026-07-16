@@ -279,7 +279,14 @@ if (window.SystemUI) {
 // LEGACY HTML INJECTIONS (V1 Multiplayer Lobby)
 // Do Not Remove - Needed for backward compatibility of V1 games
 // =========================================
-if (document.readyState === "loading") {
+// Inject immediately whenever <body> already exists — this script is loaded
+// inside <body>, BEFORE the game scripts that bind the lobby's buttons at
+// top level. Deferring to DOMContentLoaded made those games (rummy, yahtzee,
+// snakes-and-ladders, clue) crash on load with a null addEventListener and
+// killed their whole online mode.
+if (document.body) {
+    injectLegacyLobby();
+} else if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", injectLegacyLobby);
 } else {
     injectLegacyLobby();

@@ -14,6 +14,12 @@ let isHost       = false;
 let chatStarted  = false;
 let currentRoomId= null;
 let seats        = [];
+let stateSeq     = 0;     // Monotonic state counter — wall clocks aren't comparable across machines
+let gameOverHandled = false; // Guards double stat-recording / double gameover modals
+let onlineGameStarted = false;
+let roomListener = null;  // Unsubscribe handles — leaked listeners kept firing after leave/re-host
+let auctionActionListener = null;
+let tradeRespListener = null;
 
 let p1Name = SystemUI.getPlayerName();
 let p1ColorIdx = 0;
@@ -1023,11 +1029,16 @@ function startAuction(sid) {
         window._currentAuctionOnBid = null;
         window._currentAuctionOnFold = null;
 
-        const isAuctionHost = (currentPlayer().id === myId);
+        // Referee rule: the client whose player triggered the auction runs it —
+        // but when the current player is an AI no client matches its id, so the
+        // HOST referees. (Without this the countdown never started and the
+        // modal hung forever on every client.)
+        const isAuctionHost = gameMode !== "online" ||
+            (currentPlayer().isAI ? isHost : currentPlayer().id === myId);
 
         document.getElementById("auction-modal").classList.remove("hidden");
 
-        if (isAuctionHost || gameMode !== "online") {
+        if (isAuctionHost) {
             activePlayers().forEach(p => {
                 if (!p.isAI) return;
                 const maxWilling = Math.floor(space.price * (aiDifficulty === "hard" ? 0.85 : aiDifficulty === "medium" ? 0.65 : 0.45));
@@ -1171,6 +1182,9 @@ async function declareBankrupt(player, creditor) {
     player.properties = []; player.houses = {}; player.hotels = {};
     player.mortgaged  = []; player.money  = 0;
     renderAll();
+    // Sync the bankruptcy itself — the early return below skipped every
+    // later push, so the other clients never saw it.
+    if (gameMode === "online") pushOnlineState();
     await sleep(1000);
     if (checkWinCondition()) return;
     if (turnIdx === player.idx) { await endTurn(); }
@@ -1383,8 +1397,10 @@ async function endTurn() {
     await startTurn();
 }
 
-function endGame(winner) {
+function endGame(winner, fromSync = false) {
     phase = "gameover";
+    if (gameOverHandled) return; // announce + record stats only once
+    gameOverHandled = true;
     new Audio('../../system/audio/victory.mp3').play().catch(e=>{});
     document.getElementById("go-emoji").textContent   = winner ? "🏆" : "🤝";
     document.getElementById("go-title").textContent   = winner ? `${winner.name.toUpperCase()} WINS!` : "GAME OVER";
@@ -1395,12 +1411,16 @@ function endGame(winner) {
 
     // AUDIT: Tracking final game result
     if (typeof SystemStats !== 'undefined' && winner) {
-        if (winner.id === 1) { // Assuming player is always id 1 in local AI mode
+        if (winner.id === myId) { // myId is 1 in local modes, our seat id online
             SystemStats.recordWin("monopoly", winner.money);
         } else {
             SystemStats.recordLoss("monopoly");
         }
     }
+
+    // Broadcast the final state — endGame used to be local-only, so the other
+    // clients never learned the game was over.
+    if (gameMode === "online" && !fromSync) pushOnlineState();
 }
 
 async function aiDoTurn(player) {
@@ -1570,6 +1590,7 @@ function startGame() {
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("monopoly");
 
     phase = "idle"; doublesRolled = 0; turnIdx = 0;
+    gameOverHandled = false;
     gameLog = []; chanceIdx = 0; chestIdx = 0;
     bankHouses = 32; bankHotels = 12;
     aiLastTradeTurn = {};
@@ -1810,34 +1831,51 @@ function showTradeResponseModal(trade) {
     document.getElementById("trade-response-modal").classList.remove("hidden");
 }
 
+// Online: the responder must NOT push full game state — it runs on the
+// non-turn-holder with a stale copy of players/turnIdx/phase/diceVal and
+// desyncs everyone. It only records the decision; the proposer's client
+// applies the trade authoritatively and pushes the resulting state.
+function sendTradeDecision(status, trade) {
+    window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}/trade_response`), {
+        status,
+        tradeTs: trade.signalTs || 0,
+        responderId: myId,
+        ts: Date.now()
+    });
+    if (status === "accept") log("Trade accepted — waiting for sync…", "good");
+    else log("Trade rejected.", "bad");
+}
+
 document.getElementById("trade-accept-btn")?.addEventListener("click", () => {
     document.getElementById("trade-response-modal").classList.add("hidden");
     if (!pendingTrade) return;
     const { proposer, target, offerSids, wantSids, offerCash, wantCash, onResolve } = pendingTrade;
+
+    if (gameMode === "online" && proposer && proposer.id !== myId) {
+        sendTradeDecision("accept", pendingTrade);
+        pendingTrade = null;
+        return;
+    }
+
     executeTrade(proposer, target, offerSids, wantSids, offerCash, wantCash);
     log(`${target.name} accepted the trade!`, "good");
     pendingTrade = null;
-    
-    if (gameMode === "online") {
-        window.onlineTradeResponse = { status: "accept", ts: Date.now() };
-        pushOnlineState();
-    }
-    
     if (onResolve) onResolve();
 });
 
 document.getElementById("trade-reject-btn")?.addEventListener("click", () => {
     document.getElementById("trade-response-modal").classList.add("hidden");
     if (pendingTrade) {
-        log(`${pendingTrade.target.name} rejected the trade.`, "bad");
         const onResolve = pendingTrade.onResolve;
-        pendingTrade = null;
-        
-        if (gameMode === "online") {
-            window.onlineTradeResponse = { status: "reject", ts: Date.now() };
-            pushOnlineState();
+
+        if (gameMode === "online" && pendingTrade.proposer && pendingTrade.proposer.id !== myId) {
+            sendTradeDecision("reject", pendingTrade);
+            pendingTrade = null;
+            return;
         }
-        
+
+        log(`${pendingTrade.target.name} rejected the trade.`, "bad");
+        pendingTrade = null;
         if (onResolve) onResolve();
     }
 });
@@ -2076,21 +2114,36 @@ SystemMatch.setup({
     onHost: (roomId) => {
         currentRoomId = roomId;
         isHost = true; myId = 1; chatStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0; gameOverHandled = false;
+        window.onlineTradeSignal = null; window.onlineTradeResponse = null;
+        window.onlineAuctionState = null;
+        window.lastTradeSignalTs = 0; window.lastTradeRespTs = 0;
+        window.lastAuctionStateTs = 0; window.lastAuctionActionTs = 0;
         seats = SystemMatch.getSeats();
         listenToOnlineRoom();
     },
     onJoin: (roomId) => {
         currentRoomId = roomId;
         isHost = false; chatStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0; gameOverHandled = false;
+        window.onlineTradeSignal = null; window.onlineTradeResponse = null;
+        window.onlineAuctionState = null;
+        window.lastTradeSignalTs = 0; window.lastTradeRespTs = 0;
+        window.lastAuctionStateTs = 0; window.lastAuctionActionTs = 0;
         myId = SystemMatch.getMyId();
         seats = SystemMatch.getSeats();
         listenToOnlineRoom();
     },
     onLeave: () => {
+        detachRoomListeners();
         gameMode = "ai";
         document.getElementById("sys-mono-mode").value = "ai";
         localStorage.setItem("mono_mode", "ai");
         chatStarted = false;
+        currentRoomId = null;
+        onlineGameStarted = false;
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+        isHost = false; myId = 1;
     },
     onStart: () => {
         if (currentRoomId && window.db) {
@@ -2110,12 +2163,31 @@ SystemMatch.setup({
     }
 });
 
+function detachRoomListeners() {
+    if (roomListener)          { try { roomListener(); }          catch (e) {} roomListener = null; }
+    if (auctionActionListener) { try { auctionActionListener(); } catch (e) {} auctionActionListener = null; }
+    if (tradeRespListener)     { try { tradeRespListener(); }     catch (e) {} tradeRespListener = null; }
+}
+
 function listenToOnlineRoom() {
-    let started = false;
-    window.dbOnValue(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), snap => {
+    onlineGameStarted = false;
+    detachRoomListeners(); // guard against duplicate listeners on re-host
+    roomListener = window.dbOnValue(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), snap => {
         const data = snap.val();
-        if (!data) return;
-        
+        if (!data) {
+            // Room node deleted = the host left. Don't leave guests frozen.
+            if (!isHost && currentRoomId && !gameOverHandled) exitOnlineToLocal("Host left the game");
+            return;
+        }
+
+        // A guest closed their tab mid-game.
+        if (data.status === "abandoned") {
+            if (onlineGameStarted && !gameOverHandled) {
+                exitOnlineToLocal(`${data.abandonedBy || "A player"} left the game`);
+            }
+            return;
+        }
+
         if (data.seats) { 
             seats = data.seats; 
             SystemUI.v2Lobby.renderSeats(seats); 
@@ -2135,8 +2207,8 @@ function listenToOnlineRoom() {
             }
         }
 
-        if (data.status === "playing" && !started) {
-            started = true;
+        if (data.status === "playing" && !onlineGameStarted) {
+            onlineGameStarted = true;
             SystemUI.v2Lobby.hide();
             if (!chatStarted) {
                 chatStarted = true;
@@ -2156,10 +2228,10 @@ function listenToOnlineRoom() {
             }
             return;
         }
-        if (started && data.gameState) syncOnlineState(data.gameState);
+        if (onlineGameStarted && data.gameState) syncOnlineState(data.gameState);
     });
 
-    window.dbOnValue(window.dbRef(window.db, `mono_rooms/${currentRoomId}/auction_action`), snap => {
+    auctionActionListener = window.dbOnValue(window.dbRef(window.db, `mono_rooms/${currentRoomId}/auction_action`), snap => {
         const action = snap.val();
         if (!action || !window._currentAuctionOnBid) return;
         if (action.ts <= (window.lastAuctionActionTs || 0)) return;
@@ -2168,6 +2240,31 @@ function listenToOnlineRoom() {
         if (action.type === 'bid') window._currentAuctionOnBid(action.pid);
         if (action.type === 'fold') window._currentAuctionOnFold(action.pid);
     });
+
+    // Trade decisions arrive on a dedicated node (not inside full game state):
+    // the proposer applies the trade authoritatively and pushes the result.
+    tradeRespListener = window.dbOnValue(window.dbRef(window.db, `mono_rooms/${currentRoomId}/trade_response`), snap => {
+        const resp = snap.val();
+        if (!resp || !resp.ts) return;
+        if (resp.ts <= (window.lastTradeRespTs || 0)) return;
+        window.lastTradeRespTs = resp.ts;
+        if (resp.responderId === myId) return; // own echo
+
+        const sig = window.onlineTradeSignal;
+        if (!sig || sig.proposerId !== myId || resp.tradeTs !== sig.ts) return;
+
+        document.getElementById("loading-screen").classList.add("hidden");
+        const proposer = players.find(p => p.id === sig.proposerId);
+        const target   = players.find(p => p.id === sig.targetId);
+        if (resp.status === "accept" && proposer && target) {
+            executeTrade(proposer, target, sig.offerSids || [], sig.wantSids || [], sig.offerCash || 0, sig.wantCash || 0);
+            log(`${target.name} accepted the trade!`, "good");
+        } else {
+            log(`${target ? target.name : "Opponent"} rejected the trade.`, "bad");
+        }
+        window.onlineTradeSignal = null; // resolved — don't re-broadcast the offer
+        pushOnlineState();
+    });
 }
 
 let lastPushTime = 0;
@@ -2175,6 +2272,7 @@ function pushOnlineState() {
     if (!currentRoomId) return;
     const now = Date.now();
     lastPushTime = now;
+    stateSeq++;
     window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), {
         gameState: JSON.stringify({
             players, turnIdx, doublesRolled, phase, diceVal,
@@ -2183,7 +2281,7 @@ function pushOnlineState() {
             onlineTradeSignal: window.onlineTradeSignal || null,
             onlineTradeResponse: window.onlineTradeResponse || null,
             onlineAuctionState: window.onlineAuctionState || null,
-            ts: now, pusher: myId
+            ts: now, seq: stateSeq, pusher: myId
         })
     });
 }
@@ -2193,9 +2291,18 @@ function syncOnlineState(stateJson) {
     try {
         const s = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
         
-        if (!s.ts) return; 
-        if (s.pusher === myId && s.ts === lastPushTime) return; 
-        if (s.ts <= lastSyncTime) return; 
+        if (!s.ts) return;
+        // Order by monotonic seq — every client pushes state and comparing
+        // wall clocks dropped packets from whichever machine's clock ran
+        // behind, freezing that player (and re-applied stale echoes replayed
+        // the dice animation twice). Equal seq must be ACCEPTED (only < is
+        // stale) since multiple writers can race.
+        if (s.seq) {
+            if (s.seq < stateSeq) return;
+            stateSeq = s.seq;
+        } else if (s.ts <= lastSyncTime) return;
+        // Skip our own echoes
+        if (s.pusher === myId) { lastSyncTime = s.ts; return; }
 
         lastSyncTime = s.ts;
 
@@ -2227,6 +2334,12 @@ function syncOnlineState(stateJson) {
             setTimeout(() => aiDoTurn(players[turnIdx]), 1500);
         }
 
+        // Remote game over — announce the winner + record stats exactly once.
+        if (phase === "gameover" && !gameOverHandled) {
+            const alive = activePlayers();
+            endGame(alive.length === 1 ? alive[0] : null, true);
+        }
+
         if (s.onlineTradeSignal && s.onlineTradeSignal.ts > (window.lastTradeSignalTs || 0)) {
             window.lastTradeSignalTs = s.onlineTradeSignal.ts;
             if (s.onlineTradeSignal.targetId === myId) {
@@ -2236,6 +2349,7 @@ function syncOnlineState(stateJson) {
                     proposer, target,
                     offerSids: s.onlineTradeSignal.offerSids, wantSids: s.onlineTradeSignal.wantSids,
                     offerCash: s.onlineTradeSignal.offerCash, wantCash: s.onlineTradeSignal.wantCash,
+                    signalTs: s.onlineTradeSignal.ts,
                     onResolve: null
                 };
                 showTradeResponseModal(pendingTrade);
@@ -2274,10 +2388,48 @@ function syncOnlineState(stateJson) {
     } catch (e) { console.error("Sync error:", e); }
 }
 
-window.addEventListener("beforeunload", () => {
-    if (isHost && currentRoomId && gameMode === "online") {
-        window.dbSet(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), null);
+// ── LEAVE / DISCONNECT RECOVERY ───────────────
+function exitOnlineToLocal(msg) {
+    detachRoomListeners();
+    SystemUI.stopChat(); chatStarted = false;
+    currentRoomId = null;
+    onlineGameStarted = false;
+    stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+    gameOverHandled = false;
+    window.onlineTradeSignal = null; window.onlineTradeResponse = null;
+    window.onlineAuctionState = null;
+    isHost = false; myId = 1;
+    gameMode = "ai";
+    phase = "idle";
+    const modeEl = document.getElementById("sys-mono-mode");
+    if (modeEl) modeEl.value = "ai";
+    localStorage.setItem("mono_mode", "ai");
+    SystemUI.v2Lobby.hide();
+    document.getElementById("loading-screen").classList.add("hidden");
+    document.getElementById("game-area").classList.add("hidden");
+    document.getElementById("start-screen").classList.remove("hidden");
+    document.getElementById("start-settings").style.display = "";
+    document.getElementById("start-btn").style.display = "";
+    if (msg) {
+        document.getElementById("go-emoji").textContent = "🚪";
+        document.getElementById("go-title").textContent = "GAME OVER";
+        document.getElementById("go-stats").innerHTML = msg;
+        document.getElementById("gameover-modal").classList.remove("hidden");
     }
+}
+
+window.addEventListener("beforeunload", () => {
+    if (!currentRoomId || gameMode !== "online" || !window.db) return;
+    try {
+        if (isHost) {
+            window.dbSet(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), null);
+        } else if (onlineGameStarted && !gameOverHandled) {
+            // Guest closed the tab mid-game — flag it so nobody waits on a ghost.
+            window.dbUpdate(window.dbRef(window.db, `mono_rooms/${currentRoomId}`), {
+                status: "abandoned", abandonedBy: SystemUI.getPlayerName()
+            });
+        }
+    } catch (e) {}
 });
 
 document.getElementById("btn-bid-up")?.addEventListener("click", () => {

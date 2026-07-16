@@ -148,7 +148,20 @@ function listenToRoom() {
 
     roomListener = window.dbOnValue(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), (snapshot) => {
         const data = snapshot.val();
-        if(!data) return;
+        if(!data) {
+            // Room node removed — the host quit. Don't freeze the guest.
+            if (gameMode === "online" && currentRoomId && !isHost) {
+                exitOnline("Host left the game");
+            }
+            return;
+        }
+        if (data.status === "abandoned") {
+            // Guest closed their tab mid-game
+            if (gameMode === "online" && currentRoomId && isHost) {
+                exitOnline("Opponent left the game");
+            }
+            return;
+        }
 
         seats = data.seats || [];
         SystemUI.v2Lobby.renderSeats(seats);
@@ -185,6 +198,36 @@ function listenToRoom() {
         }
     });
 }
+
+// The opponent vanished — clean up and drop back to hotseat with a notice.
+function exitOnline(message) {
+    if (roomListener) { roomListener(); roomListener = null; }
+    if (window.SystemMatch) {
+        // Room is already gone when the host left — blank the seats first so
+        // cleanup() doesn't write a ghost seat-release into a deleted room.
+        if (!isHost) SystemMatch.setSeats([]);
+        SystemMatch.cleanup(); // host: removes room node; both: stops chat
+    }
+    currentRoomId = null;
+    chatStarted = false;
+    SystemUI.v2Lobby.hide();
+    gameMode = "local";
+    localStorage.setItem("ttt_mode", "local");
+    const modeEl = document.getElementById("sys-ttt-mode");
+    if (modeEl) modeEl.value = "local";
+    syncDiffVisibility();
+    isHost = true;
+    restartGame();
+    statusDisplay.innerText = message;
+}
+
+// Guest closing the tab mid-game flags the room abandoned so the host's
+// listener can react. (Host tab-close removal is handled by SystemMatch.)
+window.addEventListener("beforeunload", () => {
+    if (gameMode === "online" && currentRoomId && !isHost && chatStarted && window.db && window.dbUpdate) {
+        try { window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), { status: "abandoned" }); } catch (e) {}
+    }
+});
 
 // ==========================================
 // 3. CORE ENGINE STATE
@@ -436,7 +479,9 @@ function restartGame() {
     isThinking = false;
 
     if (gameMode === "online") {
-        if (isHost && window.db) {
+        // Either player may restart — the blank-board write is idempotent,
+        // so the guest's RESTART works instead of silently doing nothing.
+        if (window.db && currentRoomId) {
             window.dbUpdate(window.dbRef(window.db, 'ttt_rooms/' + currentRoomId), {
                 board: ["", "", "", "", "", "", "", "", ""],
                 turn: "X"

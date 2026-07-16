@@ -1007,7 +1007,8 @@ function checkGameOver() {
     document.getElementById("game-over-title").textContent = "WINNER!";
     document.getElementById("game-over-msg").textContent = `${winner.name} wins with ${winner.score} points!`;
     if (typeof SystemStats !== 'undefined' && gameMode !== "hotseat") {
-        if (winner.name === players[myId-1].name) SystemStats.recordWin("scrabble", 0);
+        // Compare by seat index — names are display strings and can collide.
+        if (players.indexOf(winner) === myId - 1) SystemStats.recordWin("scrabble", 0);
         else SystemStats.recordLoss("scrabble");
     }
     new Audio('../../system/audio/victory.mp3').play().catch(e=>{});
@@ -1290,7 +1291,8 @@ SystemUI.v2Lobby.setup({
     onHost: () => {
         currentRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
         isHost = true; myId = 1; chatStarted = false;
-        
+        stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+
         board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(null));
         tileBag = buildBag();
 
@@ -1319,10 +1321,23 @@ SystemUI.v2Lobby.setup({
                         }
                     }
                     if (joinedIdx !== -1) {
-                        currentRoomId = code; isHost = false; myId = joinedIdx + 1; chatStarted = false;
-                        window.dbUpdate(window.dbRef(window.db, `scrabble_rooms/${code}`), { seats: updatedSeats });
-                        SystemUI.v2Lobby.showRoomPhase(code, false);
-                        listenToRoom();
+                        const myName = SystemUI.getPlayerName();
+                        window.dbUpdate(window.dbRef(window.db, `scrabble_rooms/${code}`), { seats: updatedSeats })
+                            .then(() => window.dbGet(window.dbChild(window.dbRef(window.db), `scrabble_rooms/${code}`)))
+                            .then(verifySnap => {
+                                // Verify the claim stuck — a simultaneous joiner may have
+                                // overwritten this seat (same pattern as SystemMatch).
+                                const v = verifySnap.val();
+                                const claimed = v && v.seats && v.seats[joinedIdx];
+                                if (!claimed || claimed.type !== "human" || claimed.name !== myName) {
+                                    SystemUI.v2Lobby.showError("SEAT TAKEN");
+                                    return;
+                                }
+                                currentRoomId = code; isHost = false; myId = joinedIdx + 1; chatStarted = false;
+                                stateSeq = 0; lastSyncTime = 0; lastPushTime = 0;
+                                SystemUI.v2Lobby.showRoomPhase(code, false);
+                                listenToRoom();
+                            });
                     } else { SystemUI.v2Lobby.showError("ROOM FULL"); }
                 }
             } else { SystemUI.v2Lobby.showError("ROOM NOT FOUND"); }
@@ -1447,10 +1462,14 @@ function handleRoomClosed() {
 }
 
 let lastPushTime = 0;
+// Monotonic push ordering — wall clocks aren't comparable across machines,
+// and every turn-holder pushes, so ts-based ordering dropped real moves.
+let stateSeq = 0;
 function pushOnlineState() {
     if (!currentRoomId) return;
     const now = Date.now();
     lastPushTime = now;
+    stateSeq++;
     const logEl = document.getElementById("play-log");
     const serializedLog = [];
     if (logEl) logEl.querySelectorAll(".log-entry").forEach(el => { serializedLog.push({ html: el.innerHTML }); });
@@ -1460,7 +1479,7 @@ function pushOnlineState() {
             board, bag: tileBag, currentTurn,
             players: players.map(p => ({ name: p.name, score: p.score, rack: p.rack, isAI: p.isAI })),
             consecutivePasses, gameLog: serializedLog,
-            ts: now, pusher: myId
+            ts: now, pusher: myId, seq: stateSeq
         })
     });
 }
@@ -1469,8 +1488,15 @@ let lastSyncTime = 0;
 function syncOnlineState(stateJson) {
     try {
         const s = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson;
-        if (!s.ts || (s.pusher === myId && s.ts === lastPushTime) || s.ts <= lastSyncTime) return;
-        lastSyncTime = s.ts;
+        if (s.seq) {
+            // Fast-forward past our own echoes, drop stale packets only.
+            if (s.pusher === myId) { stateSeq = Math.max(stateSeq, s.seq); return; }
+            if (s.seq < stateSeq) return;
+            stateSeq = s.seq;
+        } else if (!s.ts || (s.pusher === myId && s.ts === lastPushTime) || s.ts <= lastSyncTime) {
+            return; // legacy packet without seq
+        }
+        lastSyncTime = s.ts || lastSyncTime;
 
         if (players.length === 0) {
             initGame("online", aiDifficulty, s.players.length);
