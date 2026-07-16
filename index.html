@@ -108,7 +108,9 @@
     </div>
     
     <div class="search-container">
-        <input type="search" id="game-search" class="hub-interactive" placeholder="Search games..." autocomplete="off" name="game-search-nofill" aria-label="Search games">
+        <!-- readonly is removed on focus/pointerdown by hub_app.js — Chrome force-fills
+             saved usernames into normal text inputs but never touches readonly ones -->
+        <input type="search" id="game-search" class="hub-interactive" placeholder="Search games..." autocomplete="off" name="game-search-nofill" aria-label="Search games" readonly>
     </div>
     
     <div class="category-filters">
@@ -437,7 +439,9 @@
   <script src="system/system_stats.js"></script>
   <script src="system/system_achievements.js"></script>
   <script src="system/system_rewards.js"></script>
-  <script src="hub_app.js"></script>
+  <!-- version query = cache buster: bump when hub_app.js changes so players
+       actually receive fixes without a manual hard refresh -->
+  <script src="hub_app.js?v=2026-07-15-2"></script>
 
 </body>
 </html>
