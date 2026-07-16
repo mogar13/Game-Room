@@ -105,6 +105,9 @@ window.SystemMatch = {
                     SystemUI.v2Lobby.showError('CONNECTING — TRY AGAIN');
                     return;
                 }
+                // Never orphan a previously hosted room — if one is still live
+                // (e.g. a code path re-opened the setup phase), remove it first.
+                if (self._roomId) self.cleanup();
                 const id = Math.random().toString(36).substr(2, 4).toUpperCase();
                 const count = seatCount();
                 const seats = buildSeats(count);
@@ -198,6 +201,13 @@ window.SystemMatch = {
             },
 
             onClose: function() {
+                // Closing the lobby with the X while a room is live abandons it.
+                // Tear it down (host: delete the node, joiner: free the seat) —
+                // without this every X-close left a ghost "waiting" room in
+                // Firebase, and re-hosting piled them up (worst in Hold'em).
+                if (self._roomId || self._roomListener) {
+                    self.cleanup();
+                }
                 if (config.onClose) config.onClose();
             }
         }));
@@ -306,7 +316,11 @@ window.SystemMatch = {
 // room is still live — without this, abandoned host rooms pile up in
 // Firebase until the hub iframe-close sweeper happens to run. Mirrors
 // the per-game beforeunload that UNO has had for a while.
-window.addEventListener('beforeunload', function() {
+//
+// Wired to BOTH beforeunload and pagehide: games run inside the hub's
+// iframe, which is closed by clearing its src — that navigation fires
+// pagehide reliably but often skips beforeunload. Best-effort either way.
+function systemMatchTeardownOnUnload() {
     const m = window.SystemMatch;
     if (!m || !m._roomId || !m._roomPath) return;
     if (!window.db || !window.dbRef) return;
@@ -318,11 +332,15 @@ window.addEventListener('beforeunload', function() {
             } else if (typeof window.dbSet === 'function') {
                 window.dbSet(ref, null);
             }
+            m._roomId = null; // both events can fire — only tear down once
         } else {
             // Joiner tab close: free the seat so the room stays usable.
             m._releaseSeat();
+            m._roomId = null;
         }
     } catch (e) {
-        // beforeunload is best-effort — never block the unload
+        // unload handlers are best-effort — never block the unload
     }
-});
+}
+window.addEventListener('beforeunload', systemMatchTeardownOnUnload);
+window.addEventListener('pagehide', systemMatchTeardownOnUnload);

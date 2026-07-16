@@ -126,7 +126,8 @@ document.getElementById("btn-create-room").addEventListener("click", () => {
         yahtzeeBonus1: 0,
         yahtzeeBonus2: 0,
         players: 1,
-        status: "waiting"
+        status: "waiting",
+        createdAt: Date.now()
     }).then(() => {
         document.getElementById("room-code-display").classList.remove("hidden");
         document.getElementById("host-room-id").innerText = currentRoomId;

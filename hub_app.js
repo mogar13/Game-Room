@@ -1269,6 +1269,32 @@ function renderCarousel() {
         header.style.display = hasVisible ? '' : 'none';
     });
 
+    // Empty state — without this, a search with no hits (or a value the
+    // browser autofilled into the search box) rendered a silent blank grid
+    // that looked like the hub failed to load.
+    let noResults = document.getElementById('no-results-msg');
+    if (filteredCards.length === 0 && allCards.length > 0) {
+        if (!noResults) {
+            noResults = document.createElement('div');
+            noResults.id = 'no-results-msg';
+            noResults.style.cssText = 'grid-column: 1 / -1; text-align: center; color: #f1c40f; padding: 40px 20px; font-family: inherit;';
+            grid.appendChild(noResults);
+        }
+        noResults.innerHTML = `No games match your search.<br>
+            <button id="btn-clear-search" style="margin-top: 15px; background: transparent; border: 1px solid #f1c40f; color: #f1c40f; padding: 8px 20px; border-radius: 20px; cursor: pointer; font-family: inherit; font-weight: bold;">CLEAR SEARCH</button>`;
+        noResults.style.display = '';
+        document.getElementById('btn-clear-search').addEventListener('click', () => {
+            searchInput.value = '';
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active-cat'));
+            const allBtn = document.querySelector('.cat-btn[data-filter="all"]');
+            if (allBtn) allBtn.classList.add('active-cat');
+            currentCategory = 'all';
+            applyFilters();
+        });
+    } else if (noResults) {
+        noResults.style.display = 'none';
+    }
+
     prevBtn.style.visibility = currentPage === 1 ? 'hidden' : 'visible';
     nextBtn.style.visibility = currentPage === totalPages ? 'hidden' : 'visible';
 
@@ -1301,6 +1327,28 @@ function applyFilters() {
 }
 
 if(searchInput) searchInput.addEventListener('input', applyFilters);
+
+// Chrome ignores autocomplete="off" when it has saved credentials for the
+// site and autofills the username into any input it mis-reads as a login
+// field — which blanked the whole game grid. The search box must always
+// start empty: wipe whatever the browser injected on load, on bfcache
+// restore (returning to the hub via Back), and on tab re-focus shortly
+// after load. Never fires once the user has actually typed.
+let userHasTypedInSearch = false;
+if (searchInput) {
+    searchInput.addEventListener('keydown', () => { userHasTypedInSearch = true; });
+    const wipeAutofill = () => {
+        if (!userHasTypedInSearch && searchInput.value !== '') {
+            searchInput.value = '';
+            applyFilters();
+        }
+    };
+    window.addEventListener('pageshow', wipeAutofill);
+    // Autofill can land after pageshow — sweep a few times in the first second
+    setTimeout(wipeAutofill, 250);
+    setTimeout(wipeAutofill, 600);
+    setTimeout(wipeAutofill, 1200);
+}
 
 catBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -1490,32 +1538,27 @@ window.addEventListener('message', function(event) {
         if (typeof updateBonusUI === 'function') updateBonusUI();
         renderRecentlyPlayed();
 
-        // Delete waiting rooms for the game that just closed so they never pile up in Firebase
+        // Safety net: delete waiting rooms the closing player left behind in the
+        // game that just closed. Scoped to rooms hosted under OUR player name —
+        // the old blanket delete of every 'waiting' room also nuked lobbies
+        // other players were actively hosting.
         if (window.db && window.dbGet && window.dbRemove && window.dbRef) {
-            const frameUrl = closingFrameUrl;
-            const closingGame = rawGameData.find(g => frameUrl.includes(g.url.split('/').pop()));
-            console.log('[Hub] Close game fired. frameUrl:', frameUrl);
-            console.log('[Hub] Matched game:', closingGame ? closingGame.id : 'NONE');
-            console.log('[Hub] roomPath:', closingGame ? closingGame.roomPath : 'N/A');
+            const closingGame = rawGameData.find(g => closingFrameUrl.includes(g.url.split('/').pop()));
             if (closingGame && closingGame.roomPath) {
-                const roomsRef = window.dbRef(window.db, closingGame.roomPath);
-                window.dbGet(roomsRef).then(snap => {
+                const myName = (window.SystemProfile && SystemProfile.getPlayerName) ? SystemProfile.getPlayerName() : null;
+                window.dbGet(window.dbRef(window.db, closingGame.roomPath)).then(snap => {
                     const rooms = snap.val();
-                    console.log('[Hub] Rooms found at', closingGame.roomPath, ':', rooms ? Object.keys(rooms).length : 0);
-                    if (!rooms) return;
+                    if (!rooms || !myName) return;
                     Object.keys(rooms).forEach(code => {
-                        console.log('[Hub] Room', code, 'status:', rooms[code].status);
-                        if (rooms[code].status === 'waiting') {
-                            console.log('[Hub] Deleting room:', code);
+                        const room = rooms[code];
+                        if (room.status !== 'waiting') return;
+                        const hostName = (room.seats && room.seats[0] && room.seats[0].name) || room.p1Name || room.hostName || null;
+                        if (hostName === myName) {
                             window.dbRemove(window.dbRef(window.db, `${closingGame.roomPath}/${code}`));
                         }
                     });
-                }).catch(err => { console.error('[Hub] dbGet error:', err); });
-            } else {
-                console.warn('[Hub] Skipping room cleanup — no closingGame or no roomPath');
+                }).catch(() => {});
             }
-        } else {
-            console.warn('[Hub] Skipping room cleanup — Firebase not ready. db:', !!window.db, 'dbGet:', !!window.dbGet, 'dbRemove:', !!window.dbRemove);
         }
     }
 });
@@ -1852,11 +1895,14 @@ async function initCards() {
         });
     });
 
-    // Initial render
+    // Initial render. If the browser restored/autofilled a value into the
+    // search box, run it through applyFilters so the grid and the box agree;
+    // otherwise plain renderCarousel keeps the remembered page.
     renderFavorites();
     updateStarIcons();
     renderRecentlyPlayed();
-    renderCarousel();
+    if (searchInput && searchInput.value.trim() !== '') applyFilters();
+    else renderCarousel();
     
     // Boot the live multiplayer scanner after cards exist.
     // Firebase is a type="module" script which runs AFTER regular scripts.
@@ -1879,6 +1925,30 @@ initCards();
 
 // --- 11. LIVE MULTIPLAYER SCANNER ---
 let activeMatchesListeners = [];
+
+// Stale-room garbage collector. Rooms should be deleted by the game that owns
+// them, but writes from a closing tab/iframe are best-effort — so every hub
+// client also sweeps obvious ghosts out of Firebase while scanning:
+//   - waiting/abandoned/finished rooms with no activity for 30+ minutes
+//   - any room with no activity for 6+ hours
+// Rooms without a timestamp are left alone (can't prove they're stale).
+const gcAttempted = new Set();
+function gcStaleRoom(roomPath, roomCode, roomData, now) {
+    const STALE_IDLE = 30 * 60 * 1000;
+    const STALE_HARD = 6 * 60 * 60 * 1000;
+    const lastSeen = Math.max(roomData.ts || 0, roomData.createdAt || 0);
+    if (!lastSeen) return false;
+    const age = now - lastSeen;
+    const idleStatus = roomData.status === 'waiting' || roomData.status === 'abandoned' || roomData.status === 'finished';
+    const stale = age > STALE_HARD || (idleStatus && age > STALE_IDLE);
+    if (!stale) return false;
+    const key = roomPath + '/' + roomCode;
+    if (!gcAttempted.has(key) && typeof window.dbRemove === 'function') {
+        gcAttempted.add(key);
+        Promise.resolve(window.dbRemove(window.dbRef(window.db, key))).catch(() => {});
+    }
+    return true; // treat as gone either way — never render a chip for it
+}
 
 function scanActiveMatches() {
     // Only run if Firebase is connected
@@ -1905,15 +1975,17 @@ function scanActiveMatches() {
             }
 
             // Collect every roomCode that is currently active and joinable
-            const THIRTY_MINS = 30 * 60 * 1000;
             const now = Date.now();
             const activeCodes = [];
             Object.keys(rooms).forEach(roomCode => {
                 const roomData = rooms[roomCode];
-                // Skip rooms older than 30 minutes — they are ghosts from abandoned sessions
-                if (roomData.createdAt && (now - roomData.createdAt) > THIRTY_MINS) return;
-                
-                const isJoinable = roomData.status === "waiting" || roomData.status === "playing";
+                // Delete provable ghosts from abandoned sessions, skip rendering them
+                if (gcStaleRoom(game.roomPath, roomCode, roomData, now)) return;
+
+                // Only 'waiting' rooms are joinable — every join flow rejects a
+                // room once its game has started, so a JOIN chip for a
+                // 'playing' room was a dead button.
+                const isJoinable = roomData.status === "waiting";
                 const seats = roomData.seats || [];
                 // Default hasOpenSeat to true for games that don't use a seats array (e.g. ttt)
                 const hasOpenSeat = seats.length === 0 || seats.some(s => s && (s.type === 'ai' || s.type === 'empty' || s.type === 'open'));

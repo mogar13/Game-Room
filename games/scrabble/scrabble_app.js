@@ -1300,7 +1300,7 @@ SystemUI.v2Lobby.setup({
         for (let i = 1; i < lobbyPlayerCount; i++) { seats.push({ type: "ai", name: "AI " + i }); }
         
         window.dbSet(window.dbRef(window.db, `scrabble_rooms/${currentRoomId}`), {
-            status: "waiting", seats: seats
+            status: "waiting", seats: seats, createdAt: Date.now()
         }).then(() => {
             SystemUI.v2Lobby.showRoomPhase(currentRoomId, true);
             listenToRoom();

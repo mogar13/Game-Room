@@ -102,7 +102,8 @@ btnCreateRoom.addEventListener("click", () => {
         pos2: 1,
         turn: 1,
         players: 1,
-        status: "waiting"
+        status: "waiting",
+        createdAt: Date.now()
     }).then(() => {
         document.getElementById("room-code-display").classList.remove("hidden");
         document.getElementById("host-room-id").innerText = currentRoomId;

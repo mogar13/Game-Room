@@ -501,7 +501,7 @@ document.getElementById("btn-create-room").addEventListener("click", () => {
     currentRoomId = generateRoomCode(); isHost = true; myId = 1; chatStarted = false;
     stateSeq = 0; lastLogSync = "";
     window.dbSet(window.dbRef(window.db, 'rummy_rooms/' + currentRoomId), {
-        status: "waiting", players: 1, p1Name: p1Name, turn: 1
+        status: "waiting", players: 1, p1Name: p1Name, turn: 1, createdAt: Date.now()
     }).then(() => {
         document.getElementById("room-code-display").classList.remove("hidden");
         document.getElementById("host-room-id").innerText = currentRoomId;

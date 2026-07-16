@@ -66,6 +66,8 @@ document.getElementById("sys-chess-mode").addEventListener("change", e => {
         myId = 1;
         isHost = true;
         if (roomListener) { roomListener(); roomListener = null; }
+        // Tear down hosted room / joined seat so it can't ghost in Firebase
+        if (window.SystemMatch) SystemMatch.cleanup();
         newGame();
     }
 });

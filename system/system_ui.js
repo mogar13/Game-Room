@@ -361,6 +361,13 @@ window.SystemUI = {
 
         document.getElementById('sys-hm-exit').addEventListener('click', () => {
             this.playSound('exit');
+            // Tear down any live multiplayer room NOW, while the page is still
+            // running — the hub closes games by clearing the iframe src, and
+            // unload events inside a dying iframe can't be trusted to deliver
+            // the Firebase write. Host: room deleted; joiner: seat freed.
+            if (window.SystemMatch && (window.SystemMatch._roomId || window.SystemMatch._roomListener)) {
+                try { window.SystemMatch.cleanup(); } catch (e) {}
+            }
             setTimeout(() => {
                 if (window.self !== window.top) {
                     window.parent.postMessage({ type: 'CASINO_OS_CLOSE_GAME' }, '*');

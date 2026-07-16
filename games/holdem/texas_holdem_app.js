@@ -55,7 +55,7 @@ const sfxLose = new Audio('../../system/audio/lose.ogg');
 
 function playCustomSound(type) {
     let snd;
-    if (type === 'draw' || type === 'card') snd = sfxDraw;
+    if (type === 'draw' || type === 'card' || type === 'shuffle') snd = sfxDraw;
     else if (type === 'play' || type === 'chipStack') snd = sfxPlay;
     else if (type === 'win') snd = sfxWin;
     else if (type === 'lose') snd = sfxLose;
@@ -120,13 +120,18 @@ function initPoker() {
             if (gameMode === "online") { 
                 document.getElementById("action-zone").classList.add("hidden");
                 SystemUI.v2Lobby.show(); 
-            } else { 
+            } else {
                 document.getElementById("action-zone").classList.remove("hidden");
                 SystemUI.v2Lobby.hide();
-                SystemUI.stopChat(); chatStarted = false;
-                myId = 1; isHost = true;
-                joinerBoughtIn = false; lastSyncTime = 0;
                 if (roomListener) { roomListener(); roomListener = null; }
+                // Full teardown: deletes a hosted room / frees a joined seat and
+                // stops chat. Without this, switching back to AI after hosting
+                // left a ghost "waiting" room in Firebase every time.
+                if (window.SystemMatch) SystemMatch.cleanup();
+                chatStarted = false;
+                currentRoomId = null;
+                myId = 1; isHost = true;
+                joinerBoughtIn = false; lastSyncTime = 0; lastActionTs = 0;
                 resetGame();
             }
         });
@@ -746,6 +751,9 @@ function listenToRoom() {
         }
         seats = data.seats || []; SystemUI.v2Lobby.renderSeats(seats); playerNames = seats.map(s => s.name);
         playerCount = seats.length;
+        // Keep SystemMatch's seat snapshot fresh — _releaseSeat writes the whole
+        // seats array back, and a stale copy could clobber another joiner's seat.
+        if (window.SystemMatch) SystemMatch.setSeats(seats);
         if (data.status === "playing") {
             SystemUI.v2Lobby.hide(); document.getElementById("action-zone").classList.remove("hidden");
             if (!chatStarted) { chatStarted = true; SystemUI.startChat(currentRoomId, SystemUI.getPlayerName()); }

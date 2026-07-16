@@ -254,7 +254,7 @@ if (document.readyState === "loading") {
 // ==========================================
 if (window.SystemUI) {
     window.SystemUI.startChat = function(roomId, playerName) { window.SystemChat.startChat(roomId, playerName); };
-    window.SystemUI.stopChat = function() { window.SystemChat.stopChat(); };
+    window.SystemUI.stopChat = function(opts) { window.SystemChat.stopChat(opts); };
     window.SystemUI.openChat = function() { window.SystemChat.openChat(); };
     window.SystemUI.closeChat = function() { window.SystemChat.closeChat(); };
     window.SystemUI._sendMessage = function() { window.SystemChat.sendMessage(); };

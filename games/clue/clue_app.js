@@ -1533,7 +1533,7 @@ document.getElementById("btn-create-room")?.addEventListener("click", () => {
     isHost = true; myId = 1; myPlayerIndex = 0; chatStarted = false;
 
     window.dbSet(window.dbRef(window.db, 'clue_rooms/' + currentRoomId), {
-        status: "waiting", players: 1, hostName: SystemUI.getPlayerName()
+        status: "waiting", players: 1, hostName: SystemUI.getPlayerName(), createdAt: Date.now()
     }).then(() => {
         document.getElementById("room-code-display").classList.remove("hidden");
         document.getElementById("host-room-id").innerText = currentRoomId;

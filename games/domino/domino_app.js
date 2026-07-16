@@ -88,6 +88,8 @@ setTimeout(() => {
                 SystemUI.v2Lobby.show();
             } else {
                 SystemUI.v2Lobby.hide();
+                // Tear down hosted room / joined seat so it can't ghost in Firebase
+                if (window.SystemMatch) SystemMatch.cleanup();
                 SystemUI.stopChat(); chatStarted = false;
                 myId = 1; isHost = true;
                 resetGame();
