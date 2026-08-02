@@ -73,6 +73,8 @@ body {
 .ss-chip:hover  { border-color: var(--gold); color: var(--gold); background: var(--gold-faint); }
 .ss-chip.active { border-color: var(--gold); background: var(--gold); color: #000; }
 
+.ss-hint { font-size: 0.55rem; letter-spacing: 1px; color: var(--muted); text-align: center; line-height: 1.5; }
+
 #start-game-btn {
     font-family: 'Orbitron', sans-serif; font-size: 0.9rem; font-weight: 800;
     letter-spacing: 3px; padding: 16px 50px; border-radius: 50px;
@@ -198,6 +200,34 @@ body {
   z-index: 5;
 }
 
+/* --- POT & RAISE --- */
+#uno-money-row {
+  display: flex; align-items: center; gap: 8px; z-index: 6;
+}
+
+#uno-pot {
+  padding: 4px 14px; border-radius: 20px; font-weight: bold; font-size: 0.72rem;
+  letter-spacing: 1px; color: var(--gold); background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(241, 196, 15, 0.5);
+}
+
+#uno-raise-btn {
+  font-family: 'Orbitron', sans-serif; font-size: 0.65rem; font-weight: 800;
+  letter-spacing: 2px; padding: 5px 14px; border-radius: 20px; cursor: pointer;
+  color: #000; background: var(--gold); border: 1px solid #fff;
+  box-shadow: 0 0 14px rgba(241, 196, 15, 0.45); transition: transform 0.15s;
+}
+#uno-raise-btn:hover  { transform: scale(1.07); }
+#uno-raise-btn:active { transform: scale(0.94); }
+
+/* Folded seats stay on the table but read as dead. */
+.seat-folded .hand { opacity: 0.25; filter: grayscale(1); }
+.seat-folded h3    { opacity: 0.45; }
+.fold-tag {
+  font-size: 0.55rem; letter-spacing: 2px; color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.6); border-radius: 10px; padding: 1px 6px;
+}
+
 /* --- MOVE LOG --- */
 #move-log {
   width: 95%; max-width: 300px; height: 45px;
@@ -275,6 +305,65 @@ body {
     text-align: center;
 }
 
+/* --- YOUR-TURN TOAST ---
+   Parked top-left under the HUD bar, clear of the table and the card hands.
+   Driven by .show (not .hidden) so the fade actually runs. */
+#uno-turn-toast {
+    position: fixed; top: 92px; left: 32px; z-index: 4000;
+    background: linear-gradient(135deg, #27ae60, #2ecc71);
+    color: #fff; font-family: 'Orbitron', sans-serif;
+    font-size: 1.05rem; font-weight: 900; letter-spacing: 2px; white-space: nowrap;
+    padding: 13px 26px; border-radius: 14px; border: 2px solid rgba(255,255,255,0.85);
+    box-shadow: 0 8px 26px rgba(0,0,0,0.55), 0 0 30px rgba(46, 204, 113, 0.55);
+    pointer-events: none; opacity: 0; transform: translateX(-16px);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+#uno-turn-toast.show { opacity: 1; transform: translateX(0); }
+
+/* --- BETTING MODALS (RAISE / CALL) --- */
+#uno-raise-modal, #uno-call-prompt {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  display: flex; justify-content: center; align-items: center; z-index: 10000;
+}
+.bet-box {
+  background: #2c3e50; padding: 26px 30px; border-radius: 12px; border: 2px solid var(--gold);
+  text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  display: flex; flex-direction: column; gap: 14px; max-width: 92vw;
+}
+.bet-box h3 { font-size: 1rem; letter-spacing: 3px; }
+.bet-sub  { font-size: 0.6rem; letter-spacing: 2px; color: var(--gold); }
+.bet-note { font-size: 0.55rem; letter-spacing: 1px; color: var(--muted); line-height: 1.6; max-width: 260px; }
+
+.raise-options { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.raise-opt {
+  font-family: 'Orbitron', sans-serif; font-size: 0.62rem; font-weight: 700; letter-spacing: 1px;
+  padding: 10px 14px; border-radius: 10px; cursor: pointer; min-width: 74px;
+  border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.6);
+  display: flex; flex-direction: column; gap: 4px; align-items: center; transition: all 0.15s;
+}
+.raise-opt span   { font-size: 0.72rem; font-weight: 900; color: var(--gold); }
+.raise-opt:hover  { border-color: var(--gold); background: var(--gold-faint); color: #fff; }
+.raise-opt:disabled { opacity: 0.3; cursor: not-allowed; }
+.raise-opt:disabled:hover { border-color: rgba(255,255,255,0.15); background: transparent; }
+.raise-allin span { color: #e74c3c; }
+
+.call-actions { display: flex; gap: 10px; justify-content: center; }
+.call-actions button {
+  font-family: 'Orbitron', sans-serif; font-size: 0.72rem; font-weight: 800; letter-spacing: 2px;
+  padding: 12px 24px; border-radius: 10px; cursor: pointer; border: 2px solid #fff;
+  transition: transform 0.15s;
+}
+.call-actions button:hover  { transform: scale(1.05); }
+#call-btn { background: #2ecc71; color: #000; }
+#fold-btn { background: #e74c3c; color: #fff; }
+
+.bet-cancel {
+  font-family: 'Orbitron', sans-serif; font-size: 0.6rem; letter-spacing: 2px;
+  background: transparent; color: var(--muted); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px; padding: 7px 16px; cursor: pointer;
+}
+.bet-cancel:hover { color: #fff; border-color: rgba(255,255,255,0.3); }
+
 /* --- COLOR PICKER MODAL --- */
 #color-picker-modal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.85); 
@@ -299,4 +388,11 @@ body {
     .ss-title { font-size: 1.8rem; }
     .player-area h3 { font-size: 0.7rem; }
     #direction-container { width: 140px; height: 140px; }
+
+    /* No room for a left gutter on a phone — centre it under the HUD instead. */
+    #uno-turn-toast {
+        top: 84px; left: 50%; font-size: 0.8rem; padding: 9px 18px;
+        transform: translateX(-50%) translateY(-10px);
+    }
+    #uno-turn-toast.show { transform: translateX(-50%) translateY(0); }
 }

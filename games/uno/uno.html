@@ -54,6 +54,34 @@
 
   <div id="uno-shout-display" class="hidden">UNO!</div>
 
+  <div id="uno-turn-toast">⭐ YOUR TURN!</div>
+
+  <div id="uno-raise-modal" class="hidden">
+    <div class="bet-box">
+      <h3>RAISE</h3>
+      <div class="bet-sub">POT $<span id="raise-pot-amt">0</span> &middot; YOU HAVE $<span id="raise-bankroll">0</span></div>
+      <div class="raise-options">
+        <button class="raise-opt" data-raise="min">MIN<span></span></button>
+        <button class="raise-opt" data-raise="half">½ POT<span></span></button>
+        <button class="raise-opt" data-raise="pot">POT<span></span></button>
+        <button class="raise-opt raise-allin" data-raise="allin">ALL IN<span></span></button>
+      </div>
+      <button id="raise-cancel" class="bet-cancel">CANCEL</button>
+    </div>
+  </div>
+
+  <div id="uno-call-prompt" class="hidden">
+    <div class="bet-box">
+      <h3><span id="call-raiser">A PLAYER</span> RAISED</h3>
+      <div class="bet-sub">POT $<span id="call-pot-amt">0</span> &middot; YOU HAVE $<span id="call-bankroll">0</span></div>
+      <div class="call-actions">
+        <button id="call-btn">CALL</button>
+        <button id="fold-btn">FOLD</button>
+      </div>
+      <div class="bet-note">Fold and you are out of this round — your chips stay in the pot.</div>
+    </div>
+  </div>
+
   <div id="game-container">
 
     <div id="start-screen">
@@ -78,8 +106,12 @@
                 </div>
             </div>
             
-            <div id="uno-bet-container"></div>
-            
+            <div class="ss-row">
+                <div class="ss-label">ANTE</div>
+                <div id="uno-bet-container"></div>
+                <div class="ss-hint">Every seat matches your ante. Win the round, take the pot.</div>
+            </div>
+
         </div>
         <button id="start-game-btn">START GAME</button>
     </div>
@@ -116,7 +148,12 @@
             </div>
 
             <div id="color-indicator" class="hidden">CURRENT COLOR: RED</div>
-            
+
+            <div id="uno-money-row" class="hidden">
+              <div id="uno-pot">POT $0</div>
+              <button id="uno-raise-btn" class="hidden">RAISE</button>
+            </div>
+
             <div id="turn-banner" class="hidden">Waiting...</div>
 
             <button id="uno-btn" class="sys-btn hidden">YELL UNO!</button>
