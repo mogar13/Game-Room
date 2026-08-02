@@ -20,9 +20,31 @@ let roomListener = null;
 let stateSeq = 0;
 
 // Unified Player Arrays
-let hands = [[], [], [], []]; 
+let hands = [[], [], [], []];
 let playerNames = ["Player 1", "AI 2", "AI 3", "AI 4"];
 let calledUnoFlags = [false, false, false, false];
+
+// ── POKER-STYLE POT ────────────────────────────────────────────────────────
+// Every seat antes, then anyone can raise on their turn; the others answer
+// CALL or FOLD when their own turn comes round. The pot is always the literal
+// sum of stakes[], so money is conserved no matter who paid what — a player
+// who can't cover a call pays what they have and stays in (no side pots).
+let stakes = [0, 0, 0, 0];          // chips each seat has put in this round
+let folded = [false, false, false, false];
+let owesCall = [false, false, false, false];  // seats that still have to answer the open raise
+let callAmount = 0;                 // size of the open raise; 0 = no raise pending
+let raiserSeat = 0;
+// Raises compound off the pot, so an uncapped table of bots betting house
+// money can inflate it without bound. Three opens a round, each capped at 3x
+// the ante, bounds a player's worst case at roughly 10x what they anted.
+let raiseCount = 0;
+const MAX_RAISES_PER_ROUND = 3;
+let anteAmount = 0;                 // the round's ante — also the raise unit
+let onlineAnte = parseInt(localStorage.getItem("uno_ante") || "0");
+let antedRoundId = null;            // round we already paid for — a resync must not double-charge
+let currentRoundId = null;
+let roundSettled = false;           // makes the payout idempotent
+let lastRoundWinner = 0;            // seat (1-4) that won last round; 0 = none yet
 
 // --- CUSTOM UNO AUDIO ---
 const sfxDraw = new Audio('../../system/audio/card-draw.ogg');
@@ -30,14 +52,21 @@ const sfxPlay = new Audio('../../system/audio/card-shove-2.ogg');
 const sfxWin = new Audio('../../system/audio/win.ogg');
 const sfxLose = new Audio('../../system/audio/lose.ogg');
 const sfxError = new Audio('../../system/audio/error.mp3');
+const sfxTurn = new Audio('../../system/audio/glass_004.ogg');
+const sfxChip = new Audio('../../system/audio/chip-lay-2.ogg');
 
 function playCustomSound(type) {
+    // These bypass SystemAudio.play(), so they have to honour mute themselves.
+    if (window.SystemAudio && SystemAudio.isMuted) return;
+
     let snd;
     if (type === 'draw') snd = sfxDraw;
     else if (type === 'play') snd = sfxPlay;
     else if (type === 'win') snd = sfxWin;
     else if (type === 'lose') snd = sfxLose;
     else if (type === 'error') snd = sfxError;
+    else if (type === 'turn') snd = sfxTurn;
+    else if (type === 'chip') snd = sfxChip;
 
     if (snd) {
         snd.pause();
@@ -206,27 +235,50 @@ function shuffleDeck() {
 
 function generateId() { return Math.random().toString(36).substr(2, 9); }
 
+// Last round's winner leads the next one instead of the host always going
+// first. Falls back to seat 1 on the opening round, or when the winner's seat
+// no longer exists because the player count changed or someone left.
+function firstTurnSeat() {
+    return (lastRoundWinner >= 1 && lastRoundWinner <= playerCount) ? lastRoundWinner : 1;
+}
+
 function startGame() {
-    if (gameMode === "online" && !isHost) return; 
-    
+    if (gameMode === "online" && !isHost) return;
+
+    // Take the ante before anything moves on screen: a refused commit has to
+    // leave the player on the start screen with their chips still on the rack.
+    let pendingAnte = 0;
+    if (gameMode !== "online") {
+        pendingAnte = commitAiAnte();
+        if (pendingAnte === false) return;
+    }
+
     if (typeof SystemStats !== 'undefined') SystemStats.recordGameStart("uno");
 
     playCustomSound('draw');
     document.getElementById("start-screen").classList.add("hidden");
     document.getElementById("game-area").classList.remove("hidden");
     document.getElementById("move-log").classList.remove("hidden");
-    document.getElementById("move-log").innerHTML = ""; 
-    
+    document.getElementById("move-log").innerHTML = "";
+
     buildDeck();
     hands = [[], [], [], []];
     calledUnoFlags = [false, false, false, false];
-    currentTurn = 1; 
+    resetPotState();
     playDirection = 1;
-    
+
     if (gameMode !== "online") {
         playerNames = ["Player 1", "AI 2", "AI 3", "AI 4"];
         playerNames[0] = (typeof SystemUI.getPlayerName === 'function') ? SystemUI.getPlayerName() : "Player";
+
+        anteAmount = pendingAnte;
+        // The house antes for each bot so the pot matches what the player put up.
+        if (pendingAnte > 0) for (let i = 0; i < playerCount; i++) stakes[i] = pendingAnte;
     }
+
+    currentTurn = firstTurnSeat();
+    const leadMsg = (lastRoundWinner && currentTurn === lastRoundWinner)
+        ? "won the last round and leads." : null;
 
     for (let i = 0; i < playerCount; i++) {
         cardsToAnimate[i] = 7;
@@ -234,25 +286,34 @@ function startGame() {
             hands[i].push(deck.pop());
         }
     }
-    
+
     let firstCard = deck.pop();
-    while (firstCard.type === 'wild' || firstCard.type === 'action') { 
-        deck.unshift(firstCard); 
-        firstCard = deck.pop(); 
+    while (firstCard.type === 'wild' || firstCard.type === 'action') {
+        deck.unshift(firstCard);
+        firstCard = deck.pop();
     }
-    discardPile = [firstCard]; 
+    discardPile = [firstCard];
     currentPlayColor = firstCard.color;
     cardJustPlayed = true;
 
     logMove("SYSTEM", "Game started!", true);
+    if (leadMsg) logMove(playerNames[currentTurn - 1], leadMsg);
 
     if (gameMode === "online") {
+        // A fresh round id gates the ante so every client pays exactly once.
+        currentRoundId = "r" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+        // Clear last round's stakes BEFORE the new id goes out, or this reset
+        // would land on top of chips already paid into the new round.
+        window.dbSet(window.dbRef(window.db, `uno_rooms/${currentRoomId}/stakes`), null);
         pushAllHandsToFirebase();
-        pushGameState();
+        pushGameState(null, leadMsg, playerNames[currentTurn - 1]);
     }
 
     renderHand();
     renderTable();
+
+    // The leader can be a bot now that the winner leads — nudge it.
+    maybeScheduleAi();
 }
 
 function renderHand() {
@@ -366,6 +427,7 @@ function renderTable() {
         const areaEl = document.getElementById(areaId);
         if (areaEl) {
             areaEl.classList.remove("hidden");
+            areaEl.classList.toggle("seat-folded", !!folded[actualIdx]);
             const labelEl = document.getElementById(labelId);
             if (labelEl) labelEl.innerHTML = pName; 
             
@@ -391,6 +453,8 @@ function renderTable() {
     });
 
     document.getElementById("p1-label").innerText = playerNames[myId - 1];
+    document.getElementById("player-area").classList.toggle("seat-folded", !!folded[myId - 1]);
+    updatePotUI();
     updateTurnBanner();
 }
 
@@ -418,7 +482,9 @@ function updateTurnBanner() {
         
         if (labelEl) {
             let baseName = playerNames[actualPlayerIdx];
-            if (actualPlayerIdx + 1 === currentTurn) {
+            if (folded[actualPlayerIdx]) {
+                labelEl.innerHTML = `${baseName} <span class="fold-tag">FOLDED</span>`;
+            } else if (actualPlayerIdx + 1 === currentTurn) {
                 labelEl.innerHTML = `⭐ ${baseName}`;
                 labelEl.classList.add("active-name-glow");
             } else {
@@ -436,17 +502,22 @@ function updateTurnBanner() {
     if (mine && _prevWasMyTurn === false) showTurnToast();
     _prevWasMyTurn = mine;
 
+    // An open raise has to be answered before this seat can act.
+    if (mine && owesCall[myId - 1] && !folded[myId - 1]) showCallPrompt();
+
     const banner = document.getElementById("turn-banner");
     if (banner) {
         banner.classList.remove("hidden");
-        const isBot = seats[currentTurn - 1]?.type === 'ai' || (gameMode === "ai" && currentTurn !== 1);
+        const isBot = isBotSeat(currentTurn);
         banner.innerText = isBot ? `${playerNames[currentTurn-1].toUpperCase()} IS THINKING...` : `${playerNames[currentTurn-1].toUpperCase()}'S TURN`;
     }
 }
 
 function resetGame() {
     hands = [[], [], [], []]; discardPile = []; deck = []; calledUnoFlags = [false, false, false, false];
-    document.getElementById("player-hand").innerHTML = ""; 
+    resetPotState();
+    document.getElementById("player-area").classList.remove("seat-folded");
+    document.getElementById("player-hand").innerHTML = "";
     document.getElementById("opponent-hand").innerHTML = "";
     document.getElementById("left-hand").innerHTML = "";
     document.getElementById("right-hand").innerHTML = "";
@@ -467,16 +538,17 @@ function resetGame() {
     } else {
         document.getElementById("start-screen").classList.remove("hidden");
         const startBtn = document.getElementById("start-game-btn");
-        if (gameMode === "online" && !isHost) { 
+        if (gameMode === "online" && !isHost) {
             if (startBtn) { startBtn.innerText = "Waiting for Host..."; startBtn.disabled = true; }
-        } else { 
-            if (startBtn) { startBtn.innerText = "Start Game"; startBtn.disabled = false; }
+        } else {
+            if (startBtn) { startBtn.disabled = false; }
+            refreshBetUI();
         }
     }
 }
 
 function attemptPlayCard(index) {
-    if (!isMyTurn()) return;
+    if (!isMyTurn() || !canAct()) return;
     const selectedCard = hands[myId - 1][index];
     const topCard = discardPile[discardPile.length - 1];
     
@@ -536,7 +608,9 @@ function handleActionCard(card, playerNum) {
         skipCount = 1;
         logMove("SYSTEM", `${playerNames[getNextPlayerIndex(1)-1]} is skipped!`, true); 
     } else if (card.value === 'inverse') {
-        if (playerCount === 2) skipCount = 1;
+        // Reverse acts as a skip once only two players are still in — folded
+        // seats are out of the rotation, so seat count is the wrong measure.
+        if (livePlayers().length === 2) skipCount = 1;
         else playDirection *= -1;
         logMove("SYSTEM", `Direction reversed!`, true);
     }
@@ -548,30 +622,25 @@ function handleActionCard(card, playerNum) {
         calledUnoFlags[playerNum - 1] = false;
     }
 
-    if (hands[playerNum - 1].length === 0) { 
-        playCustomSound(playerNum === myId ? 'win' : 'lose');
-        logMove("SYSTEM", `${playerNames[playerNum-1]} WINS!`, true); 
-        showResultModal(playerNum === myId ? "🎉 YOU WIN!" : `😞 ${playerNames[playerNum-1]} WINS!`, playerNum === myId ? "#2ecc71" : "#e74c3c");
-        
-        if (playerNum === myId && typeof SystemStats !== 'undefined') SystemStats.recordWin("uno", 0);
-        else if (typeof SystemStats !== 'undefined') SystemStats.recordLoss("uno");
-        
-        if (gameMode === 'online') {
-            // Single atomic push carrying the final hand sizes AND the
-            // finished status — the old two-write version raced.
-            pushGameState(null, "WINS!", playerNames[playerNum-1], "finished");
-        }
-        setTimeout(resetGame, 2500);
-        return; 
+    if (hands[playerNum - 1].length === 0) {
+        declareWinner(playerNum, true);
+        return;
     }
 
     advanceTurn(skipCount + 1, `played ${card.name.toUpperCase()}`);
 }
 
+// Steps forward `steps` LIVE seats — folded players are not in the rotation,
+// so a skip card lands on the next player who is still in the round. The lap
+// guard stops an all-folded table from spinning forever.
 function getNextPlayerIndex(steps) {
     let next = currentTurn;
     for (let i = 0; i < steps; i++) {
-        next = (next - 1 + playDirection + playerCount) % playerCount + 1;
+        let laps = 0;
+        do {
+            next = (next - 1 + playDirection + playerCount) % playerCount + 1;
+            laps++;
+        } while (folded[next - 1] && laps <= playerCount);
     }
     return next;
 }
@@ -611,8 +680,8 @@ function drawCardsFor(playerNum, num) {
 }
 
 function drawCard() {
-    if (!isMyTurn()) return;
-    drawCardsFor(myId, 1); 
+    if (!isMyTurn() || !canAct()) return;
+    drawCardsFor(myId, 1);
     playCustomSound('draw'); 
     logMove(playerNames[myId - 1], "drew a card.");
     advanceTurn(1, "drew a card.");
@@ -627,9 +696,16 @@ function advanceTurn(steps, logMsg) {
     renderHand();
     renderTable();
 
-    if (isHost && (seats[currentTurn - 1]?.type === 'ai' || (gameMode === "ai" && currentTurn !== 1))) {
-        scheduleAiTurn();
-    }
+    maybeScheduleAi();
+}
+
+function isBotSeat(seat) {
+    return seats[seat - 1]?.type === 'ai' || (gameMode === "ai" && seat !== 1);
+}
+
+// Only the host drives bots, so only the host schedules their turns.
+function maybeScheduleAi() {
+    if (isHost && isBotSeat(currentTurn)) scheduleAiTurn();
 }
 
 // Coalesce AI-turn scheduling. Multiple room writes (a move, then a yell,
@@ -651,6 +727,16 @@ function aiTurn() {
     // Freshly-adopted seat (player left mid-game): the real cards may still
     // be in flight from Firebase — retry until placeholders are replaced.
     if (hands[pIdx].some(c => c && c.placeholder)) { scheduleAiTurn(); return; }
+    if (folded[pIdx]) { advanceTurn(1, "is out of the round."); return; }
+
+    // Settle the money before touching cards: answer any open raise, then
+    // decide whether to put more in.
+    if (owesCall[pIdx]) {
+        if (aiCallDecision(pIdx) === 'fold') { doFold(currentTurn); return; }
+        doCall(currentTurn);
+    }
+    if (aiShouldRaise(pIdx)) doRaise(currentTurn, aiRaiseAmount(pIdx));
+
     const topCard = discardPile[discardPile.length - 1];
     let playable = [];
     for (let i = 0; i < hands[pIdx].length; i++) { 
@@ -691,6 +777,342 @@ function aiTurn() {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// THE POT — ANTE, RAISE, CALL, FOLD
+// Every seat antes, then anyone can raise on their turn. The others answer
+// CALL or FOLD when their own turn comes round, which keeps every money
+// decision turn-ordered and deterministic across clients. The pot is always
+// the literal sum of stakes[], so money is conserved no matter who paid what.
+// ══════════════════════════════════════════════════════════════════════════
+
+function resetPotState() {
+    stakes = [0, 0, 0, 0];
+    folded = [false, false, false, false];
+    owesCall = [false, false, false, false];
+    callAmount = 0;
+    raiserSeat = 0;
+    raiseCount = 0;
+    anteAmount = 0;
+    roundSettled = false;
+    // Arm the turn toast so it fires on the opening turn of the round too —
+    // it matters now that the round's leader changes from game to game.
+    _prevWasMyTurn = false;
+    hideBetModals();
+}
+
+function potTotal() {
+    return stakes.reduce((a, b) => a + (b || 0), 0);
+}
+
+function livePlayers() {
+    const out = [];
+    for (let i = 0; i < playerCount; i++) if (!folded[i]) out.push(i + 1);
+    return out;
+}
+
+// The chip unit a raise is measured in: the round's ante.
+function unitBet() { return anteAmount > 0 ? anteAmount : 25; }
+
+function myMoney() { return window.SystemProfile ? SystemProfile.getMoney() : 0; }
+
+// Blocks card play while this seat still owes an answer to an open raise.
+function canAct() {
+    if (folded[myId - 1]) return false;
+    if (owesCall[myId - 1]) { showCallPrompt(); return false; }
+    return true;
+}
+
+function canSeatRaise(seat) {
+    return potTotal() > 0 && !roundSettled
+        && !folded[seat - 1]
+        && !owesCall[seat - 1]
+        && callAmount === 0                 // one open raise at a time
+        && raiseCount < MAX_RAISES_PER_ROUND
+        && livePlayers().length > 1;
+}
+
+// Moves chips into the pot for `seat`. Only my own seat debits a real
+// bankroll — bot seats are covered by the house, and other humans debit
+// themselves on their own client. Returns what actually went in, which can be
+// short of `amount` when the player is out of money.
+function payIn(seat, amount) {
+    if (amount <= 0) return 0;
+    let paid = amount;
+    if (seat === myId) {
+        paid = Math.max(0, Math.min(amount, myMoney()));
+        if (paid > 0) SystemProfile.removeMoney(paid);
+    }
+    stakes[seat - 1] = (stakes[seat - 1] || 0) + paid;
+    writeStake(seat - 1, stakes[seat - 1]);
+    if (paid > 0) playCustomSound('chip');
+    updatePotUI();
+    return paid;
+}
+
+function doRaise(seat, amount) {
+    if (!canSeatRaise(seat) || amount <= 0) return;
+    const paid = payIn(seat, amount);
+    if (paid <= 0) return;
+
+    callAmount = paid;
+    raiserSeat = seat;
+    raiseCount++;
+    // Everyone still in the round owes an answer on their next turn.
+    for (let i = 0; i < playerCount; i++) owesCall[i] = (i !== seat - 1) && !folded[i];
+
+    const msg = `raised $${paid}.`;
+    logMove(playerNames[seat - 1], msg);
+    if (gameMode === "online") pushGameState(null, msg, playerNames[seat - 1]);
+    renderTable();
+}
+
+function doCall(seat) {
+    if (!owesCall[seat - 1]) return;
+    const owed = callAmount;
+    const paid = payIn(seat, owed);
+    owesCall[seat - 1] = false;
+    clearRaiseIfSettled();
+
+    // A short stack shoves what's left and stays in — there are no side pots,
+    // so the pot is still exactly what everyone put in.
+    const msg = paid < owed ? `is all in for $${paid}.` : `called $${paid}.`;
+    logMove(playerNames[seat - 1], msg);
+    if (gameMode === "online") pushGameState(null, msg, playerNames[seat - 1]);
+    renderTable();
+}
+
+function doFold(seat) {
+    if (folded[seat - 1] || roundSettled) return;
+    folded[seat - 1] = true;
+    owesCall[seat - 1] = false;
+    clearRaiseIfSettled();
+    logMove(playerNames[seat - 1], "folded.");
+
+    const live = livePlayers();
+    if (live.length === 1) {
+        // Last player standing takes the pot without finishing the hand.
+        declareWinner(live[0], true);
+        return;
+    }
+
+    if (seat === currentTurn) {
+        // Folding on your own turn hands play straight to the next live seat.
+        advanceTurn(1, "folded.");
+    } else {
+        if (gameMode === "online") pushGameState(null, "folded.", playerNames[seat - 1]);
+        renderHand(); renderTable();
+    }
+}
+
+// Once everyone still in has answered, the raise closes and the table is free
+// to raise again.
+function clearRaiseIfSettled() {
+    if (owesCall.some((o, i) => o && !folded[i])) return;
+    owesCall = [false, false, false, false];
+    callAmount = 0;
+    raiserSeat = 0;
+}
+
+// The one place a round ends, whether it finished locally or arrived over the
+// wire. roundSettled makes the payout idempotent — a resync must never pay
+// the pot out twice.
+function declareWinner(seat, push) {
+    if (roundSettled || !seat) return;
+    roundSettled = true;
+    lastRoundWinner = seat;
+
+    const iWon = (seat === myId);
+    const pot = potTotal();
+
+    playCustomSound(iWon ? 'win' : 'lose');
+    logMove("SYSTEM", `${playerNames[seat - 1]} WINS!`, true);
+
+    if (iWon && pot > 0 && window.SystemProfile) SystemProfile.addMoney(pot);
+
+    showResultModal(
+        iWon ? (pot > 0 ? `🎉 YOU WIN THE $${pot} POT!` : "🎉 YOU WIN!")
+             : `😞 ${playerNames[seat - 1]} WINS!`,
+        iWon ? "#2ecc71" : "#e74c3c"
+    );
+
+    if (typeof SystemStats !== 'undefined') {
+        if (iWon) SystemStats.recordWin("uno");
+        else SystemStats.recordLoss("uno");
+    }
+
+    if (push && gameMode === 'online') {
+        // Single atomic push carrying the final hand sizes AND the finished
+        // status — the old two-write version raced.
+        pushGameState(null, "WINS!", playerNames[seat - 1], "finished");
+    }
+
+    updatePotUI();
+    setTimeout(resetGame, 2500);
+}
+
+// ── AI READ ────────────────────────────────────────────────────────────────
+
+// A 0..1 read on how good seat idx's hand looks: fewer cards is better, more
+// playable cards is better, wilds and actions are power — and an opponent
+// sitting on one card discounts all of it.
+function handStrength(idx) {
+    const hand = hands[idx] || [];
+    if (!hand.length) return 1;
+    const top = discardPile[discardPile.length - 1];
+    if (!top) return 0.5;
+
+    let playable = 0, wilds = 0, actions = 0;
+    hand.forEach(c => {
+        if (!c || c.placeholder) return;
+        if (isValidPlay(c, top)) playable++;
+        if (c.type === 'wild') wilds++;
+        else if (c.type === 'action') actions++;
+    });
+
+    const size    = Math.max(0, 1 - (hand.length - 1) / 11);   // 1 card = 1.0, 12+ = 0.0
+    const options = Math.min(1, playable / 3);
+    const power   = Math.min(1, (wilds * 2 + actions) / 5);
+
+    let threat = 0;
+    for (let i = 0; i < playerCount; i++) {
+        if (i === idx || folded[i]) continue;
+        const n = (hands[i] || []).length;
+        if (n > 0 && n <= 2) threat = Math.max(threat, (3 - n) / 3);
+    }
+
+    return Math.max(0, Math.min(1, size * 0.5 + options * 0.25 + power * 0.25 - threat * 0.3));
+}
+
+// Pot odds meet the hand read: the pricier the call is relative to the pot,
+// the stronger the hand has to be to justify paying it.
+function aiCallDecision(idx) {
+    const price  = callAmount / Math.max(1, potTotal() + callAmount);
+    const floor  = { easy: 0.10, normal: 0.28, hard: 0.36 }[aiDifficulty] ?? 0.28;
+    const jitter = (Math.random() - 0.5) * 0.12;
+    return (handStrength(idx) + jitter) >= (floor + price * 0.35) ? 'call' : 'fold';
+}
+
+// EASY never raises. NORMAL sandbags and only pushes a monster; HARD applies
+// real pressure whenever its hand is genuinely ahead.
+function aiShouldRaise(idx) {
+    if (aiDifficulty === "easy") return false;
+    if (!canSeatRaise(idx + 1)) return false;
+    const bar  = aiDifficulty === "hard" ? 0.62 : 0.78;
+    const odds = aiDifficulty === "hard" ? 0.45 : 0.15;
+    return handStrength(idx) >= bar && Math.random() < odds;
+}
+
+// Bots bet house money, so cap the size too — a pot-fraction raise compounds
+// fast and a human calling it should always be able to read the number.
+function aiRaiseAmount(idx) {
+    const frac = aiDifficulty === "hard" ? 0.5 : 0.34;
+    const want = Math.max(unitBet(), Math.round(potTotal() * frac));
+    return Math.min(want, unitBet() * 3);
+}
+
+// ── POT UI ─────────────────────────────────────────────────────────────────
+
+function updatePotUI() {
+    const row     = document.getElementById("uno-money-row");
+    const potEl   = document.getElementById("uno-pot");
+    const raiseEl = document.getElementById("uno-raise-btn");
+    if (!row || !potEl || !raiseEl) return;
+
+    const pot = potTotal();
+    row.classList.toggle("hidden", pot <= 0);
+    potEl.innerText = callAmount > 0 ? `POT $${pot} · TO CALL $${callAmount}` : `POT $${pot}`;
+    raiseEl.classList.toggle("hidden", !(isMyTurn() && canSeatRaise(myId)));
+}
+
+function hideBetModals() {
+    const r = document.getElementById("uno-raise-modal");
+    const c = document.getElementById("uno-call-prompt");
+    if (r) r.classList.add("hidden");
+    if (c) c.classList.add("hidden");
+}
+
+function raisePresets() {
+    const pot = potTotal();
+    const cash = myMoney();
+    const clamp = v => Math.max(0, Math.min(Math.round(v), cash));
+    return { min: clamp(unitBet()), half: clamp(pot / 2), pot: clamp(pot), allin: clamp(cash) };
+}
+
+function showRaiseModal() {
+    if (!canSeatRaise(myId)) return;
+    const modal = document.getElementById("uno-raise-modal");
+    const presets = raisePresets();
+    document.getElementById("raise-pot-amt").innerText = potTotal();
+    document.getElementById("raise-bankroll").innerText = myMoney();
+    modal.querySelectorAll(".raise-opt").forEach(btn => {
+        const amt = presets[btn.dataset.raise] || 0;
+        btn.querySelector("span").innerText = `$${amt}`;
+        btn.disabled = amt <= 0;
+    });
+    modal.classList.remove("hidden");
+}
+
+function showCallPrompt() {
+    const prompt = document.getElementById("uno-call-prompt");
+    if (!prompt || !owesCall[myId - 1] || folded[myId - 1] || roundSettled) return;
+    const cash = myMoney();
+    const owed = Math.min(callAmount, cash);
+    document.getElementById("call-raiser").innerText = (playerNames[raiserSeat - 1] || "A PLAYER").toUpperCase();
+    document.getElementById("call-pot-amt").innerText = potTotal();
+    document.getElementById("call-bankroll").innerText = cash;
+    document.getElementById("call-btn").innerText = owed < callAmount ? `ALL IN $${owed}` : `CALL $${owed}`;
+    prompt.classList.remove("hidden");
+}
+
+document.getElementById("uno-raise-btn").addEventListener("click", showRaiseModal);
+document.getElementById("raise-cancel").addEventListener("click", hideBetModals);
+document.querySelectorAll("#uno-raise-modal .raise-opt").forEach(btn => {
+    btn.addEventListener("click", () => {
+        const amt = raisePresets()[btn.dataset.raise] || 0;
+        hideBetModals();
+        if (amt > 0) doRaise(myId, amt);
+    });
+});
+document.getElementById("call-btn").addEventListener("click", () => { hideBetModals(); doCall(myId); });
+document.getElementById("fold-btn").addEventListener("click", () => { hideBetModals(); doFold(myId); });
+
+// ── ANTE RACK (start screen, AI mode) ──────────────────────────────────────
+// SystemBetting.currentBet is the single source of truth for the staged ante;
+// keeping a second counter here is exactly what desyncs the "BET: $" readout.
+SystemUI.setupBetting("uno-bet-container", {
+    minBet: 1,
+    onBet:   () => refreshBetUI(),
+    onClear: () => refreshBetUI()
+});
+
+function stagedAnte() {
+    return window.SystemBetting ? (SystemBetting.currentBet || 0) : 0;
+}
+
+function refreshBetUI() {
+    const btn = document.getElementById("start-game-btn");
+    if (!btn) return;
+    const bet = stagedAnte();
+    btn.innerText = bet > 0 ? `START GAME — ANTE $${bet}` : "START GAME";
+}
+
+// Deducts the staged ante. Returns the amount taken, or false when the commit
+// was refused — in which case the round must not start.
+function commitAiAnte() {
+    const bet = stagedAnte();
+    if (bet <= 0) return 0;
+    const taken = SystemBetting.validateAndCommit();
+    if (taken === false) { playCustomSound('error'); return false; }
+    // Zero SystemBetting's own counter without firing onClear: the chips are
+    // on the table now, not on the rack. REPEAT still restages them.
+    SystemBetting.currentBet = 0;
+    SystemBetting.updateDisplay();
+    playCustomSound('chip');
+    return taken;
+}
+
+refreshBetUI();
+
 document.getElementById("start-game-btn").addEventListener("click", startGame);
 document.getElementById("draw-pile").addEventListener("click", drawCard);
 
@@ -712,24 +1134,29 @@ SystemMatch.setup({
         for (let i = 1; i < count; i++) out.push({ type: "ai", name: "AI " + (i + 1) });
         return out;
     },
-    extraRoomFields: () => ({ aiDifficulty: aiDifficulty, ts: Date.now() }),
+    extraRoomFields: () => ({ aiDifficulty: aiDifficulty, ante: onlineAnte, ts: Date.now() }),
     settingsConfig: [
         { id: "lobby-count", label: "PLAYERS", type: "select", default: playerCount, options: [{value:2, label:"2"},{value:3, label:"3"},{value:4, label:"4"}] },
-        { id: "lobby-ai-diff", label: "AI LEVEL", type: "select", default: aiDifficulty, options: [{value:"easy", label:"EASY"},{value:"normal", label:"NORMAL"},{value:"hard", label:"HARD"}] }
+        { id: "lobby-ai-diff", label: "AI LEVEL", type: "select", default: aiDifficulty, options: [{value:"easy", label:"EASY"},{value:"normal", label:"NORMAL"},{value:"hard", label:"HARD"}] },
+        { id: "lobby-ante", label: "ANTE", type: "select", default: onlineAnte, options: [{value:0, label:"NONE"},{value:25, label:"$25"},{value:100, label:"$100"},{value:500, label:"$500"},{value:1000, label:"$1K"}] }
     ],
     onSettingsRendered: () => updateLobbyPreview(),
     onSettingChange: (key, val) => {
         if (key === "lobby-count") playerCount = parseInt(val);
         if (key === "lobby-ai-diff") aiDifficulty = val;
+        if (key === "lobby-ante") {
+            onlineAnte = parseInt(val) || 0;
+            localStorage.setItem("uno_ante", onlineAnte);
+        }
         updateLobbyPreview();
 
         if (gameMode === "online" && isHost && currentRoomId && window.db) {
-            // Use SystemMatch.resizeSeats for player count, then sync aiDifficulty
+            // Use SystemMatch.resizeSeats for player count, then sync the rest
             if (key === "lobby-count") {
                 SystemMatch.resizeSeats(playerCount);
                 seats = SystemMatch.getSeats();
             }
-            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { aiDifficulty: aiDifficulty, ts: Date.now() });
+            window.dbUpdate(window.dbRef(window.db, 'uno_rooms/' + currentRoomId), { aiDifficulty: aiDifficulty, ante: onlineAnte, ts: Date.now() });
         }
     },
     onHost: (roomId) => {
@@ -787,6 +1214,12 @@ function listenToRoom() {
         playerNames = seats.map(s => s.name);
         playerCount = seats.length;
         if (data.aiDifficulty) aiDifficulty = data.aiDifficulty;
+        if (typeof data.ante === 'number') onlineAnte = data.ante;
+
+        // A new round id means a new pot: clear the local pot, pay in once,
+        // then mirror whatever the table has actually staked so far.
+        if (data.status === "playing" && data.roundId) payAnteIfNeeded(data.roundId);
+        if (data.status === "playing" || data.status === "finished") mirrorStakes(data.stakes);
 
         const seatsJSON = JSON.stringify(seats) + "|" + (isHost ? "h" : "j") + "|" + myId;
         if (seatsJSON !== lastSeatsJSON) {
@@ -830,6 +1263,53 @@ function ownedHandIndices() {
         else if (isHost && s && s.type === 'ai') owned.push(i);
     });
     return owned;
+}
+
+// ── POT SYNC ───────────────────────────────────────────────────────────────
+// Each client owns the stakes node for the seats it drives, so nobody can be
+// charged by someone else's write.
+function writeStake(idx, amount) {
+    if (gameMode !== "online" || !currentRoomId || !window.db) return;
+    window.dbSet(window.dbRef(window.db, `uno_rooms/${currentRoomId}/stakes/${idx}`), amount);
+}
+
+function mirrorStakes(raw) {
+    const next = [0, 0, 0, 0];
+    if (raw) Object.keys(raw).forEach(k => { next[parseInt(k, 10)] = parseInt(raw[k], 10) || 0; });
+    stakes = next;
+    updatePotUI();
+}
+
+// Firebase hands back a sparse object when the leading entries are falsy, so
+// never assume a plain 4-length array came off the wire.
+function normBoolArr(v) {
+    const out = [false, false, false, false];
+    if (v) Object.keys(v).forEach(k => { out[parseInt(k, 10)] = !!v[k]; });
+    return out;
+}
+
+// Every client pays its own ante exactly once per round id — a resync or a
+// stray room write must never charge twice. A player who can't cover the ante
+// stakes what they have instead of going negative.
+function payAnteIfNeeded(roundId) {
+    if (gameMode !== "online" || !roundId || antedRoundId === roundId) return;
+    antedRoundId = roundId;
+    currentRoundId = roundId;
+    resetPotState();
+
+    anteAmount = onlineAnte > 0 ? onlineAnte : 0;
+    if (anteAmount <= 0 || !window.SystemProfile) { updatePotUI(); return; }
+
+    const stake = Math.max(0, Math.min(anteAmount, myMoney()));
+    if (stake > 0) { SystemProfile.removeMoney(stake); playCustomSound('chip'); }
+    stakes[myId - 1] = stake;
+    writeStake(myId - 1, stake);
+
+    // The house covers the bots the host is driving so the pot still adds up.
+    if (isHost) seats.forEach((s, i) => {
+        if (s && s.type === 'ai') { stakes[i] = anteAmount; writeStake(i, anteAmount); }
+    });
+    updatePotUI();
 }
 
 function pushHandToFirebase(idx) {
@@ -906,7 +1386,12 @@ function pushGameState(unoYell = null, logMsg = null, actingPlayerName = null, s
     // NOTE: Firebase strips empty arrays — when the deck runs dry the `deck`
     // key vanishes from the room node. Receivers must treat a missing deck
     // as [], never as "no state" (the old code froze the game here).
-    let payload = { deck, discardPile, turn: currentTurn, direction: playDirection, currentColor: currentPlayColor, status: statusOverride || "playing", seats, handSizes, ts: now, seq: stateSeq, pusher: myId };
+    let payload = { deck, discardPile, turn: currentTurn, direction: playDirection, currentColor: currentPlayColor, status: statusOverride || "playing", seats, handSizes, ts: now, seq: stateSeq, pusher: myId, folded, owesCall, callAmount, raiserSeat, raiseCount };
+    // Only the round's winner is carried; clearing it on every other push
+    // stops last round's winner from re-arming the next "finished" handler.
+    payload.winnerSeat = (statusOverride === "finished") ? (lastRoundWinner || null) : null;
+    // Never blank the host's round id — joiners echo back whatever they were told.
+    if (currentRoundId) payload.roundId = currentRoundId;
 
     let pName = actingPlayerName || playerNames[myId-1];
 
@@ -976,6 +1461,14 @@ function syncFromFirebase(data) {
         discardPile = data.discardPile; currentTurn = data.turn;
         playDirection = data.direction; currentPlayColor = data.currentColor;
 
+        // Pot state is authoritative from the wire: folds and open raises have
+        // to agree on every client or the turn rotation itself diverges.
+        folded = normBoolArr(data.folded);
+        owesCall = normBoolArr(data.owesCall);
+        callAmount = data.callAmount || 0;
+        raiserSeat = data.raiserSeat || 0;
+        raiseCount = data.raiseCount || 0;
+
         const sizes = data.handSizes || [];
         const owned = ownedHandIndices();
         sizes.forEach((newSize, i) => {
@@ -997,30 +1490,32 @@ function syncFromFirebase(data) {
         renderHand(); renderTable();
 
         if (data.status === "playing") {
-            if (isHost && data.pusher !== myId && (seats[currentTurn - 1]?.type === 'ai' || (gameMode === "ai" && currentTurn !== 1))) {
-                scheduleAiTurn();
-            }
+            maybeScheduleAi();
         } else if (data.status === "finished") {
-            let winnerIdx = sizes.findIndex(sz => sz === 0);
-            if (winnerIdx !== -1 && winnerIdx !== myId - 1) {
-                playCustomSound('lose');
-                showResultModal(`😞 ${playerNames[winnerIdx]} WINS!`, "#e74c3c");
-                setTimeout(resetGame, 2500);
-            } else if (winnerIdx === -1) {
-                setTimeout(resetGame, 2500);
+            // A fold-out win leaves nobody on an empty hand, so trust the
+            // pushed winnerSeat first and only count cards as a fallback.
+            let seat = data.winnerSeat || 0;
+            if (!seat) {
+                const wi = sizes.findIndex(sz => sz === 0);
+                seat = wi === -1 ? 0 : wi + 1;
             }
+            if (seat) declareWinner(seat, false);
+            else { updatePotUI(); setTimeout(resetGame, 2500); }
         }
     }
 }
 
+// Lives in the top-left gutter under the HUD (see #uno-turn-toast in the CSS)
+// so it never covers the piles or a hand. Toggled with .show, not .hidden —
+// display:none would skip the fade entirely.
 function showTurnToast() {
-    let t = document.getElementById("uno-turn-toast");
-    if (!t) {
-        t = document.createElement("div"); t.id = "uno-turn-toast"; t.innerText = "⭐ YOUR TURN!";
-        t.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#27ae60,#2ecc71);color:#fff;font-size:1.8rem;font-weight:900;padding:18px 44px;border-radius:18px;z-index:9999;opacity:0;transition:0.22s;pointer-events:none;";
-        document.body.appendChild(t);
-    }
-    t.style.opacity = "1"; setTimeout(() => t.style.opacity = "0", 1500);
+    const t = document.getElementById("uno-turn-toast");
+    if (!t) return;
+    // Re-renders inside one turn can re-arm this; don't stack the chime.
+    if (!t.classList.contains("show")) playCustomSound('turn');
+    t.classList.add("show");
+    clearTimeout(showTurnToast._timer);
+    showTurnToast._timer = setTimeout(() => t.classList.remove("show"), 1800);
 }
 
 function showPenaltyToast() {
